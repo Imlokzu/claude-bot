@@ -1,0 +1,23 @@
+{
+  "id": "claude-bot-vision",
+  "name": "Claude Bot Vision",
+  "description": "Lets the agent look through the Claude Bot camera via the local Vision Agent (FastAPI + OpenCV).",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "description": "Base URL of the Claude Bot Vision Agent (FastAPI + OpenCV service from Step 1)."
+      }
+    }
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": [
+      "vision_check_camera"
+    ]
+  }
+}

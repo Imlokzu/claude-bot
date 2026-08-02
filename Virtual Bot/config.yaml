@@ -1,0 +1,113 @@
+# «Клод Бот» — Virtual Bot: конфіг бекенду.
+# УВАГА: тут НЕМАЄ секретів і не повинно бути.
+# Токен OpenClaw: env OPENCLAW_TOKEN (пріоритет) або файл voice_loop_config нижче.
+# Ключ Anthropic: тільки env ANTHROPIC_API_KEY.
+
+server:
+  host: 127.0.0.1
+  port: 8100
+
+# Omni-роутер — ГОЛОВНИЙ мозок чату (OpenAI-сумісний мультимодельний шлюз).
+# У ланцюжку мозків пробується ПЕРШИМ (див. brains.py).
+# КЛЮЧ — секрет: тільки env OMNI_API_KEY (файл .env, який читає app_config).
+# У config.yaml / фронтенді / вікі ключа НЕ пишемо.
+#
+# УВАГА: у списку — лише моделі провайдерів, для яких у ключа Є креденшели
+# (перевірено: працюють ЛИШЕ провайдери `claude` та `opencode-go`; github/*,
+# fireworks/*, codex/* тощо повертають 404 «No active credentials» / 401).
+# Використовуємо ПРЯМІ id провайдера (claude/…, opencode-go/…), а не auto/*,
+# бо auto/* комбо-маршрутизує і може влучати в мертві провайдери (503).
+omni:
+  base_url: http://localhost:20128/v1
+  # Модель за замовчуванням: Claude (провайдер claude) — за побажанням власника
+  default_model: claude/claude-sonnet-5
+  # Запасна модель у межах Omni («другий мозок» — opencode-go): якщо обрана
+  # модель не відповіла швидкою помилкою (401/404/503), Omni пробує цю, і лише
+  # потім падає на наступний мозок (chat2api → demo). Порожнє — без запасної.
+  fallback_model: opencode-go/kimi-k3
+  timeout_s: 60
+  # Моделі для вибору у панелі. id — як віддає роутер (/v1/models), label — підпис.
+  models:
+    # --- Claude (провайдер claude) — головний ---
+    - {id: claude/claude-sonnet-5, label: "Claude Sonnet 5"}
+    - {id: claude/claude-opus-4-8, label: "Claude Opus 4.8"}
+    - {id: claude/claude-haiku-4-5-20251001, label: "Claude Haiku 4.5 (швидкий)"}
+    - {id: claude/claude-fable-5, label: "Claude Fable 5"}
+    - {id: claude/claude-opus-4-7, label: "Claude Opus 4.7"}
+    - {id: claude/claude-sonnet-4-6, label: "Claude Sonnet 4.6"}
+    # --- opencode-go (другий мозок) ---
+    - {id: opencode-go/kimi-k3, label: "Kimi K3 (opencode-go)"}
+    - {id: opencode-go/glm-5.2, label: "GLM-5.2 (opencode-go)"}
+    - {id: opencode-go/deepseek-v4-pro, label: "DeepSeek V4 Pro (opencode-go)"}
+    - {id: opencode-go/qwen3.7-max, label: "Qwen 3.7 Max (opencode-go)"}
+    - {id: opencode-go/grok-4.5, label: "Grok 4.5 (opencode-go)"}
+    - {id: opencode-go/minimax-m3, label: "MiniMax M3 (opencode-go)"}
+
+openclaw:
+  base_url: http://127.0.0.1:18789
+  agent: openclaw/default
+  # Звідки взяти токен, якщо env OPENCLAW_TOKEN не задано (шлях відносно цієї папки)
+  voice_loop_config: "../Voice Loop/config.yaml"
+  timeout_s: 45
+
+# Чат: захист від «повільно вмираючих» мозків Omni/OpenClaw (див. brains.py).
+chat:
+  # Стеля ОДНІЄЇ спроби Omni в чаті (обидві моделі: основна + запасна разом),
+  # коротша за omni.timeout_s, щоб завислий роутер не тримав чат десятки секунд
+  omni_timeout_s: 25
+  # Запобіжник (circuit breaker) Omni: після невдачі в чаті пропускаємо Omni
+  # стільки секунд; успішна відповідь скидає запобіжник
+  omni_backoff_s: 60
+  # Таймаут ОДНІЄЇ спроби OpenClaw у чаті. OpenClaw тепер ГОЛОВНИЙ мозок і робить
+  # реальну агентну роботу (памʼять, tools, маршрутизація до Claude), тож
+  # відповідь легітимно триває довше — 60с (не 10), інакше чат марно падав на Omni.
+  openclaw_timeout_s: 60
+  # Запобіжник (circuit breaker): після невдалої спроби OpenClaw у чаті
+  # пропускаємо його стільки секунд; успішна відповідь скидає запобіжник.
+  # 30с (а не 120) — щоб під час налаштування OpenClaw чат швидко перемкнувся
+  # на нього, щойно провайдера полагоджено.
+  openclaw_backoff_s: 30
+
+anthropic:
+  model: claude-sonnet-5
+  max_tokens: 1024
+  timeout_s: 60
+
+# Chat2API — локальний OpenAI-сумісний сервер (третій мозок у ланцюжку).
+# Авторизація зазвичай не потрібна; якщо env CHAT2API_API_KEY задано —
+# шлеться заголовок Authorization: Bearer (сам ключ у конфіг НЕ пишемо).
+chat2api:
+  base_url: http://127.0.0.1:8080/v1
+  model: "Qwen3.7-Max"
+  timeout_s: 60
+
+vision:
+  base_url: "http://127.0.0.1:8000"
+  dir: "../Vision Agent"
+
+display:
+  base_url: "http://127.0.0.1:8001"
+  dir: "../claude-bot-display"
+  # Таймаут однієї відправки подій на дисплей через WS-міст (максимум 1.5 с)
+  bridge_timeout_s: 1.5
+
+# «Живий бот»: інтервали й кулдауни фонового нагляду (усе в секундах)
+liveliness:
+  vision_poll_s: 2          # опитування Vision, коли він онлайн
+  vision_offline_poll_s: 10 # тиха перевірка доступності, коли офлайн
+  greet_cooldown_s: 60      # мінімум між привітаннями при появі обличчя
+  face_gone_stable_s: 10    # стільки секунд без облич = «людина пішла»
+  sad_duration_s: 5         # тривалість суму після зникнення обличчя
+  motion_cooldown_s: 5      # мінімум між подіями руху
+  sleepy_after_s: 600      # без взаємодій → дрімота (10 хв)
+  # Спонтанні емоції у простої: бот САМ зрідка «оживає» (працює й без Vision).
+  # 0 у mood_duration_s повністю вимикає цю поведінку.
+  mood_min_s: 25            # мінімальна пауза між спонтанними емоціями
+  mood_max_s: 75            # максимальна пауза між спонтанними емоціями
+  mood_duration_s: 4        # скільки тримається спонтанна емоція, потім → idle
+  mood_calm_s: 12           # спонтанні емоції лише коли стільки с не було взаємодії
+
+paths:
+  brain_dir: "brain"
+  static_dir: "static"
+  service_logs_dir: "service_logs"

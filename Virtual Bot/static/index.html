@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Клод Бот — Віртуальний</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20x='2'%20y='3'%20width='12'%20height='10'%20rx='2'%20fill='%239ece6a'/%3E%3Crect%20x='5'%20y='6'%20width='2'%20height='3'%20fill='%230f0f1a'/%3E%3Crect%20x='9'%20y='6'%20width='2'%20height='3'%20fill='%230f0f1a'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- Верхня панель -->
+  <header class="topbar">
+    <div class="brand">▞▚ КЛОД БОТ <span class="brand-sub">· ВІРТУАЛЬНИЙ</span><span class="cursor-block">█</span></div>
+    <div class="topbar-right">
+      <span class="activity-chip hidden" id="activityChip" title="Що бот робить зараз">
+        <span class="activity-dot"></span><span id="activityText"></span>
+      </span>
+      <button class="btn btn-small" id="voiceModeBtn" title="Голосовий режим — говори з ботом">🎙 Голосом</button>
+      <button class="btn btn-small" id="setupBtn" title="Майстер налаштування">⚙ Налаштування</button>
+      <span class="mode-badge" id="modeBadge">МОЗОК: —</span>
+      <span class="backend-ind" title="З'єднання з бекендом (127.0.0.1:8100)">
+        <span class="dot dot-unknown" id="backendDot"></span> БЕКЕНД
+      </span>
+    </div>
+  </header>
+
+  <!-- Вкладки -->
+  <nav class="dashboard-tabs" id="dashboardTabs">
+    <button class="dashboard-tab active" data-tab="chat">💬 Чат</button>
+    <button class="dashboard-tab" data-tab="memory">🧠 Пам'ять</button>
+    <button class="dashboard-tab" data-tab="vision">👁 Зір</button>
+    <button class="dashboard-tab" data-tab="services">🔧 Сервіси</button>
+    <button class="dashboard-tab" data-tab="logs">📜 Логи</button>
+  </nav>
+
+  <main class="dashboard">
+
+    <!-- 1. Чат -->
+    <section class="dashboard-panel active" data-panel="chat">
+      <div class="dashboard-grid chat-grid">
+        <section class="panel area-face">
+          <h2 class="panel-title">Обличчя</h2>
+          <div class="face-screen" id="faceScreen" data-emotion="idle">
+            <canvas class="crab-canvas" id="crabCanvas" width="256" height="150"></canvas>
+            <div class="face-label" id="faceLabel">Очікування</div>
+          </div>
+          <div class="face-test">
+            <label for="emotionTest">Тест емоції:</label>
+            <select id="emotionTest">
+              <option value="">— авто —</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="panel area-chat">
+          <div id="chat-panel-root"></div>
+          <link rel="stylesheet" href="/static/chat-panel/chat-panel.css">
+          <script type="module" src="/static/chat-panel/chat-panel.js"></script>
+        </section>
+      </div>
+    </section>
+
+    <!-- 2. Пам'ять (React) -->
+    <section class="dashboard-panel" data-panel="memory">
+      <section class="panel area-memory">
+        <div id="memory-panel-root"></div>
+        <link rel="stylesheet" href="/static/memory-panel/memory-panel.css">
+        <script type="module" src="/static/memory-panel/memory-panel.js"></script>
+      </section>
+    </section>
+
+    <!-- 3. Зір -->
+    <section class="dashboard-panel" data-panel="vision">
+      <div class="dashboard-grid vision-grid">
+        <section class="panel area-vision">
+          <h2 class="panel-title">Зір</h2>
+          <div class="vision-view" id="visionView">
+            <img id="visionImg" alt="Потік камери">
+            <div class="vision-overlay" id="visionOverlay">
+              <div class="overlay-icon">▣</div>
+              <div id="visionOverlayText">Потік вимкнено</div>
+            </div>
+            <div class="vision-badge" id="visionBadge"></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="streamToggle">▶ Потік</button>
+            <button class="btn" id="snapshotBtn">◉ Снапшот</button>
+          </div>
+          <pre class="json-out hidden" id="snapshotOut"></pre>
+        </section>
+
+        <section class="panel area-status">
+          <h2 class="panel-title">Статус</h2>
+          <ul class="status-list">
+            <li><span class="status-name">Omni-роутер</span><span class="status-val" id="st-omni">—</span></li>
+            <li><span class="status-name">OpenClaw</span><span class="status-val" id="st-openclaw">—</span></li>
+            <li><span class="status-name">Anthropic API</span><span class="status-val" id="st-anthropic">—</span></li>
+            <li><span class="status-name">Chat2API</span><span class="status-val" id="st-chat2api">—</span></li>
+            <li><span class="status-name">Зір (Vision)</span><span class="status-val" id="st-vision">—</span></li>
+            <li><span class="status-name">Дисплей (Display)</span><span class="status-val" id="st-display">—</span></li>
+            <li><span class="status-name">Режим мозку</span><span class="status-val status-mode" id="st-mode">—</span></li>
+            <li><span class="status-name">Живі події</span><span class="dot dot-unknown" id="eventsDot" title="Потік подій /api/events (SSE)"></span></li>
+          </ul>
+        </section>
+      </div>
+    </section>
+
+    <!-- 4. Сервіси -->
+    <section class="dashboard-panel" data-panel="services">
+      <div class="dashboard-grid services-grid">
+        <section class="panel area-services">
+          <h2 class="panel-title">Сервіси</h2>
+          <div class="service-row">
+            <div class="service-info">
+              <span class="dot dot-unknown" id="svcDot-vision"></span>
+              <span class="service-name">Vision (зір)</span>
+              <span class="service-state" id="svcState-vision">—</span>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-small" data-svc="vision" data-action="start">Старт</button>
+              <button class="btn btn-small btn-danger" data-svc="vision" data-action="stop">Стоп</button>
+            </div>
+          </div>
+          <div class="service-row">
+            <div class="service-info">
+              <span class="dot dot-unknown" id="svcDot-display"></span>
+              <span class="service-name">Display (дисплей)</span>
+              <span class="service-state" id="svcState-display">—</span>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-small" data-svc="display" data-action="start">Старт</button>
+              <button class="btn btn-small btn-danger" data-svc="display" data-action="stop">Стоп</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- 5. Логи -->
+    <section class="dashboard-panel" data-panel="logs">
+      <section class="panel area-console">
+        <div class="panel-head">
+          <h2 class="panel-title">Консоль</h2>
+          <div class="console-controls">
+            <label class="console-auto"><input type="checkbox" id="consoleAutoscroll" checked> автоскрол</label>
+            <button class="btn btn-small" id="consoleClear">Очистити</button>
+          </div>
+        </div>
+        <div class="console-log" id="consoleLog"></div>
+      </section>
+    </section>
+
+  </main>
+
+  <!-- Майстер першого налаштування -->
+  <div class="wizard-overlay hidden" id="wizardOverlay">
+    <div class="wizard">
+      <aside class="wizard-rail">
+        <div class="wizard-brand">▞▚ НАЛАШТУВАННЯ</div>
+        <ol class="wizard-stepper" id="wizardStepper">
+          <li data-step="1"><span class="wz-num">1</span><span class="wz-ico">👤</span><span class="wz-label">Особистість</span></li>
+          <li data-step="2"><span class="wz-num">2</span><span class="wz-ico">🎚️</span><span class="wz-label">Стиль</span></li>
+          <li data-step="3"><span class="wz-num">3</span><span class="wz-ico">🧠</span><span class="wz-label">Мозок і ключі</span></li>
+          <li data-step="4"><span class="wz-num">4</span><span class="wz-ico">🧩</span><span class="wz-label">Уміння</span></li>
+          <li data-step="5"><span class="wz-num">5</span><span class="wz-ico">🔌</span><span class="wz-label">Сервіси</span></li>
+          <li data-step="6"><span class="wz-num">6</span><span class="wz-ico">✅</span><span class="wz-label">Готово</span></li>
+        </ol>
+      </aside>
+
+      <section class="wizard-main">
+        <button class="wizard-close" id="wizardClose" title="Закрити">✕</button>
+        <div class="wizard-body">
+
+          <div class="wizard-step" data-step="1">
+            <h2 class="wz-step-title">👤 Особистість бота</h2>
+            <p class="wizard-lead">Як звати бота, якою мовою й з яким характером він говорить.</p>
+            <label class="wz-field">Ім'я
+              <input type="text" id="wzName" maxlength="60" placeholder="Клод Бот" autocomplete="off">
+            </label>
+            <div class="wz-field">Мова відповідей
+              <div class="wz-cards wz-cards-sm" id="wzLangCards"></div>
+            </div>
+            <div class="wz-field">Характер
+              <div class="wz-cards" id="wzPersonaCards"></div>
+            </div>
+            <label class="wz-field">…або опиши характер своїми словами
+              <textarea id="wzPersonaCustom" maxlength="400" rows="2" placeholder="напр. дотепний, трохи саркастичний, любить котів"></textarea>
+            </label>
+          </div>
+
+          <div class="wizard-step hidden" data-step="2">
+            <h2 class="wz-step-title">🎚️ Стиль спілкування</h2>
+            <p class="wizard-lead">Ці параметри реально йдуть у промпт і змінюють відповіді.</p>
+            <div class="wz-field">Довжина відповідей
+              <div class="wz-seg" id="wzLenSeg"></div>
+            </div>
+            <div class="wz-toggle-row">
+              <label class="wz-toggle"><input type="checkbox" id="wzEmoji"><span class="wz-switch"></span>
+                <span>Вживати емодзі 😊</span></label>
+            </div>
+            <div class="wz-toggle-row">
+              <label class="wz-toggle"><input type="checkbox" id="wzSpont"><span class="wz-switch"></span>
+                <span>Спонтанні емоції у простої 🦀</span></label>
+            </div>
+            <label class="wz-field">Стартове привітання (необов'язково)
+              <input type="text" id="wzGreeting" maxlength="300" placeholder="напр. Привіт! Радий тебе бачити 👋" autocomplete="off">
+            </label>
+          </div>
+
+          <div class="wizard-step hidden" data-step="3">
+            <h2 class="wz-step-title">🧠 Мозок і ключі</h2>
+            <p class="wizard-lead">Модель, секретні ключі й жива перевірка звʼязку.</p>
+            <label class="wz-field">Модель за замовчуванням
+              <select id="wzModel"></select>
+            </label>
+            <label class="wz-field">Omni API-ключ <span class="wz-keystate" id="wzOmniState"></span>
+              <input type="password" id="wzOmniKey" maxlength="300" placeholder="лишити порожнім — не міняти" autocomplete="off">
+            </label>
+            <label class="wz-field">OpenClaw токен <span class="wz-keystate" id="wzOcState"></span>
+              <input type="password" id="wzOcToken" maxlength="300" placeholder="лишити порожнім — не міняти" autocomplete="off">
+            </label>
+            <div class="wz-testrow">
+              <button class="btn btn-small" id="wzTestBtn">⚡ Перевірити звʼязок</button>
+              <span class="wz-test-result" id="wzTestResult"></span>
+            </div>
+            <p class="wz-hint">Ключі зберігаються локально у .env (не у фронтенд). Перевірка робить реальний запит до мозку.</p>
+          </div>
+
+          <div class="wizard-step hidden" data-step="4">
+            <h2 class="wz-step-title">🧩 Уміння (MCP-сервери)</h2>
+            <p class="wizard-lead">Обери пресет або вмикай окремо — додається в OpenClaw.</p>
+            <div class="wz-presets" id="wzPresets"></div>
+            <div class="wz-mcp-list" id="wzMcpList">Завантаження…</div>
+            <p class="wz-hint" id="wzSkillsNote"></p>
+          </div>
+
+          <div class="wizard-step hidden" data-step="5">
+            <h2 class="wz-step-title">🔌 Сервіси тіла</h2>
+            <p class="wizard-lead">Локальні сервіси. Запусти, що треба (можна й пізніше в панелі «Сервіси»).</p>
+            <div class="wz-svc" data-svc="vision">
+              <div class="wz-svc-info">
+                <div class="wz-svc-name">👁 Vision (зір)</div>
+                <div class="wz-svc-desc">Камера: детекція обличчя й руху (порт 8000).</div>
+                <div class="wz-mcp-state" id="wzSvcState-vision"></div>
+              </div>
+              <button class="btn btn-small" data-wzsvc="vision">Запустити</button>
+            </div>
+            <div class="wz-svc" data-svc="display">
+              <div class="wz-svc-info">
+                <div class="wz-svc-name">🖥 Display (дисплей)</div>
+                <div class="wz-svc-desc">Обличчя-екран бота (порт 8001).</div>
+                <div class="wz-mcp-state" id="wzSvcState-display"></div>
+              </div>
+              <button class="btn btn-small" data-wzsvc="display">Запустити</button>
+            </div>
+          </div>
+
+          <div class="wizard-step hidden" data-step="6">
+            <h2 class="wz-step-title">✅ Готово!</h2>
+            <p class="wizard-lead">Підсумок налаштування:</p>
+            <ul class="wz-summary" id="wzSummary"></ul>
+            <p class="wz-hint">Натисни «Готово», щоб зберегти. Усе можна змінити пізніше через ⚙.</p>
+          </div>
+
+        </div>
+        <div class="wizard-nav">
+          <button class="btn" id="wizardBack">← Назад</button>
+          <span class="wizard-progress" id="wizardProgress"></span>
+          <button class="btn btn-accent" id="wizardNext">Далі →</button>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Голосовий режим -->
+  <div class="voice-overlay hidden" id="voiceOverlay">
+    <div class="voice-modal">
+      <button class="wizard-close" id="voiceClose" title="Вийти з голосового режиму">✕</button>
+      <div class="voice-title">🎙 Голосовий режим</div>
+      <button class="voice-orb" id="voiceOrb" title="Натисни і говори">
+        <span class="voice-orb-icon" id="voiceOrbIcon">🎤</span>
+      </button>
+      <div class="voice-status" id="voiceStatus">Натисни коло і говори…</div>
+      <div class="voice-picker" id="voicePicker" title="Голос краба"></div>
+      <div class="voice-speed" id="voiceSpeed">
+        <span class="voice-speed-label">Швидкість</span>
+        <button type="button" class="voice-pick on" data-rate="1">1×</button>
+        <button type="button" class="voice-pick" data-rate="1.25">1.25×</button>
+        <button type="button" class="voice-pick" data-rate="1.5">1.5×</button>
+        <button type="button" class="voice-pick" data-rate="2">2×</button>
+      </div>
+      <div class="voice-convo" id="voiceConvo"></div>
+      <label class="voice-hands-free">
+        <input type="checkbox" id="voiceHandsFree"> Безперервний режим (слухати одразу після відповіді)
+      </label>
+    </div>
+  </div>
+
+  <!-- Неблокуючі сповіщення -->
+  <div class="toasts" id="toasts"></div>
+
+  <script src="/static/crab.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

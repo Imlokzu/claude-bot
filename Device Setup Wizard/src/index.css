@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+
+@font-face { font-family: 'DM Sans'; font-style: normal; font-weight: 400 700; font-display: swap; src: url('https://static.figma.com/font/DMSans_opsz_wght__1') format('woff2'); }
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('https://static.figma.com/font/DMMono-Regular_1') format('woff2'); }
+@font-face { font-family: 'DM Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('https://static.figma.com/font/DMMono-Medium_1') format('woff2'); }
+
+@theme { --font-sans: 'DM Sans', Arial, sans-serif; --font-mono: 'DM Mono', monospace; }
+:root { color: #3c4d43; background: #dfe7dc; }
+body { min-width: 320px; background: #dfe7dc; }
+button, input { font: inherit; }
+::selection { background: #cddabf; color: #3c4d43; }
