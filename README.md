@@ -1,6 +1,6 @@
 # Клод Бот (Claude Bot)
 
-A DIY personal AI companion. The physical bot will be a **Raspberry Pi 3**
+A DIY personal AI companion for experimenting with a software-first, virtual AI companion before buying hardware. The repository combines vision, voice, display, remote control, setup tooling, and a Virtual Bot control panel around a Raspberry Pi/home-server architecture. The physical bot will be a **Raspberry Pi 3**
 (camera, mic, speaker, SPI touchscreen) talking to a **home i5 server** and the
 **Claude API** as its "personality". The guiding philosophy is **software first,
 hardware later** — every module runs virtually on macOS/Linux today, before any
@@ -14,6 +14,19 @@ hardware is purchased.
 - [`claude-bot-dev-order.md`](claude-bot-dev-order.md) — development order (6 steps)
 - [`HANDOFF.md`](HANDOFF.md) — session handoff, current state, known bugs, next tasks
 - [`AGENTS.md`](AGENTS.md) — rules for AI agents/tools working in this repo
+- [`STATUS.md`](STATUS.md) — оперативний сумарний статус, відомі баги й наступні кроки
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — multi-agent процес, review та evidence
+- [`LICENSE`](LICENSE) — GNU GPL v3
+
+## GitHub metadata
+
+**Description:** DIY personal AI companion robot powered by Claude.
+
+**Recommended topics:** `raspberry-pi`, `claude-ai`, `home-automation`, `diy-robot`.
+
+GitHub repository description and topics are repository settings; after pushing,
+set them in **Settings → General** (or the repository About panel). They are not
+controlled by files in this repository.
 
 ---
 
