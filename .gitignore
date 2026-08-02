@@ -1,0 +1,56 @@
+# ---- Secrets / credentials (NEVER commit) ----
+.env
+.env.*
+*.env
+config.local.*
+**/secrets.*
+*token*
+*.pem
+*.key
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node / JS ----
+node_modules/
+dist/
+build/
+.vite/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# ---- Large model / binary assets ----
+*.onnx
+*.onnx.json
+voices/
+*.webp
+uploads/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ---- Runtime / logs ----
+*.pid
+service_logs/
+brain/logs/
+
+# ---- AI tool / editor internal state (not project source) ----
+.agent/
+.claude/
+.context/
+.postman/

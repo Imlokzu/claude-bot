@@ -1,0 +1,6 @@
+faster-whisper
+sounddevice
+numpy
+pyyaml
+requests
+pyttsx3

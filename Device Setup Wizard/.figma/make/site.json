@@ -1,0 +1,10 @@
+{
+  "description": "Streamline the setup and management of AI-powered robots with an intuitive interface for both PC and mobile, enabling easy configuration and monitoring.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

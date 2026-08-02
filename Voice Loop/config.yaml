@@ -1,0 +1,25 @@
+# Клод Бот — конфіг Voice Loop (Крок 3, підключено до OpenClaw)
+
+openclaw:
+  base_url: http://127.0.0.1:18789   # Gateway OpenClaw (WS+HTTP порт)
+  # Токен беремо з env var OPENCLAW_TOKEN, якщо вона задана — вона має пріоритет
+  # і є рекомендованим місцем для токена. Значення нижче — запасний варіант.
+  token: "1aec295b697fd45575341caa2da7c46083ac94924e0f46ea"   # gateway.auth.token / OPENCLAW_GATEWAY_TOKEN (реальний, з ~/.openclaw/openclaw.json)
+  agent: openclaw/default             # або openclaw/<agentId> для конкретного агента
+
+listening:
+  sample_rate: 16000
+  channels: 1
+  silence_threshold: 500      # RMS-поріг тиші (0-32768 для int16)
+  silence_duration_s: 1.0     # скільки тиші поспіль = кінець фрази
+  max_utterance_s: 15         # аварійний ліміт, щоб не писати вічно
+
+stt:
+  model_size: small           # faster-whisper: tiny/base/small/medium
+  device: cpu
+  compute_type: int8
+  language: uk                 # примусово українська; null = автовизначення
+
+tts:
+  engine: pyttsx3               # тимчасовий MVP (офлайн); згодом ElevenLabs/ChatterboxTTS
+  rate: 175

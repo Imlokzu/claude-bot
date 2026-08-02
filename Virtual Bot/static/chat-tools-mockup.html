@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Клод Бот — тулзи в чаті (мокап)</title>
+  <style>
+    :root {
+      --bg: #F7F5F0;
+      --panel: #FBFAF7;
+      --border: #E4E1D6;
+      --text: #2B2A26;
+      --muted: #83817A;
+      --coral: #C96442;
+      --coral-light: #F3D5C8;
+      --cream: #F5E6D3;
+      --radius: 14px;
+      --shadow: 0 4px 18px rgba(43, 42, 38, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 40px;
+    }
+    h1 { font-size: 22px; margin-bottom: 8px; }
+    p.sub { color: var(--muted); margin: 0 0 30px; }
+
+    .chat {
+      max-width: 900px;
+      margin: 0 auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .header-title { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .header-title .crab { font-size: 18px; }
+    .tool-chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tool-chip {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--cream);
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .tool-chip.active {
+      background: var(--coral);
+      color: #fff;
+      border-color: var(--coral);
+    }
+
+    .messages { padding: 20px; display: flex; flex-direction: column; gap: 18px; }
+    .msg { display: flex; gap: 10px; max-width: 85%; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .msg.bot .avatar { background: var(--coral); color: #fff; }
+    .msg.user .avatar { background: #5A5750; color: #fff; }
+    .bubble {
+      padding: 12px 16px;
+      border-radius: 18px;
+      line-height: 1.5;
+      font-size: 15px;
+      box-shadow: 0 1px 2px rgba(43,42,38,0.04);
+    }
+    .msg.bot .bubble { background: #fff; border: 1px solid var(--border); border-top-left-radius: 4px; }
+    .msg.user .bubble { background: var(--cream); border: 1px solid #EAD5BC; border-top-right-radius: 4px; }
+
+    .tool-card {
+      margin-top: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #fff;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .tool-card-header {
+      padding: 10px 14px;
+      background: var(--cream);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+    }
+    .tool-card-body { padding: 14px; }
+
+    .weather-main {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+    .weather-temp { font-size: 48px; font-weight: 300; letter-spacing: -1px; }
+    .weather-desc { color: var(--muted); font-size: 14px; }
+    .weather-meta {
+      display: flex;
+      gap: 16px;
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .weather-meta span { display: flex; align-items: center; gap: 4px; }
+    .forecast {
+      display: flex;
+      gap: 10px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+      overflow-x: auto;
+    }
+    .forecast-day {
+      min-width: 62px;
+      text-align: center;
+      font-size: 12px;
+    }
+    .forecast-day .d { color: var(--muted); margin-bottom: 4px; }
+    .forecast-day .t { font-weight: 600; }
+
+    .news-list { display: flex; flex-direction: column; gap: 10px; }
+    .news-item {
+      display: flex;
+      gap: 12px;
+      padding: 10px;
+      border-radius: 10px;
+      background: var(--bg);
+      align-items: flex-start;
+    }
+    .news-thumb {
+      width: 60px;
+      height: 44px;
+      border-radius: 8px;
+      background: #ddd;
+      flex-shrink: 0;
+      display: grid;
+      place-items: center;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .news-title { font-weight: 600; font-size: 14px; }
+    .news-source { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .currency-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+    }
+    .currency-row .arrow { color: var(--muted); }
+    .currency-rate { font-weight: 700; font-size: 24px; }
+    .currency-note { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+    .sports-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 16px;
+    }
+    .team { display: flex; align-items: center; gap: 8px; }
+    .score { font-weight: 700; font-size: 22px; }
+    .status { font-size: 12px; color: var(--muted); text-align: center; }
+
+    .tool-thinking {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--muted);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+    }
+    .dots { display: flex; gap: 4px; }
+    .dots i {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--coral);
+      animation: bounce 1.4s infinite ease-in-out;
+    }
+    .dots i:nth-child(2) { animation-delay: 0.2s; }
+    .dots i:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes bounce {
+      0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+      40% { transform: scale(1); opacity: 1; }
+    }
+
+    .input-area {
+      padding: 12px 18px 18px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .input-area input {
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 15px;
+      outline: none;
+    }
+    .btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--cream);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      font-size: 18px;
+    }
+    .btn.send { background: var(--coral); color: #fff; border-color: var(--coral); }
+  </style>
+</head>
+<body>
+  <h1>🦀 Клод Бот — тулзи в чаті</h1>
+  <p class="sub">Мокап інтерфейсу: бот викликає публічні API й показує результат карткою в розмові.</p>
+
+  <div class="chat">
+    <div class="header">
+      <div class="header-title"><span class="crab">🦀</span> Чат із Клодом Ботом</div>
+      <div class="tool-chips">
+        <span class="tool-chip active">🌤 Погода</span>
+        <span class="tool-chip">💱 Курси</span>
+        <span class="tool-chip">📰 Новини</span>
+        <span class="tool-chip">⚽ Спорт</span>
+        <span class="tool-chip">📚 Факти</span>
+      </div>
+    </div>
+
+    <div class="messages">
+      <div class="msg user">
+        <div class="avatar">Ти</div>
+        <div class="bubble">Яка погода в Берліні зараз?</div>
+      </div>
+
+      <div class="msg bot">
+        <div class="avatar">🦀</div>
+        <div class="bubble">
+          <div class="tool-thinking">
+            <span>🌤</span>
+            <span>Дізнаюсь погоду в Берліні…</span>
+            <div class="dots"><i></i><i></i><i></i></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg bot">
+        <div class="avatar">🦀</div>
+        <div class="bubble">
+          Зараз у Берліні сонячно, +24 °C. Вітер легенький — гарний день на прогулянку 🦀
+          <div class="tool-card">
+            <div class="tool-card-header"><span>🌤</span> Погода в Берліні</div>
+            <div class="tool-card-body">
+              <div class="weather-main">
+                <div class="weather-temp">24°</div>
+                <div>
+                  <div style="font-size: 18px; font-weight: 600;">☀️ Сонячно</div>
+                  <div class="weather-desc">Відчувається як 26°</div>
+                </div>
+              </div>
+              <div class="weather-meta">
+                <span>💧 42%</span>
+                <span>💨 14 км/год</span>
+                <span>👁 10 км</span>
+              </div>
+              <div class="forecast">
+                <div class="forecast-day"><div class="d">Сб</div><div>☀️</div><div class="t">25°</div></div>
+                <div class="forecast-day"><div class="d">Нд</div><div>⛅</div><div class="t">22°</div></div>
+                <div class="forecast-day"><div class="d">Пн</div><div>🌧</div><div class="t">19°</div></div>
+                <div class="forecast-day"><div class="d">Вт</div><div>⛅</div><div class="t">21°</div></div>
+                <div class="forecast-day"><div class="d">Ср</div><div>☀️</div><div class="t">24°</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg user">
+        <div class="avatar">Ти</div>
+        <div class="bubble">А скільки зараз долар? І що нового в світі?</div>
+      </div>
+
+      <div class="msg bot">
+        <div class="avatar">🦀</div>
+        <div class="bubble">
+          Долар сьогодні коштує 41.25 грн. Ось свіжі новини:
+          <div class="tool-card">
+            <div class="tool-card-header"><span>💱</span> Курс USD/UAH</div>
+            <div class="tool-card-body">
+              <div class="currency-row">
+                <span>🇺🇸 1 USD</span>
+                <span class="arrow">→</span>
+                <span>🇺🇦 41.25 UAH</span>
+              </div>
+              <div class="currency-rate">41.25 ₴</div>
+              <div class="currency-note">Оновлено: сьогодні 14:30 · джерело: Frankfurter</div>
+            </div>
+          </div>
+          <div class="tool-card">
+            <div class="tool-card-header"><span>📰</span> Головні новини</div>
+            <div class="tool-card-body">
+              <div class="news-list">
+                <div class="news-item">
+                  <div class="news-thumb">📰</div>
+                  <div>
+                    <div class="news-title">SpaceX успішно запустила чергову місію Starlink</div>
+                    <div class="news-source">BBC News · 2 години тому</div>
+                  </div>
+                </div>
+                <div class="news-item">
+                  <div class="news-thumb">📰</div>
+                  <div>
+                    <div class="news-title">Україна отримала новий пакет підтримки від ЄС</div>
+                    <div class="news-source">Українська правда · 4 години тому</div>
+                  </div>
+                </div>
+                <div class="news-item">
+                  <div class="news-thumb">📰</div>
+                  <div>
+                    <div class="news-title">Apple анонсувала дату осінньої презентації</div>
+                    <div class="news-source">The Verge · 5 годин тому</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="msg user">
+        <div class="avatar">Ти</div>
+        <div class="bubble">Результат футбольного матчу Динамо Київ</div>
+      </div>
+
+      <div class="msg bot">
+        <div class="avatar">🦀</div>
+        <div class="bubble">
+          Останній матч Динамо Київ:
+          <div class="tool-card">
+            <div class="tool-card-header"><span>⚽</span> Футбол · Українська Прем'єр-ліга</div>
+            <div class="tool-card-body">
+              <div class="sports-row">
+                <div class="team">🇺🇦 Динамо Київ</div>
+                <div class="score">2 : 1</div>
+                <div class="team">Шахтар 🇺🇦</div>
+              </div>
+              <div class="status">Завершено · 12 хвилин тому</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <button class="btn">+</button>
+      <input type="text" placeholder="Повідомлення для бота…" value="" />
+      <button class="btn send">➜</button>
+    </div>
+  </div>
+
+  <div style="max-width: 900px; margin: 30px auto 0; color: var(--muted); font-size: 13px;">
+    <p>Запропоновані API для першої фази:</p>
+    <ul>
+      <li>🌤 <strong>Погода:</strong> Open-Meteo — без ключа, глобальний прогноз.</li>
+      <li>🗺 <strong>Геокодування міст:</strong> Nominatim (OpenStreetMap) — без ключа, потрібен User-Agent.</li>
+      <li>💱 <strong>Курси валют:</strong> Frankfurter (ECB) — без ключа, євро/долар/гривня.</li>
+      <li>📰 <strong>Новини:</strong> Noozra — без ключа, 200+ RSS-джерел.</li>
+      <li>⚽ <strong>Спорт:</strong> SportScore — без ключа, футбол/баскетбол/крикет/теніс.</li>
+      <li>📚 <strong>Факти:</strong> Wikipedia REST API — без ключа.</li>
+    </ul>
+    <p>Наступні фази: crypto, flights, перевірка IP/країни, свята, цитати.</p>
+  </div>
+</body>
+</html>

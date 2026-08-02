@@ -1,0 +1,11 @@
+{
+  "configured": true,
+  "name": "Клод Бот",
+  "language": "uk",
+  "persona": "friendly",
+  "persona_custom": "",
+  "greeting": "",
+  "reply_length": "medium",
+  "use_emoji": true,
+  "spontaneous": true
+}
