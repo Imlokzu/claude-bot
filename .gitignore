@@ -49,6 +49,9 @@ Thumbs.db
 service_logs/
 brain/logs/
 
+# ---- Pi subagent runtime artifacts ----
+.pi-subagents/
+
 # ---- AI tool / editor internal state (not project source) ----
 .agent/
 .claude/
