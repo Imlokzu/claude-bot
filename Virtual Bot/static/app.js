@@ -98,6 +98,25 @@ function postJSON(path, body) {
 const crab = new PixelCrab($("crabCanvas"), $("faceLabel"), $("faceScreen"));
 // Для ручних тестів у консолі: window.crab.showDefeat() тощо
 window.crab = crab;
+
+/* Живий рівень звуку → анімація краба (lip-sync).
+   Коли тег <audio> грає озвучку — краб рухається в ритм голосу,
+   коли слухаємо мікрофон — реагує на голос користувача. */
+const levelMeter = window.AudioLevelMeter
+  ? new window.AudioLevelMeter((lvl) => crab.setAudioLevel(lvl))
+  : null;
+
+/* Підвести вимірювання до елемента озвучки (безпечно без метра) */
+function meterAttach(audioEl) {
+  if (levelMeter) levelMeter.attachElement(audioEl);
+}
+function meterAttachStream(stream) {
+  if (levelMeter) levelMeter.attachStream(stream);
+}
+function meterDetach() {
+  if (levelMeter) levelMeter.detach();
+  crab.setAudioLevel(null); // немає звуку → базова анімація
+}
 let idleTimer = null;
 
 /* Повернення до «очікування» через певний час після емоції */
@@ -262,6 +281,7 @@ function speakBrowser(text, emotion) {
 function stopSpeaking() {
   if (currentAudio) { try { currentAudio.pause(); } catch (e) {} currentAudio = null; }
   if (ttsOk) { try { speechSynthesis.cancel(); } catch (e) {} }
+  meterDetach();
 }
 
 /* Озвучити текст ЖИВИМ голосом MiMo (через /api/tts), з відкотом на браузерний.
@@ -284,13 +304,15 @@ async function speakText(text, emotion) {
     applyRate(audio);
     currentAudio = audio;
     if ($("emotionTest").value === "") crab.setEmotion("speaking");
+    meterAttach(audio); // анімація за реальною гучністю голосу
     audio.onended = () => {
       URL.revokeObjectURL(url);
+      meterDetach();
       if (currentAudio === audio) currentAudio = null;
       if ($("emotionTest").value === "") crab.setEmotion(emotion || "idle");
       scheduleIdleReturn();
     };
-    audio.onerror = () => { URL.revokeObjectURL(url); speakBrowser(text, emotion); };
+    audio.onerror = () => { URL.revokeObjectURL(url); meterDetach(); speakBrowser(text, emotion); };
     await audio.play();
   } catch (e) {
     // MiMo недоступний (503/мережа) — відкат на браузерний голос
@@ -831,7 +853,12 @@ $("consoleClear")?.addEventListener("click", () => {
       const audio = new Audio(url);
       applyRate(audio);
       vAudio = audio;
-      audio.onended = () => { URL.revokeObjectURL(url); if (vAudio === audio) vAudio = null; };
+      meterAttach(audio);
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        meterDetach();
+        if (vAudio === audio) vAudio = null;
+      };
       audio.play().catch(() => {});
     } catch (e) {}
   }
@@ -889,8 +916,14 @@ $("consoleClear")?.addEventListener("click", () => {
           const audio = new Audio(url);
           applyRate(audio);
           vAudio = audio;
-          audio.onended = () => { URL.revokeObjectURL(url); if (vAudio === audio) vAudio = null; resolve(); };
-          audio.onerror = () => { URL.revokeObjectURL(url); useBrowser(); };
+          meterAttach(audio); // lip-sync у голосовому режимі
+          audio.onended = () => {
+            URL.revokeObjectURL(url);
+            meterDetach();
+            if (vAudio === audio) vAudio = null;
+            resolve();
+          };
+          audio.onerror = () => { URL.revokeObjectURL(url); meterDetach(); useBrowser(); };
           audio.play().catch(() => useBrowser());
         })
         .catch(useBrowser);
@@ -900,6 +933,7 @@ $("consoleClear")?.addEventListener("click", () => {
   function stopAudio() {
     if (vAudio) { try { vAudio.pause(); } catch (e) {} vAudio = null; }
     if (ttsOk) { try { speechSynthesis.cancel(); } catch (e) {} }
+    meterDetach();
   }
 
   /* Один хід: транскрипція вже показана → шлемо боту → відповідь + озвучка */
@@ -947,6 +981,7 @@ $("consoleClear")?.addEventListener("click", () => {
 
   function cleanupRecording() {
     if (volRAF) { cancelAnimationFrame(volRAF); volRAF = 0; }
+    meterDetach();
     orb.style.transform = "";
     if (audioCtx) { try { audioCtx.close(); } catch (e) {} audioCtx = null; analyser = null; }
     if (mediaStream) { mediaStream.getTracks().forEach((t) => t.stop()); mediaStream = null; }
@@ -984,6 +1019,8 @@ $("consoleClear")?.addEventListener("click", () => {
       analyser.fftSize = 1024;
       src.connect(analyser);
     } catch (e) { analyser = null; }
+    // Той самий мікрофон живить анімацію краба: він реагує на голос користувача
+    meterAttachStream(mediaStream);
 
     recChunks = [];
     const mime = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
