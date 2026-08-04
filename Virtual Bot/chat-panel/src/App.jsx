@@ -11,6 +11,20 @@ import {
   UpOutlined,
 } from '@ant-design/icons';
 import { XMarkdown } from '@ant-design/x-markdown';
+import BlurTypingInput from './BlurTypingInput.jsx';
+
+/* Налаштування появи тексту під час стрімінгу відповіді бота:
+   кожен новий фрагмент проявляється з блюру (див. .x-markdown span у styles.css),
+   плюс миготливий «хвіст» ▋ на місці курсора, поки чанки ще йдуть. */
+const STREAM_ANIMATION = {
+  enableAnimation: true,
+  animationConfig: { fadeDuration: 320, easing: 'cubic-bezier(0.22, 0.61, 0.36, 1)' },
+  tail: true,
+};
+
+/* Той самий ефект, але для вже завершеної відповіді: анімації немає,
+   інакше готовий текст «блимав» би при кожному ре-рендері. */
+const STREAM_DONE = { hasNextChunk: false };
 
 const api = async (path, options = {}) => {
   const res = await fetch(path, options);
@@ -435,11 +449,22 @@ function App() {
           toolResults,
           toolSteps: msg.toolSteps || [],
           mode: msg.mode || '',
+          /* Увага: Bubble НЕ передає `info.streaming` (у його API є лише
+             status/key/extraInfo), тому беремо ознаку стрімінгу з власного
+             стану повідомлення (msg.streaming), який ставить updateBotMessage. */
           contentRender:
             msg.role === 'ai'
-              ? (content, info) => (
-                  <div className="markdown-body">
-                    <XMarkdown streaming={info?.streaming}>{content}</XMarkdown>
+              ? (content) => (
+                  <div className={`markdown-body${msg.streaming ? ' is-streaming' : ''}`}>
+                    <XMarkdown
+                      streaming={
+                        msg.streaming
+                          ? { ...STREAM_ANIMATION, hasNextChunk: true }
+                          : STREAM_DONE
+                      }
+                    >
+                      {content}
+                    </XMarkdown>
                     {toolResults.map((tr) => (
                       <ToolCard
                         key={`${tr.tool}-${JSON.stringify(tr.input || {})}`}
@@ -526,11 +551,22 @@ function App() {
           </div>
         );
       },
-      contentRender: (content, info) => (
-        <div className="markdown-body">
-          <XMarkdown streaming={info?.streaming}>{content}</XMarkdown>
-        </div>
-      ),
+      /* Фолбек на рівні ролі: стан стрімінгу беремо з items за ключем бабла. */
+      contentRender: (content, info) => {
+        const item = items.find((it) => String(it.key) === String(info?.key));
+        const isStreaming = !!item?.streaming;
+        return (
+          <div className={`markdown-body${isStreaming ? ' is-streaming' : ''}`}>
+            <XMarkdown
+              streaming={
+                isStreaming ? { ...STREAM_ANIMATION, hasNextChunk: true } : STREAM_DONE
+              }
+            >
+              {content}
+            </XMarkdown>
+          </div>
+        );
+      },
     },
   };
 
@@ -612,6 +648,7 @@ function App() {
           loading={loading}
           placeholder="Повідомлення для бота…"
           allowSpeech={false}
+          components={{ input: BlurTypingInput }}
           prefix={
             <Button
               type="text"
