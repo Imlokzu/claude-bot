@@ -219,6 +219,13 @@ class PixelCrab {
 
     this.particles = []; // сердечка та «z»
 
+    // Живий рівень звуку 0..1 (див. audio-level.js). Керує lip-sync:
+    // під час speaking — гучність озвучки, під час listening — гучність міка.
+    // Якщо метр недоступний, лишається null → анімація падає на синус (як було).
+    this.audioLevel = null;
+    this.audioSmooth = 0;   // згладжений рівень для плавних рухів
+    this.audioPeak = 0;     // «пік» із затуханням — для сплесків на складах
+
     // Один requestAnimationFrame на сторінку; пауза, коли вкладка у фоні
     this._raf = null;
     this._lastTs = null;
@@ -237,6 +244,11 @@ class PixelCrab {
   }
 
   /* ---------- Публічний API ---------- */
+
+  /* Живий рівень звуку 0..1 з AudioLevelMeter; null — рівня немає (fallback на синус) */
+  setAudioLevel(level) {
+    this.audioLevel = level == null ? null : Math.max(0, Math.min(1, level));
+  }
 
   /* Змінює емоцію (невідома емоція → idle); скасовує defeat */
   setEmotion(emotion) {
@@ -362,6 +374,13 @@ class PixelCrab {
   _update(dt) {
     const S = this.S;
     this.t += dt;
+
+    // Згладжування живого рівня: швидка атака, повільне затухання —
+    // так рухи потрапляють у склади, але не «дрижать» на кожному кадрі.
+    const lvl = this.audioLevel == null ? 0 : this.audioLevel;
+    const rate = lvl > this.audioSmooth ? 22 : 7;
+    this.audioSmooth = approach(this.audioSmooth, lvl, rate, dt);
+    this.audioPeak = Math.max(this.audioSmooth, this.audioPeak - dt * 1.8);
 
     // Візуальні цілі кадру (стан їх перезаписує)
     const v = {
@@ -546,10 +565,16 @@ class PixelCrab {
     v.breatheSpeed = 0.7;
   }
 
-  /* listening: стоїть рівно, очі ширші, погляд на глядача */
+  /* listening: стоїть рівно, очі ширші, погляд на глядача.
+     Коли є живий рівень міка — краб реагує на ГОЛОС користувача:
+     трохи нахиляється вперед і розширює очі, коли ти говориш голосніше. */
   _stateListening(dt, v) {
-    v.eyeScaleT = 1.35;
+    const a = this.audioLevel == null ? 0 : this.audioSmooth;
+    v.eyeScaleT = 1.35 + a * 0.25;
     v.lookT = 0;
+    v.bobAmp = this.S * (0.2 + a * 0.15);
+    v.breatheSpeed = 1 + a * 0.5;
+    v.liftT = a * this.S * 0.2;
   }
 
   /* thinking: повільно ходить туди-сюди, погляд убік */
@@ -562,13 +587,31 @@ class PixelCrab {
     v.bubble = "text"; // хмарка думок ЛИШЕ з текстом над головою
   }
 
-  /* speaking: активний bob + жестикуляція клешнями */
+  /* speaking: рухи ЗА ЖИВОЮ гучністю озвучки (lip-sync), а не за синусом.
+     Гучний склад → тіло підскакує, очі трохи ширші, клешні злітають.
+     Пауза між словами → краб «замовкає» і стоїть спокійно.
+     Якщо рівня немає (немає AudioContext) — старе пульсування за таймером. */
   _stateSpeaking(dt, v) {
-    v.breatheSpeed = 1.7;
-    v.bobAmp = this.S * 0.4;
-    this.armPulse += dt;
-    v.arms = this.armPulse % 0.9 < 0.45; // клешні пульсують угору-вниз
-    v.voice = true;                       // голосові хвилі праворуч
+    v.voice = true; // голосові хвилі праворуч
+
+    if (this.audioLevel == null) {
+      // Fallback: як було до lip-sync
+      v.breatheSpeed = 1.7;
+      v.bobAmp = this.S * 0.4;
+      this.armPulse += dt;
+      v.arms = this.armPulse % 0.9 < 0.45;
+      return;
+    }
+
+    const a = this.audioSmooth;              // 0..1 — поточна гучність
+    v.breatheSpeed = 1.1 + a * 1.6;          // голосніше → швидше «дихання»
+    v.bobAmp = this.S * (0.12 + a * 0.55);   // амплітуда підскоку за гучністю
+    v.liftT = a * this.S * 0.35;             // на гучному тягнеться вгору
+    v.eyeScaleT = 1 + a * 0.22;              // очі трохи «відкриваються» на складах
+    v.sxT = 1 + a * 0.05;                    // легкий squash & stretch у ритм мови
+    v.syT = 1 - a * 0.04;
+    v.arms = this.audioPeak > 0.45;          // клешні злітають на акцентах
+    v.blinkAllowed = a < 0.35;               // не моргати посеред гучного складу
   }
 
   /* happy: танець — швидкі кроки вліво-вправо з підстрибуваннями */
@@ -1400,6 +1443,7 @@ class PixelCrab {
   _drawVoice(cx, bodyRowY, S) {
     const ctx = this.ctx;
     const t = this.t;
+    const live = this.audioLevel != null;
     const bars = 5;
     const bw = Math.max(2, Math.round(S * 0.35));
     const gapx = Math.round(S * 0.35);
@@ -1409,7 +1453,17 @@ class PixelCrab {
     const maxH = Math.round(S * 1.5);
     ctx.fillStyle = this.colors.z || "#7dcfff"; // блакитні хвилі
     for (let i = 0; i < bars; i++) {
-      const hh = Math.round((0.25 + 0.75 * Math.abs(Math.sin(t * 6 + i * 0.9))) * maxH);
+      // Живий режим: висота бару = реальна гучність (центральні бари вищі,
+      // як у справжньому візуалізаторі); без метра — старий синус.
+      let k;
+      if (live) {
+        const shape = 1 - Math.abs(i - (bars - 1) / 2) / bars; // 0.6..1
+        const flicker = 0.85 + 0.15 * Math.sin(t * 14 + i * 1.7);
+        k = 0.12 + this.audioSmooth * shape * flicker * 1.25;
+      } else {
+        k = 0.25 + 0.75 * Math.abs(Math.sin(t * 6 + i * 0.9));
+      }
+      const hh = Math.max(1, Math.round(Math.min(1.15, k) * maxH));
       const bx = x0 + i * (bw + gapx);
       ctx.fillRect(bx, midY - hh, bw, hh * 2);
     }
