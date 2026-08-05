@@ -157,14 +157,26 @@ async def _fetch(url: str) -> httpx.Response:
     ) as client:
         for _ in range(MAX_REDIRECTS + 1):
             _check_public(current)
-            resp = await client.get(current)
+            resp = await client.send(client.build_request("GET", current), stream=True)
             if resp.is_redirect:
+                await resp.aclose()
                 location = resp.headers.get("location", "")
                 if not location:
                     return resp
                 current = urljoin(current, location)
                 continue
+            # Тіло читаємо ПОТОКОМ і зупиняємось на ліміті: resp.content
+            # затягнув би весь ресурс у памʼять, і обмеження було б фікцією.
+            chunks: list[bytes] = []
+            size = 0
+            async for chunk in resp.aiter_bytes():
+                chunks.append(chunk)
+                size += len(chunk)
+                if size >= MAX_BYTES:
+                    break
+            await resp.aclose()
             resp._claudebot_url = current  # type: ignore[attr-defined]
+            resp._claudebot_body = b"".join(chunks)[:MAX_BYTES]  # type: ignore[attr-defined]
             return resp
     raise BrowserError("Забагато переадресацій")
 
@@ -201,7 +213,7 @@ async def load(url: str) -> dict:
 
     final_url = getattr(resp, "_claudebot_url", target)
     content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-    body = resp.content[:MAX_BYTES]
+    body = getattr(resp, "_claudebot_body", b"")
 
     if content_type.startswith("text/html") or (not content_type and b"<html" in body[:2048].lower()):
         text = body.decode(resp.encoding or "utf-8", errors="replace")

@@ -23,6 +23,7 @@ import json
 import logging
 import re
 import time
+from pathlib import Path
 
 import httpx
 
@@ -169,7 +170,29 @@ def get_last_successful_brain() -> str | None:
 _last_model: str = ""
 
 
+def _openclaw_agent_model() -> str:
+    """
+    Яка модель насправді стоїть за агентом OpenClaw.
+
+    Шлюз у відповіді пише лише ім'я агента («openclaw/default»), а це нікому
+    нічого не каже. Справжня модель лежить у конфізі OpenClaw — читаємо її
+    звідти й показуємо в панелі; якщо конфіг недоступний, лишається агент.
+    """
+    path = Path.home() / ".openclaw" / "openclaw.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        model = data["agents"]["defaults"]["model"]["primary"]
+    except Exception:  # noqa: BLE001 — конфіг чужого застосунку може змінитись
+        return ""
+    # «omni/opencode-go/minimax-m3» → «minimax-m3»: показуємо саму модель
+    return str(model).split("/")[-1] if model else ""
+
+
 def get_last_model() -> str:
+    if _last_successful_brain == "openclaw":
+        real = _openclaw_agent_model()
+        if real:
+            return f"{real} · OpenClaw"
     return _last_model
 
 
