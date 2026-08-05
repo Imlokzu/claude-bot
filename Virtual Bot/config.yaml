@@ -111,3 +111,4 @@ paths:
   brain_dir: "brain"
   static_dir: "static"
   service_logs_dir: "service_logs"
+  workspace_dir: "workspace"   # робоча тека бота на диску (можна винести куди завгодно)

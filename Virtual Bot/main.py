@@ -25,18 +25,23 @@ import signal
 import subprocess
 import time
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from html import escape as html_escape
+from pathlib import Path
 from threading import Lock
 from typing import Any, Optional
+from urllib.parse import quote
 
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 import app_config as cfg
+import brain_context
 import brains
+import chat_store
 import console_log
 import display_bridge
 import dream_cycle
@@ -50,9 +55,33 @@ import services_manager
 import setup_suggestions
 import tools
 import vision_watcher
+import web_browser
+import workspace
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("virtual_bot")
+
+
+# ---------------------------------------------------------- ізольований brain
+
+def _active_brain(session_id: str | None = None) -> tuple[str, Path]:
+    """Повертає (sid, root) для поточного запиту: ізольований brain користувача."""
+    sid = (session_id or "").strip()
+    if not sid:
+        sid = brain_context.DEFAULT_BRAIN_ID
+    return sid, brain_context.init_user_brain(sid)
+
+
+@contextmanager
+def _brain_context(session_id: str | None = None):
+    """
+    Активує brain користувача для поточного контексту запиту, а заразом і
+    теку сесії в робочій теці бота — щоб тули workspace_* писали в
+    workspace/sessions/<цієї сесії>, а не в чужу.
+    """
+    _sid, root = _active_brain(session_id)
+    with brain_context.set_brain_root(root), workspace.set_session(session_id):
+        yield root
 
 
 # ---------------------------------------------------------- чистий shutdown
@@ -97,12 +126,35 @@ def _install_signal_chain() -> None:
             continue
 
 
+def _recover_all_user_brains() -> None:
+    """Відновити перервані транзакції для всіх відомих brain користувачів."""
+    for brain_id in brain_context.list_user_brain_ids():
+        try:
+            root = brain_context.resolve_user_brain_root(brain_id)
+            with brain_context.set_brain_root(root):
+                dream_cycle.recover_pending_transactions()
+        except Exception:  # noqa: BLE001 — одна пошкоджена папка не має блокувати старт
+            log.exception("Не вдалося відновити brain %s", brain_id)
+
+
+async def _dream_cycle_all_users() -> None:
+    """Scheduled nightly consolidation over every initialized user brain."""
+    for brain_id in brain_context.list_user_brain_ids():
+        try:
+            root = brain_context.resolve_user_brain_root(brain_id)
+            with brain_context.set_brain_root(root):
+                await dream_cycle.dream_cycle()
+        except Exception:  # noqa: BLE001 — ізоляція між користувачами: помилка одного не ламає інших
+            log.exception("Dream cycle failed for brain %s", brain_id)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # На старті лише гарантуємо папку памʼяті; static/ може ще не існувати — це ОК
     cfg.BRAIN_DIR.mkdir(parents=True, exist_ok=True)
+    brain_context.BRAIN_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     # Відновлення має завершитися до запуску фонових задач і прийому API-запитів.
-    dream_cycle.recover_pending_transactions()
+    _recover_all_user_brains()
     # Консоль: перехоплюємо логи застосунку/httpx у фронтенд-панель
     console_log.install()
     # Ланцюжок сигналів: SIGINT/SIGTERM закривають SSE-потоки ще ДО того,
@@ -114,7 +166,7 @@ async def lifespan(_app: FastAPI):
     try:
         scheduler = AsyncIOScheduler()
         scheduler.add_job(
-            dream_cycle.dream_cycle,
+            _dream_cycle_all_users,
             "cron",
             hour=4,
             minute=0,
@@ -157,16 +209,19 @@ class ChatRequest(BaseModel):
 class MemorySaveRequest(BaseModel):
     path: str = Field(min_length=1, max_length=300)
     content: str = Field(max_length=200_000)
+    session_id: str = Field(default="", max_length=64)
 
 
 class BrainDirectoryRequest(BaseModel):
     path: str = Field(min_length=1, max_length=300)
+    session_id: str = Field(default="", max_length=64)
 
 
 class BrainFileRequest(BaseModel):
     path: str = Field(min_length=1, max_length=300)
     content: str = Field(max_length=200_000)
     overwrite: bool = False
+    session_id: str = Field(default="", max_length=64)
 
 
 class TTSRequest(BaseModel):
@@ -275,11 +330,19 @@ async def api_status() -> dict:
 
 @app.get("/api/models")
 def api_models() -> dict:
-    """Кований список моделей Omni + поточний вибір (без секретів)."""
+    """
+    Список моделей + та, якою РЕАЛЬНО відповіли останній раз.
+
+    Панель показувала «Claude Sonnet 5» із кованого списку, хоча відповідав
+    зовсім інший мозок зі своєю моделлю — тому віддаємо ще й active/brain,
+    щоб у шапці було видно правду, а не намір.
+    """
     return {
         "models": cfg.OMNI_MODELS,
         "selected": brains.get_selected_omni_model(),
         "default": cfg.OMNI_DEFAULT_MODEL,
+        "active": brains.get_last_model(),
+        "brain": brains.get_last_successful_brain() or "",
     }
 
 
@@ -455,18 +518,54 @@ def _get_history(sid: str, req_history: list[dict[str, str]]) -> list[dict[str, 
         ][-cfg.CHAT_HISTORY_LIMIT:]
     with _sessions_lock:
         entry = _sessions.get(sid)
-        if entry is None:
-            return []
-        return list(entry[0])[-cfg.CHAT_HISTORY_LIMIT:]
+        if entry is not None:
+            return list(entry[0])[-cfg.CHAT_HISTORY_LIMIT:]
+    # Памʼять процесу порожня (рестарт панелі або TTL) — беремо з диска,
+    # інакше бот забував розмову після кожного перезапуску.
+    return chat_store.history(sid, cfg.CHAT_HISTORY_LIMIT)
 
 
 def _save_history(sid: str, history: list[dict[str, str]], user: str, assistant: str) -> None:
-    """Дописує обмін до історії сесії з обмеженням розміру та TTL."""
+    """Дописує обмін до історії сесії: у памʼять процесу і на диск."""
     history.append({"role": "user", "content": user})
     history.append({"role": "assistant", "content": assistant})
     with _sessions_lock:
         _cleanup_stale_sessions()
         _sessions[sid] = (history[-cfg.CHAT_HISTORY_LIMIT:], time.monotonic())
+    try:
+        chat_store.append(sid, user, assistant)
+    except Exception:  # noqa: BLE001 — збереження історії не має валити відповідь
+        log.exception("Не вдалося зберегти чат на диск")
+
+
+async def _autoname_chat(sid: str, user_message: str, reply: str) -> None:
+    """
+    Просить мозок придумати коротку назву чату після першого обміну.
+
+    Робимо це у фоні й лише один раз на сесію: назва — дрібниця, вона не має
+    ні затримувати відповідь, ні коштувати зайвий виклик на кожне повідомлення.
+    Якщо мозок не відповів — лишається запасна назва з першого повідомлення.
+    """
+    if not chat_store.needs_title(sid):
+        return
+    prompt = (
+        "Придумай коротку назву цієї розмови — 2-4 слова, без лапок, без крапки в кінці, "
+        "тією ж мовою, що й розмова. У відповідь напиши ЛИШЕ назву.\n\n"
+        f"Користувач: {user_message[:400]}\nТи: {reply[:400]}"
+    )
+    try:
+        title, _emotion, _mode, _tools = await asyncio.wait_for(
+            brains.chat(prompt, []), timeout=30
+        )
+    except Exception:  # noqa: BLE001 — назва не варта того, щоб щось ламати
+        log.debug("Не вдалося згенерувати назву чату", exc_info=True)
+        return
+    finally:
+        chat_store.mark_titled(sid)
+    # Мозок любить додати пояснення — беремо лише перший рядок
+    first_line = (title or "").strip().splitlines()[0] if title else ""
+    if first_line:
+        chat_store.set_title(sid, first_line.strip(' "«».'))
 
 
 def _extract_and_save_facts(message: str) -> None:
@@ -492,72 +591,20 @@ async def api_chat(req: ChatRequest):
     except Exception:  # noqa: BLE001 — інтеграція не має права зламати чат
         log.exception("note_interaction не спрацював")
 
-    history = _get_history(sid, req.history)
-    # Зберігаємо факти з цього повідомлення ДО відповіді (незалежно від мозку)
-    await asyncio.to_thread(_extract_and_save_facts, message)
+    with _brain_context(sid):
+        history = _get_history(sid, req.history)
+        # Зберігаємо факти з цього повідомлення ДО відповіді (незалежно від мозку)
+        await asyncio.to_thread(_extract_and_save_facts, message)
 
-    if not req.stream:
-        reply, emotion, mode, tool_results = await brains.chat(message, history)
-        log.info("Чат (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
-        _save_history(sid, history, message, reply)
-
-        # Інтеграційний шар: SSE-подія, міст до дисплея, автожурнал.
-        # Помилка будь-якої з цих дій НЕ ламає відповідь клієнту.
-        try:
-            events.publish_emotion(emotion)
-        except Exception:  # noqa: BLE001
-            log.exception("Не вдалося опублікувати SSE-подію емоції")
-        try:
-            display_bridge.send_chat_exchange_bg(message, reply, emotion)
-        except Exception:  # noqa: BLE001
-            log.exception("Не вдалося запустити відправку на дисплей")
-        try:
-            await asyncio.to_thread(memory.append_chat_log, message, reply, emotion)
-        except Exception:  # noqa: BLE001
-            log.exception("Не вдалося дописати автожурнал")
-
-        return {
-            "reply": reply,
-            "emotion": emotion,
-            "session_id": sid,
-            "mode": mode,
-            "tool_results": tool_results,
-        }
-
-    async def stream_response():
-        event_queue: asyncio.Queue[dict] = asyncio.Queue()
-
-        async def emit(event: dict) -> None:
-            await event_queue.put(event)
-
-        chat_task = asyncio.create_task(brains.chat(message, history, emit=emit))
-
-        try:
-            # Читаємо події від тулзів, поки чат виконується
-            while not chat_task.done() or not event_queue.empty():
-                try:
-                    event = await asyncio.wait_for(event_queue.get(), timeout=0.1)
-                    yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
-                except asyncio.TimeoutError:
-                    if chat_task.done():
-                        break
-                    continue
-
-            reply, emotion, mode, tool_results = chat_task.result()
-            log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
+        if not req.stream:
+            reply, emotion, mode, tool_results = await brains.chat(message, history)
+            log.info("Чат (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
             _save_history(sid, history, message, reply)
+            # Назву чату генеруємо у фоні — відповідь на неї не чекає
+            asyncio.create_task(_autoname_chat(sid, message, reply))
 
-            # Стрімінг: розбиваємо готову відповідь на слова.
-            words = reply.split(" ")
-            for i, word in enumerate(words):
-                chunk = word + (" " if i < len(words) - 1 else "")
-                yield f"event: delta\ndata: {json.dumps({'chunk': chunk})}\n\n"
-                await asyncio.sleep(0.02)
-
-            yield f"event: emotion\ndata: {json.dumps({'emotion': emotion})}\n\n"
-            yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': emotion, 'session_id': sid, 'mode': mode, 'tool_results': tool_results})}\n\n"
-
-            # Інтеграційний шар після стрімінгу
+            # Інтеграційний шар: SSE-подія, міст до дисплея, автожурнал.
+            # Помилка будь-якої з цих дій НЕ ламає відповідь клієнту.
             try:
                 events.publish_emotion(emotion)
             except Exception:  # noqa: BLE001
@@ -570,11 +617,138 @@ async def api_chat(req: ChatRequest):
                 await asyncio.to_thread(memory.append_chat_log, message, reply, emotion)
             except Exception:  # noqa: BLE001
                 log.exception("Не вдалося дописати автожурнал")
-        except Exception as exc:  # noqa: BLE001
-            log.exception("Помилка стрімінгу чату")
-            yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+
+            return {
+                "reply": reply,
+                "emotion": emotion,
+                "session_id": sid,
+                "mode": mode,
+                "model": brains.get_last_model(),
+                "tool_results": tool_results,
+            }
+
+    async def stream_response():
+        # Стрімінг виконується в окремому життєвому циклі запиту: перевстановлюємо
+        # ізольований brain користувача, бо ContextVar у FastAPI-генераторі може
+        # не успадковуватися автоматично.
+        with _brain_context(sid):
+            event_queue: asyncio.Queue[dict] = asyncio.Queue()
+
+            # Скільки тексту вже віддали СПРАВЖНІМ стрімом токенів (brains шле delta).
+            # Якщо мозок стрімить — НЕ ріжемо готову відповідь на слова вдруге.
+            streamed = {"text": ""}
+            # Тег [емоція:…] моделі не має світитись у чаті: ріжемо його прямо в
+            # потоці, а знайдену емоцію показуємо на обличчі ОДРАЗУ, а не в кінці.
+            tag_filter = emotions.StreamTagFilter()
+
+            async def emit(event: dict) -> None:
+                if event.get("type") == "delta":
+                    visible, found = tag_filter.feed(event.get("chunk") or "")
+                    if found:
+                        try:
+                            events.publish_emotion(found)
+                        except Exception:  # noqa: BLE001 — обличчя не має валити чат
+                            log.exception("Не вдалося опублікувати ранню емоцію")
+                        await event_queue.put({"type": "emotion", "emotion": found})
+                    if not streamed["text"]:
+                        # Після вирізаного тега лишається пробіл на початку —
+                        # у фінальній відповіді його немає (extract_emotion робить
+                        # strip), а розбіжність зламала б звірку нижче.
+                        visible = visible.lstrip()
+                    if not visible:
+                        return  # чанк був цілком тегом (або чекає в буфері)
+                    streamed["text"] += visible
+                    event = {**event, "chunk": visible}
+                await event_queue.put(event)
+
+            chat_task = asyncio.create_task(brains.chat(message, history, emit=emit))
+
+            try:
+                # Читаємо події від тулзів, поки чат виконується
+                while not chat_task.done() or not event_queue.empty():
+                    try:
+                        event = await asyncio.wait_for(event_queue.get(), timeout=0.1)
+                        yield f"event: {event['type']}\ndata: {json.dumps(event)}\n\n"
+                    except asyncio.TimeoutError:
+                        if chat_task.done():
+                            break
+                        continue
+
+                reply, emotion, mode, tool_results = chat_task.result()
+                log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
+                _save_history(sid, history, message, reply)
+                asyncio.create_task(_autoname_chat(sid, message, reply))
+
+                # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом)
+                tail = tag_filter.flush()
+                if tail:
+                    streamed["text"] += tail
+                    yield f"event: delta\ndata: {json.dumps({'chunk': tail})}\n\n"
+
+                # Якщо мозок віддав токени справжнім стрімом — текст уже на екрані.
+                # Досилаємо лише те, чого бракує (напр. після вирізання тега емоції).
+                already = streamed["text"]
+                if already and reply.startswith(already):
+                    rest = reply[len(already):]
+                    if rest:
+                        yield f"event: delta\ndata: {json.dumps({'chunk': rest})}\n\n"
+                elif already:
+                    # Текст розішовся (напр. вирізано тег емоції всередині) —
+                    # просимо фронтенд замінити текст ціліком (done нижче все одно це зробить).
+                    log.debug("Стрімовий текст відрізняється від фінального — заміню на done")
+                else:
+                    # Мозок не стрімить (демо, тулзи, Anthropic) — імітуємо пословно,
+                    # щоб усе одно було видно появу тексту, а не стіну відразу.
+                    words = reply.split(" ")
+                    for i, word in enumerate(words):
+                        chunk = word + (" " if i < len(words) - 1 else "")
+                        yield f"event: delta\ndata: {json.dumps({'chunk': chunk})}\n\n"
+                        await asyncio.sleep(0.02)
+
+                yield f"event: emotion\ndata: {json.dumps({'emotion': emotion})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': emotion, 'session_id': sid, 'mode': mode, 'model': brains.get_last_model(), 'tool_results': tool_results})}\n\n"
+
+                # Інтеграційний шар після стрімінгу
+                try:
+                    events.publish_emotion(emotion)
+                except Exception:  # noqa: BLE001
+                    log.exception("Не вдалося опублікувати SSE-подію емоції")
+                try:
+                    display_bridge.send_chat_exchange_bg(message, reply, emotion)
+                except Exception:  # noqa: BLE001
+                    log.exception("Не вдалося запустити відправку на дисплей")
+                try:
+                    await asyncio.to_thread(memory.append_chat_log, message, reply, emotion)
+                except Exception:  # noqa: BLE001
+                    log.exception("Не вдалося дописати автожурнал")
+            except Exception as exc:  # noqa: BLE001
+                log.exception("Помилка стрімінгу чату")
+                yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")
+
+
+# ------------------------------------------------------------------ історія чатів
+
+@app.get("/api/sessions")
+def api_sessions_list() -> dict:
+    """Список збережених чатів, найсвіжіші першими."""
+    return {"sessions": chat_store.list_sessions()}
+
+
+@app.get("/api/sessions/{session_id}")
+def api_session_get(session_id: str) -> dict:
+    """Повна розмова: панель відновлює її при поверненні до чату."""
+    if not chat_store.is_valid_id(session_id):
+        raise HTTPException(status_code=400, detail="Некоректний id сесії")
+    return chat_store.load(session_id)
+
+
+@app.delete("/api/sessions/{session_id}")
+def api_session_delete(session_id: str) -> dict:
+    if not chat_store.is_valid_id(session_id):
+        raise HTTPException(status_code=400, detail="Некоректний id сесії")
+    return {"ok": chat_store.delete(session_id)}
 
 
 # ------------------------------------------------------------------ завантаження файлів у чат
@@ -762,12 +936,40 @@ def api_tools_list() -> dict:
 class ToolCallRequest(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     args: dict[str, Any] = Field(default_factory=dict)
+    session_id: str = Field(default="", max_length=64)
+
+
+def _tool_detail(args: dict) -> str:
+    """Найінформативніший аргумент виклику — те, що показуємо в панелі."""
+    for key in ("query", "city", "path", "base"):
+        value = args.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
 
 
 @app.post("/api/tools/call")
 async def api_tools_call(req: ToolCallRequest) -> dict:
-    """Синхронний виклик одного тулзу (для тестування і фронтенду)."""
-    result = await tools.execute_tool(req.name, req.args)
+    """
+    Синхронний виклик одного тулзу. Через цей же ендпоінт ходить зовнішній
+    мозок (OpenClaw → tools_mcp/workspace_mcp), тому шлемо SSE-події: інакше
+    в панелі не було б видно, що бот саме зараз щось шукає чи пише у файл.
+    """
+    detail = _tool_detail(req.args)
+    try:
+        events.publish_tool(req.name, detail, "start")
+    except Exception:  # noqa: BLE001 — індикація не має валити виклик тулзу
+        log.exception("Не вдалося опублікувати подію початку тулзу")
+
+    # Частина тулзів працює з памʼяттю, тому навіть загальний API-виклик не має
+    # права впасти назад у спільний шаблон brain/.
+    with _brain_context(req.session_id):
+        result = await tools.execute_tool(req.name, req.args)
+
+    try:
+        events.publish_tool(req.name, detail, "done")
+    except Exception:  # noqa: BLE001
+        log.exception("Не вдалося опублікувати подію завершення тулзу")
     return {"tool": req.name, "args": req.args, "result": result}
 
 
@@ -805,68 +1007,77 @@ async def api_vision_snapshot():
 # ------------------------------------------------------------------ памʼять
 
 @app.get("/api/memory/list")
-def api_memory_list() -> dict:
-    """Список markdown-нотаток у brain/."""
-    return {"files": memory.list_notes()}
+def api_memory_list(session_id: str = Query(default="", max_length=64)) -> dict:
+    """Список markdown-нотаток у brain/ поточної сесії."""
+    with _brain_context(session_id):
+        return {"files": memory.list_notes()}
 
 
 @app.get("/api/memory/file")
-def api_memory_file(path: str = Query(min_length=1, max_length=300)) -> dict:
+def api_memory_file(
+    path: str = Query(min_length=1, max_length=300),
+    session_id: str = Query(default="", max_length=64),
+) -> dict:
     """Вміст однієї нотатки (шлях відносно brain/, з валідацією)."""
-    try:
-        content = memory.read_note(path)
-    except memory.BrainPathError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Нотатку не знайдено") from exc
+    with _brain_context(session_id):
+        try:
+            content = memory.read_note(path)
+        except memory.BrainPathError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Нотатку не знайдено") from exc
     return {"path": path, "content": content}
 
 
 @app.post("/api/memory/save")
 def api_memory_save(req: MemorySaveRequest) -> dict:
     """Зберігає нотатку в brain/ (тільки .md, без виходу за межі папки)."""
-    try:
-        memory.save_note(req.path, req.content)
-    except memory.BrainPathError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Не вдалося зберегти: {exc}") from exc
+    with _brain_context(req.session_id):
+        try:
+            memory.save_note(req.path, req.content)
+        except memory.BrainPathError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Не вдалося зберегти: {exc}") from exc
     return {"ok": True, "path": req.path}
 
 
 @app.post("/api/brain/directory")
 def api_brain_directory(req: BrainDirectoryRequest) -> dict:
     """Create a brain-only directory; this is the bot-safe filesystem hook."""
-    try:
-        path = memory.create_brain_directory(req.path)
-    except memory.BrainPathError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Не вдалося створити папку: {exc}") from exc
+    with _brain_context(req.session_id):
+        try:
+            path = memory.create_brain_directory(req.path)
+        except memory.BrainPathError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Не вдалося створити папку: {exc}") from exc
     return {"ok": True, "path": path}
 
 
 @app.post("/api/brain/file")
 def api_brain_file(req: BrainFileRequest) -> dict:
     """Create an atomic .md/.txt brain file (Claude Bot tool/API integration)."""
-    try:
-        path = memory.create_brain_file(req.path, req.content, overwrite=req.overwrite)
-    except memory.BrainPathError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except FileExistsError as exc:
-        raise HTTPException(status_code=409, detail="Файл уже існує; вкажіть overwrite=true") from exc
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Не вдалося створити файл: {exc}") from exc
+    with _brain_context(req.session_id):
+        try:
+            path = memory.create_brain_file(req.path, req.content, overwrite=req.overwrite)
+        except memory.BrainPathError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail="Файл уже існує; вкажіть overwrite=true") from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Не вдалося створити файл: {exc}") from exc
     return {"ok": True, "path": path}
 
 
 @app.post("/api/brain/navigation")
-def api_brain_navigation() -> dict:
-    """Regenerate brain/_navigation.md."""
-    try:
-        memory.regenerate_brain_navigation()
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"Не вдалося оновити навігацію: {exc}") from exc
+def api_brain_navigation(session_id: str = Query(default="", max_length=64)) -> dict:
+    """Regenerate brain/_navigation.md for the current session brain."""
+    with _brain_context(session_id):
+        try:
+            memory.regenerate_brain_navigation()
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Не вдалося оновити навігацію: {exc}") from exc
     return {"ok": True, "path": "_navigation.md"}
 
 
@@ -895,6 +1106,142 @@ def api_service_stop(name: str) -> dict:
     """Зупиняє сервіс, якщо його запустили ми; чужі процеси не чіпає."""
     _service_spec_or_404(name)
     return services_manager.stop_service(name)
+
+
+# ------------------------------------------------------------------ робоча тека бота
+
+class WorkspacePathRequest(BaseModel):
+    path: str = Field(default="", max_length=1024)
+    session_id: str = Field(default="", max_length=64)
+
+
+class WorkspaceWriteRequest(WorkspacePathRequest):
+    content: str = Field(default="", max_length=workspace.MAX_WRITE_BYTES)
+    append: bool = False
+
+
+class WorkspaceRenameRequest(WorkspacePathRequest):
+    new_name: str = Field(min_length=1, max_length=255)
+
+
+# Ім'я функції workspace → назва тулзу для індикації в панелі
+_WORKSPACE_TOOL_NAMES = {
+    "list_dir": "workspace_list",
+    "read_file": "workspace_read",
+    "write_file": "workspace_write",
+    "make_dir": "workspace_mkdir",
+    "delete": "workspace_delete",
+    "rename": "workspace_rename",
+    "info": "workspace_info",
+}
+
+
+def _workspace_call(session_id: str, fn, *args, **kwargs):
+    """
+    Спільна обгортка: активна сесія + переклад помилок у HTTP-коди.
+
+    Заразом шле SSE-подію про тул: цими ж ендпоінтами ходить зовнішній мозок
+    (OpenClaw → workspace_mcp), і без події в панелі не було б видно, що бот
+    щойно щось записав у свою теку.
+    """
+    tool = _WORKSPACE_TOOL_NAMES.get(getattr(fn, "__name__", ""), "workspace")
+    detail = next((a for a in args if isinstance(a, str) and a.strip()), "")
+    try:
+        events.publish_tool(tool, detail, "start")
+    except Exception:  # noqa: BLE001 — індикація не має валити операцію
+        log.exception("Не вдалося опублікувати подію тулзу робочої теки")
+    try:
+        with workspace.set_session(session_id):
+            result = fn(*args, **kwargs)
+            try:
+                events.publish_tool(tool, detail, "done")
+            except Exception:  # noqa: BLE001
+                log.exception("Не вдалося опублікувати завершення тулзу робочої теки")
+            return result
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except (ValueError, FileExistsError, NotADirectoryError, IsADirectoryError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Помилка файлової системи: {type(exc).__name__}")
+
+
+@app.get("/api/workspace/info")
+def api_workspace_info(session_id: str = Query(default="", max_length=64)) -> dict:
+    """Де тека лежить на диску, які розділи, яка тека в цієї сесії."""
+    return _workspace_call(session_id, workspace.info)
+
+
+@app.get("/api/workspace/list")
+def api_workspace_list(
+    path: str = Query(default="", max_length=1024),
+    session_id: str = Query(default="", max_length=64),
+) -> dict:
+    """Вміст однієї теки (дерево вантажиться лінькувато, по кліку)."""
+    return _workspace_call(session_id, workspace.list_dir, path)
+
+
+@app.get("/api/workspace/file")
+def api_workspace_file(
+    path: str = Query(min_length=1, max_length=1024),
+    session_id: str = Query(default="", max_length=64),
+) -> dict:
+    """Вміст файлу для вбудованого редактора."""
+    return _workspace_call(session_id, workspace.read_file, path)
+
+
+@app.post("/api/workspace/file")
+def api_workspace_save(req: WorkspaceWriteRequest) -> dict:
+    return _workspace_call(req.session_id, workspace.write_file, req.path, req.content, append=req.append)
+
+
+@app.post("/api/workspace/mkdir")
+def api_workspace_mkdir(req: WorkspacePathRequest) -> dict:
+    return _workspace_call(req.session_id, workspace.make_dir, req.path)
+
+
+@app.post("/api/workspace/delete")
+def api_workspace_delete(req: WorkspacePathRequest) -> dict:
+    """Видалення = переїзд у .trash/, назавжди нічого не стирається."""
+    return _workspace_call(req.session_id, workspace.delete, req.path)
+
+
+@app.post("/api/workspace/rename")
+def api_workspace_rename(req: WorkspaceRenameRequest) -> dict:
+    return _workspace_call(req.session_id, workspace.rename, req.path, req.new_name)
+
+
+# ------------------------------------------------------------------ вбудований браузер
+
+@app.get("/api/browser/page", include_in_schema=False)
+async def api_browser_page(url: str = Query(min_length=1, max_length=2048)):
+    """
+    Сторінка для <iframe> вбудованого браузера. Сторінку тягне сервер, бо
+    напряму більшість сайтів вбудовуватись забороняє (X-Frame-Options/CSP).
+    """
+    try:
+        # Не адреса, а запит → малюємо власну сторінку результатів
+        # (пошуковики віддають проксі капчу, а не видачу).
+        if not web_browser.looks_like_url(url):
+            return HTMLResponse(await web_browser.search_page(url))
+        page = await web_browser.load(url)
+    except web_browser.BrowserError as exc:
+        return HTMLResponse(
+            f"<!doctype html><meta charset='utf-8'>"
+            f"<body style=\"font:14px -apple-system,sans-serif;padding:24px;color:#2B2A26\">"
+            f"<b>Не вдалося відкрити</b><br>{html_escape(str(exc))}</body>",
+            status_code=200,
+        )
+
+    if page["kind"] == "html":
+        return HTMLResponse(
+            page["html"],
+            headers={
+                "X-Claudebot-Url": quote(page["url"], safe=""),
+                "X-Claudebot-Title": quote(page.get("title") or "", safe=""),
+            },
+        )
+    return Response(content=page["content"], media_type=page["content_type"])
 
 
 # ------------------------------------------------------------------ роздача завантажених файлів

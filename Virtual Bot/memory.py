@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Iterator, Optional
 from urllib.parse import quote, unquote, urlsplit
 
-from app_config import BRAIN_DIR
+from brain_context import BRAIN_DIR, get_active_brain_root
 
 # Максимум символів однієї нотатки, що йде в системний промпт
 _NOTE_SNIPPET_LIMIT = 1500
@@ -57,14 +57,14 @@ class BrainWriteError(OSError):
 
 
 def _ensure_brain_dir() -> Path:
-    root = BRAIN_DIR
+    root = get_active_brain_root()
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()
 
 
 def try_acquire_brain_mutation_lock(root: Optional[Path] = None) -> Optional[BinaryIO]:
     """Try once to acquire the brain lock, returning immediately on contention."""
-    lock_root = (root or BRAIN_DIR).resolve()
+    lock_root = (root or get_active_brain_root()).resolve()
     lock_root.mkdir(parents=True, exist_ok=True)
     handle = open(lock_root / ".brain_mutation.lock", "a+b")
     try:

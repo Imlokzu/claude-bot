@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { memoryRequestPath } from '../session'
 
 const CATEGORIES = [
   { key: 'people', label: 'Люди' },
@@ -60,7 +61,9 @@ function MemoryMap({ onSelect }) {
     async function load() {
       const results = await Promise.all(CATEGORIES.map(async (cat) => {
         try {
-          const res = await fetch(`/api/memory/file?path=${cat.key}/_index.md`, {
+          const res = await fetch(`/api${memoryRequestPath('/memory/file', {
+            path: `${cat.key}/_index.md`
+          })}`, {
             signal: controller.signal
           })
           if (!res.ok) {

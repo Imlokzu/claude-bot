@@ -481,7 +481,35 @@ const ACTIVITY_TEXT = {
 const activityChip = $("activityChip");
 const activityText = $("activityText");
 
+/* Тули, які виконує ЗОВНІШНІЙ мозок (OpenClaw через tools_mcp/workspace_mcp),
+   не проходять через стрім чату — тому показуємо їх у чіпі активності, щоб
+   було видно, що бот саме зараз шукає чи пише у файл. */
+const TOOL_LABELS = {
+  web_search: "шукає в інтернеті",
+  facts: "дивиться у Вікіпедії",
+  weather: "дивиться погоду",
+  currency: "дивиться курс",
+  workspace_read: "читає файл",
+  workspace_write: "пише файл",
+  workspace_list: "дивиться теку",
+  workspace_mkdir: "створює теку",
+  workspace_delete: "прибирає файл",
+  workspace_info: "дивиться робочу теку",
+};
+
+let toolActivityUntil = 0;
+
+function showToolActivity(ev) {
+  const label = TOOL_LABELS[ev.tool] || ev.tool;
+  const detail = typeof ev.detail === "string" && ev.detail ? ": " + ev.detail : "";
+  activityText.textContent = label + detail;
+  activityChip.classList.remove("hidden");
+  // «done» лишаємо на секунду видимим, щоб короткий виклик не блимнув повз очі
+  toolActivityUntil = Date.now() + (ev.state === "done" ? 1200 : 20000);
+}
+
 function updateActivity() {
+  if (Date.now() < toolActivityUntil) return; // тул важливіший за емоцію
   const txt = ACTIVITY_TEXT[crab.emotion];
   if (txt) {
     if (activityText.textContent !== txt) activityText.textContent = txt;
@@ -609,7 +637,7 @@ async function refreshStatus() {
 
     const modeName = MODE_NAMES[s.mode] || s.mode || "—";
     $("st-mode").textContent = modeName;
-    $("modeBadge").textContent = "МОЗОК: " + modeName.toUpperCase();
+    // Бейдж мозку лишили прихованим у шапці: реальну модель показує сам чат
 
     // Автозапуск потоку зору, якщо Vision онлайн (не раніше ніж 10 с після збою)
     if (
@@ -631,7 +659,7 @@ async function refreshStatus() {
       setStatusVal(id, null);
     }
     $("st-mode").textContent = "—";
-    $("modeBadge").textContent = "МОЗОК: —";
+
   }
 }
 
@@ -880,7 +908,7 @@ $("consoleClear")?.addEventListener("click", () => {
     el.className = "voice-line " + (who === "you" ? "you" : "bot") + (cls ? " " + cls : "");
     const w = document.createElement("span");
     w.className = "vl-who";
-    w.textContent = who === "you" ? "ТИ" : "КЛОД БОТ 🦀";
+    w.textContent = who === "you" ? "ТИ" : "КЛОД БОТ";
     el.appendChild(w);
     el.appendChild(document.createTextNode(text));
     convo.appendChild(el);
@@ -1114,6 +1142,9 @@ $("consoleClear")?.addEventListener("click", () => {
     overlay.classList.add("hidden");
   }
   $("voiceModeBtn")?.addEventListener("click", open);
+  // Кнопка голосового режиму переїхала в панель чату (React) — даємо їй
+  // спосіб відкрити цей самий оверлей, не дублюючи всю логіку.
+  window.openVoiceMode = open;
   $("voiceClose")?.addEventListener("click", close);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
   document.addEventListener("keydown", (e) => {
@@ -1178,10 +1209,12 @@ function setEventsDot(ok) {
           : "(порожня репліка)";
       addMessage("bot", text, false, true);
       applyExternalEmotion(ev.emotion);
+    } else if (ev.type === "tool") {
+      showToolActivity(ev);
     } else if (ev.type === "vision") {
       if (ev.event === "face_appeared") {
         const n = typeof ev.faces === "number" ? ev.faces : 1;
-        showVisionBadge("👁 Бачу обличчя (" + n + ")");
+        showVisionBadge("Бачу обличчя (" + n + ")");
       } else if (ev.event === "face_gone") {
         showVisionBadge("Нікого не бачу");
       } else if (ev.event === "motion") {

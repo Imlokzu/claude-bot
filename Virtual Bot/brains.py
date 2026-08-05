@@ -163,9 +163,20 @@ def get_last_successful_brain() -> str | None:
     return _last_successful_brain
 
 
-def _remember_brain(mode: str) -> None:
-    global _last_successful_brain
+# Модель, якою РЕАЛЬНО відповіли востаннє. Панель показує саме її: ланцюг
+# мозків мовчки перемикається при збоях, і без цього користувач бачив би
+# у селекторі одне, а відповідала б зовсім інша модель.
+_last_model: str = ""
+
+
+def get_last_model() -> str:
+    return _last_model
+
+
+def _remember_brain(mode: str, model: str = "") -> None:
+    global _last_successful_brain, _last_model
     _last_successful_brain = mode
+    _last_model = model or mode
 
 
 # ------------------------------------------------------------------ мозок 0: Omni-роутер
@@ -259,13 +270,30 @@ async def _omni_call(message: str, system_prompt: str, model: str, history: Chat
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
+    url = f"{cfg.OMNI_BASE_URL}/chat/completions"
+    trust_env = cfg.httpx_trust_env(cfg.OMNI_BASE_URL)
+
+    # СПРАВЖНІЙ стрімінг токенів, коли є куди їх віддавати (emit).
+    # Якщо модель захоче тулзи або стрім взагалі не заведеться —
+    # тихо падаємо на звичайний шлях із повною підтримкою tool_calls.
+    if emit is not None:
+        try:
+            text = await _stream_openai_compatible(
+                url, headers, payload, cfg.OMNI_TIMEOUT_S, trust_env, emit=emit
+            )
+            return text, []
+        except _NeedsTools:
+            log.info("Модель %s потребує тулзів — переходжу на нестрімовий виклик", model)
+        except Exception as exc:  # noqa: BLE001 — стрім не вийшов, працюємо як раніше
+            log.warning("Стрімінг Omni не вдався (%s) — звичайний виклик", type(exc).__name__)
+
     return await _call_openai_compatible_with_tools(
-        f"{cfg.OMNI_BASE_URL}/chat/completions",
+        url,
         headers,
         payload,
         tool_registry.list_tools(),
         cfg.OMNI_TIMEOUT_S,
-        cfg.httpx_trust_env(cfg.OMNI_BASE_URL),
+        trust_env,
         emit=emit,
     )
 
@@ -298,6 +326,29 @@ async def chat_omni(message: str, system_prompt: str, history: ChatHistory, emit
 # пропускаємо одразу, без мережевої спроби. На /api/status це не впливає:
 # mode і далі показує мозок, що реально відповів (last_successful_brain).
 _openclaw_failed_at_mono: float | None = None
+
+
+# Шлюз (OpenClaw/Omni) може віддати ПОМИЛКУ під виглядом звичайної відповіді:
+# HTTP 200, а в тілі content = "Error: internal error". Тоді виключення не
+# виникає й панель показує це як слова бота. Ловимо такий підпис і вважаємо
+# спробу невдалою — запит іде на наступний мозок.
+_GATEWAY_ERROR_RE = re.compile(
+    r"^\s*(?:error|internal\s+error|api[_ ]?error|upstream\s+error|bad\s+gateway)\b\s*[:\-—]?",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_gateway_error(text: str) -> bool:
+    """
+    Схоже на технічну помилку шлюзу, а не на відповідь бота?
+
+    Обмеження на довжину принципове: справжня відповідь теж може почати з
+    «Error:» (напр. пояснює лог чи код), але вона на цьому не закінчиться.
+    """
+    stripped = (text or "").strip()
+    if not stripped or len(stripped) > 200 or "\n" in stripped:
+        return False
+    return _GATEWAY_ERROR_RE.match(stripped) is not None
 
 
 def openclaw_backoff_remaining() -> float:
@@ -337,13 +388,28 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
+    url = f"{cfg.OPENCLAW_BASE_URL}/v1/chat/completions"
+    trust_env = cfg.httpx_trust_env(cfg.OPENCLAW_BASE_URL)
+
+    # Справжній стрімінг токенів (з відкотом на звичайний виклик)
+    if emit is not None:
+        try:
+            text = await _stream_openai_compatible(
+                url, headers, payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env, emit=emit
+            )
+            return text, []
+        except _NeedsTools:
+            log.info("OpenClaw потребує тулзів — переходжу на нестрімовий виклик")
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Стрімінг OpenClaw не вдався (%s) — звичайний виклик", type(exc).__name__)
+
     return await _call_openai_compatible_with_tools(
-        f"{cfg.OPENCLAW_BASE_URL}/v1/chat/completions",
+        url,
         headers,
         payload,
         tool_registry.list_tools(),
         cfg.CHAT_OPENCLAW_TIMEOUT_S,
-        cfg.httpx_trust_env(cfg.OPENCLAW_BASE_URL),
+        trust_env,
         emit=emit,
     )
 
@@ -420,6 +486,26 @@ async def chat_chat2api(message: str, system_prompt: str, history: ChatHistory, 
 
 # ------------------------------------------------------------------ тулзи публічних API
 
+def _tool_progress_detail(name: str, input_data: dict) -> str:
+    """Людський опис того, що саме зараз тягнеться з мережі (без секретів).
+
+    Потрібно для події tool_progress — щоб у чаті було видно не лише «шукаю…»,
+    а саме джерело та запит.
+    """
+    data = input_data or {}
+    if name == "web_search":
+        return f"DuckDuckGo: {str(data.get('query', ''))[:80]}"
+    if name == "weather":
+        return f"прогноз для {data.get('city', '')}"
+    if name == "currency":
+        return f"{data.get('base', '')} → {data.get('target', 'UAH')}"
+    if name == "facts":
+        return f"Вікіпедія: {str(data.get('query', ''))[:80]}"
+    if name.startswith("create_brain") or name.startswith("list_brain"):
+        return f"пам’ять: {str(data.get('path', ''))[:80]}"
+    return "запит…"
+
+
 def _build_messages(system_prompt: str, history: ChatHistory, message: str) -> list[dict]:
     """Будує messages для OpenAI-сумісного API."""
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
@@ -450,6 +536,10 @@ async def _execute_tool_calls(tool_calls: list[dict], emit=None) -> tuple[list[d
         except json.JSONDecodeError:
             args = {}
         await _emit_tool_event(emit, {"type": "tool_start", "tool": name, "input": args})
+        await _emit_tool_event(emit, {
+            "type": "tool_progress", "tool": name, "stage": "fetch",
+            "detail": _tool_progress_detail(name, args),
+        })
         try:
             result = await tool_registry.execute_tool(name, args)
         except Exception as exc:  # noqa: BLE001 — показуємо помилку як результат
@@ -524,6 +614,65 @@ async def _call_openai_compatible_with_tools(
     return content, []
 
 
+async def _stream_openai_compatible(
+    url: str,
+    headers: dict[str, str],
+    payload_base: dict,
+    timeout: float,
+    trust_env: bool,
+    emit=None,
+) -> str:
+    """СПРАВЖНІЙ стрімінг токенів (SSE) для OpenAI-сумісного ендпойнта.
+
+    Раніше ми чекали відповідь ЦІЛКОМ і лише потім різали її на слова — тому
+    весь текст з’являвся раптом. Тепер кожен токен віддається через emit()
+    одразу, як надійшов від моделі.
+
+    Тулзи ТУТ НЕ підтримуються свідомо: якщо потрібні tool_calls, викликач
+    переходить на звичайний (нестрімовий) шлях. Повертає повний текст.
+    """
+    payload = {**payload_base, "stream": True}
+    parts: list[str] = []
+    async with httpx.AsyncClient(timeout=timeout, trust_env=trust_env) as client:
+        async with client.stream("POST", url, headers=headers, json=payload) as resp:
+            if resp.status_code >= 400:
+                body = (await resp.aread())[:200]
+                log.warning("Стрімінг HTTP %d: %s", resp.status_code, body)
+                resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line or not line.startswith("data:"):
+                    continue
+                data_str = line[len("data:"):].strip()
+                if not data_str or data_str == "[DONE]":
+                    if data_str == "[DONE]":
+                        break
+                    continue
+                try:
+                    chunk = json.loads(data_str)
+                except json.JSONDecodeError:
+                    continue
+                try:
+                    delta = chunk["choices"][0].get("delta") or {}
+                except (KeyError, IndexError, TypeError):
+                    continue
+                # Модель захотіла тулзи — стрімовий шлях не підходить
+                if delta.get("tool_calls"):
+                    raise _NeedsTools()
+                piece = delta.get("content")
+                if piece:
+                    parts.append(piece)
+                    if emit:
+                        await _emit_tool_event(emit, {"type": "delta", "chunk": piece})
+    text = "".join(parts)
+    if not text.strip():
+        raise RuntimeError("Порожній стрім від мозку")
+    return text
+
+
+class _NeedsTools(Exception):
+    """Модель потребує tool_calls — стрімінг неможливий, потрібен звичайний виклик."""
+
+
 async def _call_anthropic_with_tools(
     headers: dict[str, str],
     payload_base: dict,
@@ -574,6 +723,10 @@ async def _call_anthropic_with_tools(
             name = tu.get("name", "")
             args = tu.get("input", {})
             await _emit_tool_event(emit, {"type": "tool_start", "tool": name, "input": args})
+            await _emit_tool_event(emit, {
+                "type": "tool_progress", "tool": name, "stage": "fetch",
+                "detail": _tool_progress_detail(name, args),
+            })
             try:
                 result = await tool_registry.execute_tool(name, args)
             except Exception as exc:  # noqa: BLE001 — показуємо помилку як результат
@@ -905,8 +1058,13 @@ async def _emit_tool_event(emit, event: dict) -> None:
 
 
 async def _run_tool(emit, name: str, input_data: dict) -> dict:
-    """Виконує тулзу з емітом подій tool_start / tool_done."""
+    """Виконує тулзу з емітом tool_start / tool_progress / tool_done."""
     await _emit_tool_event(emit, {"type": "tool_start", "tool": name, "input": input_data})
+    # Живий прогрес фетча — видно, що саме бот тягне з мережі
+    await _emit_tool_event(emit, {
+        "type": "tool_progress", "tool": name, "stage": "fetch",
+        "detail": _tool_progress_detail(name, input_data),
+    })
     try:
         result = await tool_registry.execute_tool(name, input_data)
     except Exception as exc:  # noqa: BLE001
@@ -994,9 +1152,11 @@ async def chat(
                     chat_openclaw(message, system_prompt, history, emit=emit),
                     timeout=cfg.CHAT_OPENCLAW_TIMEOUT_S,
                 )
+                if _looks_like_gateway_error(raw):
+                    raise RuntimeError(f"OpenClaw віддав помилку замість відповіді: {raw.strip()[:120]}")
                 reply, emotion = extract_emotion(raw)
                 _openclaw_note_success()
-                _remember_brain("openclaw")
+                _remember_brain("openclaw", cfg.OPENCLAW_AGENT)
                 return reply, emotion, "openclaw", tool_results
             except Exception as exc:  # noqa: BLE001 — свідомо ковтаємо, падаємо на наступний мозок
                 _openclaw_note_failure()
@@ -1016,9 +1176,11 @@ async def chat(
                     chat_omni(message, system_prompt, history, emit=emit),
                     timeout=cfg.CHAT_OMNI_TIMEOUT_S,
                 )
+                if _looks_like_gateway_error(raw):
+                    raise RuntimeError(f"Omni віддав помилку замість відповіді: {raw.strip()[:120]}")
                 reply, emotion = extract_emotion(raw)
                 _omni_note_success()
-                _remember_brain("omni")
+                _remember_brain("omni", get_selected_omni_model())
                 return reply, emotion, "omni", tool_results
             except Exception as exc:  # noqa: BLE001 — свідомо ковтаємо, падаємо на наступний мозок
                 _omni_note_failure()
@@ -1031,7 +1193,7 @@ async def chat(
         try:
             raw, tool_results = await chat_anthropic(message, system_prompt, history, emit=emit)
             reply, emotion = extract_emotion(raw)
-            _remember_brain("anthropic")
+            _remember_brain("anthropic", getattr(cfg, "ANTHROPIC_MODEL", "anthropic"))
             return reply, emotion, "anthropic", tool_results
         except Exception as exc:  # noqa: BLE001
             log.warning("Anthropic недоступний (%s), пробую Chat2API", type(exc).__name__)
@@ -1040,7 +1202,7 @@ async def chat(
     try:
         raw, tool_results = await chat_chat2api(message, system_prompt, history, emit=emit)
         reply, emotion = extract_emotion(raw)
-        _remember_brain("chat2api")
+        _remember_brain("chat2api", getattr(cfg, "CHAT2API_MODEL", "chat2api"))
         return reply, emotion, "chat2api", tool_results
     except Exception as exc:  # noqa: BLE001
         log.warning("Chat2API недоступний (%s), переходжу в демо", type(exc).__name__)
@@ -1049,5 +1211,5 @@ async def chat(
     # Демо-відповіді теж проганяємо через евристику як запасний варіант
     if emotion not in ALLOWED_EMOTIONS:
         emotion = guess_emotion(reply)
-    _remember_brain("demo")
+    _remember_brain("demo", "демо-режим")
     return reply, emotion, "demo", tool_results

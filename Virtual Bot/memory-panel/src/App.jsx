@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import FileList from './components/FileList'
 import Editor from './components/Editor'
 import MemoryMap from './components/MemoryMap'
+import { getActiveSessionId, memoryRequestPath } from './session'
 
 const API_BASE = '/api'
 
@@ -32,7 +33,7 @@ function App() {
 
   const refreshFiles = useCallback(async () => {
     try {
-      const data = await api('/memory/list')
+      const data = await api(memoryRequestPath('/memory/list'))
       setFiles(data.files || [])
       setError(null)
     } catch (err) {
@@ -58,7 +59,7 @@ function App() {
     openRequestRef.current = { id: requestId, controller }
     setIsLoading(true)
     try {
-      const data = await api(`/memory/file?path=${encodeURIComponent(path)}`, {
+      const data = await api(memoryRequestPath('/memory/file', { path }), {
         signal: controller.signal
       })
       if (openRequestRef.current.id !== requestId) return
@@ -103,7 +104,11 @@ function App() {
       await api('/memory/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: savedPath, content: savedText })
+        body: JSON.stringify({
+          path: savedPath,
+          content: savedText,
+          session_id: getActiveSessionId()
+        })
       })
       const current = documentRef.current
       if (current === document) {

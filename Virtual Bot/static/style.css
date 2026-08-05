@@ -218,6 +218,24 @@ body {
   background: rgba(43, 42, 38, 0.03);
 }
 
+/* Лінійні іконки замість емодзі: колір і товщина успадковуються від стану
+   елемента (активна вкладка, hover, disabled), емодзі так не вміють. */
+.ico {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.btn .ico {
+  width: 13px;
+  height: 13px;
+}
+
 .dashboard-tab.active {
   color: var(--green);
   border-bottom-color: var(--green);
@@ -226,6 +244,8 @@ body {
 
 .dashboard {
   padding: 14px;
+  width: 100%;
+  max-width: none;
 }
 
 .dashboard-panel {
@@ -235,6 +255,8 @@ body {
 
 .dashboard-panel.active {
   display: block;
+  width: 100%;
+  max-width: none;
 }
 
 .dashboard-grid {
@@ -246,9 +268,9 @@ body {
 }
 
 .chat-grid {
-  grid-template-columns: 1fr;
-  grid-template-areas: "chat" "face";
-  grid-template-rows: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-areas: "chat face";
+  grid-template-rows: 1fr;
   height: calc(100vh - 130px);
   min-height: 420px;
   max-width: none;
@@ -257,12 +279,16 @@ body {
 
 .chat-grid .area-chat {
   width: 100%;
+  max-width: none;
   min-width: 0;
 }
 
 .chat-grid .area-face {
-  max-width: 320px;
-  justify-self: center;
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  justify-self: stretch;
 }
 
 .chat-grid .area-face .panel-title {
@@ -270,7 +296,9 @@ body {
 }
 
 .chat-grid .face-screen {
-  min-height: 100px;
+  min-height: 100%;
+  height: 100%;
+  flex: 1;
 }
 
 .chat-grid .face-test {
@@ -278,16 +306,63 @@ body {
 }
 
 #chat-panel-root {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   min-height: 0;
+  height: 100%;
   width: 100%;
+  max-width: none;
   min-width: 0;
 }
 
 .chat-panel {
+  display: flex;
+  flex-direction: column;
   width: 100%;
+  max-width: none;
+  height: 100%;
   min-width: 0;
+  min-height: 0;
+}
+
+/* У широкому режимі чат має використовувати всю ліву колонку. */
+.chat-panel .chat-input-area {
+  padding: 18px;
+  flex: 0 0 auto;
+}
+
+/* Поле вводу: висоту дає сама смуга, а не порожні рядки в textarea —
+   інакше текст висів угорі, а кнопки внизу (див. .ant-sender-content
+   у chat-panel/styles.css, там же вирівнювання по центру). */
+.chat-panel .chat-input-area .ant-sender-input,
+.chat-panel .chat-input-area .blur-typing-wrap textarea {
+  font-size: 17px;
+  line-height: 1.6;
+}
+
+.chat-panel .chat-input-area .ant-sender-content {
+  min-height: 64px;
+}
+
+.chat-panel .chat-input-area .ant-sender-actions button,
+.chat-panel .chat-input-area .ant-sender-actions-btn,
+.chat-panel .chat-input-area .ant-sender-prefix button {
+  width: 48px !important;
+  min-width: 48px !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  font-size: 20px;
+}
+
+.chat-panel .chat-input-area .ant-sender-actions,
+.chat-panel .chat-input-area .ant-sender-actions-list,
+.chat-panel .chat-input-area .ant-sender-prefix {
+  min-height: 48px;
+}
+
+.chat-panel .chat-input-area .ant-sender-actions-btn .ant-btn-icon,
+.chat-panel .chat-input-area .ant-sender-prefix .ant-btn-icon {
+  font-size: 20px;
 }
 
 .vision-grid {
@@ -300,7 +375,18 @@ body {
   justify-content: start;
 }
 
-@media (max-width: 900px) {
+@media (min-width: 901px) {
+  .chat-grid > .panel {
+    min-height: 0;
+  }
+
+  .chat-grid .area-chat,
+  .chat-grid .area-chat #chat-panel-root {
+    height: 100%;
+  }
+}
+
+@media (max-width: 700px) {
   .chat-grid {
     grid-template-columns: 1fr;
     grid-template-areas: "chat" "face";
@@ -398,6 +484,9 @@ body {
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .btn:hover:not(:disabled) {
@@ -590,6 +679,8 @@ textarea::placeholder {
 
 .area-chat {
   min-height: 420px;
+  width: 100%;
+  max-width: none;
   display: flex;
   flex-direction: column;
 }
@@ -878,6 +969,22 @@ textarea::placeholder {
 }
 
 #memory-panel-root {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+/* ---------- 5. Файли та Браузер (React-острови того ж бандла) ---------- */
+
+.area-workspace,
+.area-browser {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#workspace-panel-root,
+#browser-panel-root {
   flex: 1;
   display: flex;
   min-height: 0;

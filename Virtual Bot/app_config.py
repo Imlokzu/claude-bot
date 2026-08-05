@@ -153,6 +153,8 @@ def cfg_str(*keys: str, default: str) -> str:
 BRAIN_DIR = resolve_path("paths", "brain_dir", default="brain")
 STATIC_DIR = resolve_path("paths", "static_dir", default="static")
 UPLOADS_DIR = resolve_path("paths", "uploads_dir", default="uploads")
+# Робоча тека бота на диску (файли, проєкти, ігри, теки сесій)
+WORKSPACE_DIR = resolve_path("paths", "workspace_dir", default="workspace")
 SERVICE_LOGS_DIR = resolve_path("paths", "service_logs_dir", default="service_logs")
 VISION_DIR = resolve_path("vision", "dir", default="../Vision Agent")
 DISPLAY_DIR = resolve_path("display", "dir", default="../claude-bot-display")

@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import brain_context
 import dream_cycle
 import main
 import memory
@@ -25,14 +26,12 @@ class DreamCycleTests(unittest.IsolatedAsyncioTestCase):
         self.root = Path(self.temp_dir.name)
         for category in ("logs", "people", "life", "topics", "pets"):
             (self.root / category).mkdir(parents=True)
-        self.brain_patch = patch.object(dream_cycle, "BRAIN_DIR", self.root)
-        self.memory_brain_patch = patch.object(memory, "BRAIN_DIR", self.root)
+        # Both modules re-export brain_context.BRAIN_DIR; patch the canonical root.
+        self.brain_patch = patch.object(brain_context, "BRAIN_DIR", self.root)
         self.brain_patch.start()
-        self.memory_brain_patch.start()
 
     def tearDown(self) -> None:
         self.brain_patch.stop()
-        self.memory_brain_patch.stop()
         self.temp_dir.cleanup()
 
     def _write(self, relative: str, content: str) -> Path:
@@ -752,8 +751,15 @@ class DreamCycleTests(unittest.IsolatedAsyncioTestCase):
             def shutdown(self, wait=False) -> None:
                 events.append(f"scheduler.shutdown:{wait}")
 
-        with patch.object(main.cfg, "BRAIN_DIR", self.root), patch.object(
-            main.dream_cycle, "recover_pending_transactions", side_effect=lambda: events.append("recovery")
+        def fake_recover_all() -> None:
+            events.append("recovery")
+
+        with patch.object(
+            main.brain_context, "BRAIN_DIR", self.root
+        ), patch.object(
+            main.brain_context, "BRAIN_RUNTIME_DIR", self.root / "runtime"
+        ), patch.object(
+            main, "_recover_all_user_brains", side_effect=fake_recover_all
         ), patch.object(main.console_log, "install"), patch.object(
             main, "_install_signal_chain"
         ), patch.object(

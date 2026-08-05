@@ -94,6 +94,20 @@ def publish_say(text: str, emotion: str) -> None:
     publish({"type": "say", "text": text, "emotion": emotion})
 
 
+def publish_tool(tool: str, detail: str = "", state: str = "start") -> None:
+    """
+    Бот скористався інструментом. Потрібно, коли тули виконує НЕ панель, а
+    зовнішній мозок (OpenClaw через tools_mcp) — інакше в панелі не було б
+    видно ні що він шукає, ні що взагалі щось робить.
+    """
+    publish({
+        "type": "tool",
+        "tool": str(tool)[:60],
+        "detail": str(detail)[:160],
+        "state": "done" if state == "done" else "start",
+    })
+
+
 def publish_vision(event: str, faces: int) -> None:
     """Подія зору: face_appeared | face_gone | motion."""
     publish({"type": "vision", "event": event, "faces": int(faces)})
