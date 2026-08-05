@@ -36,6 +36,7 @@ export default function ImageGallery({ images, sessionId }) {
   const [likes, setLikes] = useState(loadLikes);
   const [preview, setPreview] = useState(false);
   const trackRef = useRef(null);
+  const likesRef = useRef(likes);
 
   useEffect(() => {
     setIndex(0);
@@ -60,15 +61,14 @@ export default function ImageGallery({ images, sessionId }) {
     setIndex((i) => (i + delta + images.length) % images.length);
 
   const toggleLike = () => {
-    setLikes((prev) => {
-      const next = new Set(prev);
-      if (next.has(current.src)) next.delete(current.src);
-      else next.add(current.src);
-      try {
-        localStorage.setItem(LIKES_KEY, JSON.stringify([...next]));
-      } catch {}
-      return next;
-    });
+    const next = new Set(likesRef.current);
+    if (next.has(current.src)) next.delete(current.src);
+    else next.add(current.src);
+    likesRef.current = next;
+    setLikes(next);
+    try {
+      localStorage.setItem(LIKES_KEY, JSON.stringify([...next]));
+    } catch {}
   };
 
   const copyUrl = async () => {

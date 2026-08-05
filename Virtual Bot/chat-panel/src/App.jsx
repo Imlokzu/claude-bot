@@ -173,6 +173,14 @@ const STREAM_ANIMATION = {
    інакше готовий текст «блимав» би при кожному ре-рендері. */
 const STREAM_DONE = { hasNextChunk: false };
 
+const REASONING_LABELS = {
+  none: 'Авто',
+  low: 'Швидко',
+  medium: 'Збалансовано',
+  high: 'Глибоко',
+};
+const REASONING_LEVELS = Object.keys(REASONING_LABELS);
+
 const api = async (path, options = {}) => {
   const res = await fetch(path, options);
   if (!res.ok) {
@@ -498,7 +506,7 @@ function App() {
   /* Фулскрін-режим прев'ю: панель висувається знизу на всю ширину, список
      чатів ховається, а зверху зʼявляється кнопка «назад до чату». */
   const [previewFullscreen, setPreviewFullscreen] = useState(false);
-  const [reasoningEffort, setReasoningEffort] = useState('auto');
+  const [reasoningEffort, setReasoningEffort] = useState('none');
   /* Модель, якою РЕАЛЬНО відповіли (мозки перемикаються самі при збоях) */
   const [activeModel, setActiveModel] = useState('');
   const [activeBrain, setActiveBrain] = useState('');
@@ -634,6 +642,7 @@ function App() {
         const list = (r.models || []).map((m) => ({
           value: m.id,
           label: m.label || m.id,
+          reasoning: m.reasoning || { supported: false, levels: ['none'], default: 'none' },
         }));
         setModels(list);
         if (r.selected) setSelectedModel(r.selected);
@@ -675,6 +684,20 @@ function App() {
       body: JSON.stringify({ model: selectedModel }),
     }).catch(() => {});
   }, [selectedModel]);
+
+  const selectedModelInfo = models.find((model) => model.value === selectedModel);
+  const reasoningCapability = selectedModelInfo?.reasoning;
+  const reasoningLevels = Array.isArray(reasoningCapability?.levels)
+    ? reasoningCapability.levels.filter((level) => REASONING_LEVELS.includes(level))
+    : ['none'];
+  const supportedReasoningLevels = reasoningLevels.filter((level) => level !== 'none');
+  const supportsReasoning = Boolean(reasoningCapability?.supported && supportedReasoningLevels.length);
+  const defaultReasoningEffort = reasoningLevels.includes(reasoningCapability?.default)
+    ? reasoningCapability.default
+    : 'none';
+  const effectiveReasoningEffort = reasoningLevels.includes(reasoningEffort)
+    ? reasoningEffort
+    : defaultReasoningEffort;
 
   /* Вставка «стіни тексту» (лог, код, стаття) не має перетворювати поле вводу
      на портянку: якщо вставлене довше за поріг — згортаємо його у вкладення,
@@ -776,7 +799,7 @@ function App() {
             message: userContent,
             stream: true,
             session_id: sessionId,
-            reasoning_effort: reasoningEffort === 'auto' ? null : reasoningEffort,
+            reasoning_effort: effectiveReasoningEffort,
           }),
           signal: controller.signal,
         });
@@ -1183,19 +1206,22 @@ function App() {
                 {activeBrain}
               </span>
             )}
-            <label className="reasoning-control">
-              <span>Міркування</span>
-              <select
-                value={reasoningEffort}
-                onChange={(event) => setReasoningEffort(event.target.value)}
-                title="Рівень міркування для наступної відповіді"
-              >
-                <option value="auto">Авто</option>
-                <option value="low">Швидко</option>
-                <option value="medium">Збалансовано</option>
-                <option value="high">Глибоко</option>
-              </select>
-            </label>
+            {supportsReasoning && (
+              <label className="reasoning-control">
+                <span>Міркування</span>
+                <select
+                  value={effectiveReasoningEffort}
+                  onChange={(event) => setReasoningEffort(event.target.value)}
+                  title="Рівень міркування для наступної відповіді"
+                >
+                  {reasoningLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {REASONING_LABELS[level] || level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
           </div>
 
         </div>

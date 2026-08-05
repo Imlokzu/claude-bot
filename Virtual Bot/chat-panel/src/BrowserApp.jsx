@@ -27,10 +27,10 @@ function proxied(url) {
 function Browser() {
   const [url, setUrl] = useState(HOME);
   const [draft, setDraft] = useState(HOME);
-  const [history, setHistory] = useState([HOME]);
-  const [pos, setPos] = useState(0);
+  const [navigation, setNavigation] = useState({ history: [HOME], pos: 0 });
   const [nonce, setNonce] = useState(0);
   const frameRef = useRef(null);
+  const { history, pos } = navigation;
 
   const go = (next, { push = true } = {}) => {
     const target = (next || '').trim();
@@ -38,11 +38,9 @@ function Browser() {
     setUrl(target);
     setDraft(target);
     if (push) {
-      /* Історію будуємо з АКТУАЛЬНОЇ позиції у функційному оновленні:
-         кілька переходів поспіль із застарілим pos обрізали б її не там. */
-      setPos((prevPos) => {
-        setHistory((prev) => [...prev.slice(0, prevPos + 1), target]);
-        return prevPos + 1;
+      setNavigation((current) => {
+        const nextHistory = [...current.history.slice(0, current.pos + 1), target];
+        return { history: nextHistory, pos: nextHistory.length - 1 };
       });
     }
   };
@@ -63,14 +61,14 @@ function Browser() {
   const back = () => {
     if (pos <= 0) return;
     const next = pos - 1;
-    setPos(next);
+    setNavigation({ history, pos: next });
     go(history[next], { push: false });
   };
 
   const forward = () => {
     if (pos >= history.length - 1) return;
     const next = pos + 1;
-    setPos(next);
+    setNavigation({ history, pos: next });
     go(history[next], { push: false });
   };
 
