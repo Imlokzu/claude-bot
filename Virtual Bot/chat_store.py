@@ -72,8 +72,14 @@ def load(session_id: str) -> dict:
     return data
 
 
-def append(session_id: str, user: str, assistant: str) -> None:
-    """Дописує обмін до історії сесії (створює файл за потреби)."""
+def append(session_id: str, user: str, assistant: str, steps: list | None = None) -> None:
+    """
+    Дописує обмін до історії сесії (створює файл за потреби).
+
+    `steps` — кроки інструментів цієї відповіді. Без них при поверненні до
+    чату зникало все, що бот робив: лишався сам текст, а чим він шукав і що
+    писав — ні.
+    """
     try:
         path = _path(session_id)
     except ValueError:
@@ -87,7 +93,12 @@ def append(session_id: str, user: str, assistant: str) -> None:
     data["id"] = session_id
     data["updated"] = now
     data["messages"].append({"role": "user", "content": user, "ts": now})
-    data["messages"].append({"role": "assistant", "content": assistant, "ts": now})
+    data["messages"].append({
+        "role": "assistant",
+        "content": assistant,
+        "ts": now,
+        **({"steps": steps[:20]} if steps else {}),
+    })
     data["messages"] = data["messages"][-MAX_MESSAGES:]
 
     tmp = path.with_suffix(".tmp")
@@ -132,6 +143,34 @@ def set_title(session_id: str, title: str) -> None:
         tmp.replace(path)
     except OSError:
         log.exception("Не вдалося оновити назву чату %s", session_id)
+        tmp.unlink(missing_ok=True)
+
+
+def set_last_steps(session_id: str, steps: list) -> None:
+    """
+    Прикріплює кроки інструментів до ОСТАННЬОЇ відповіді бота.
+
+    Панель шле їх після завершення стріму: там вони вже з позицією `at`
+    у тексті, тож при поверненні до чату стрічка відновлюється так само —
+    текст, під ним виклик, далі решта.
+    """
+    try:
+        path = _path(session_id)
+    except ValueError:
+        return
+    data = load(session_id)
+    for message in reversed(data.get("messages") or []):
+        if message.get("role") == "assistant":
+            message["steps"] = (steps or [])[:20]
+            break
+    else:
+        return
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        log.exception("Не вдалося зберегти кроки чату %s", session_id)
         tmp.unlink(missing_ok=True)
 
 

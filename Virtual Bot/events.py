@@ -108,6 +108,13 @@ def publish_tool(tool: str, detail: str = "", state: str = "start") -> None:
     })
 
 
+def publish_preview(path: str) -> None:
+    """Бот просить ПОКАЗАТИ файл: панель відкриє його у великому прев'ю.
+
+    Без цього єдине, що бот міг — продиктувати команду `open …` у термінал."""
+    publish({"type": "preview", "path": str(path)[:512]})
+
+
 def publish_vision(event: str, faces: int) -> None:
     """Подія зору: face_appeared | face_gone | motion."""
     publish({"type": "vision", "event": event, "faces": int(faces)})

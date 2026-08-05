@@ -32,6 +32,19 @@ PROTOCOL_VERSION = "2024-11-05"
 
 TOOLS = [
     {
+        "name": "workspace_show",
+        "description": (
+            "ПОКАЗАТИ користувачу файл із робочої теки прямо в панелі: сайт відкриється "
+            "сторінкою, картинка — зображенням, нотатка — текстом. Використовуй ЗАВЖДИ, коли "
+            "просять «відкрий» чи «покажи» — НЕ диктуй команди для термінала, ти можеш показати сам."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Напр. 'projects/cats/index.html'."}},
+            "required": ["path"],
+        },
+    },
+    {
         "name": "workspace_info",
         "description": "Де на диску власна робоча тека бота, які в ній розділи і яка тека поточної сесії.",
         "inputSchema": {"type": "object", "properties": {}},
@@ -118,6 +131,8 @@ def _request(method: str, path: str, *, params: dict | None = None, body: dict |
 
 def _call(name: str, args: dict) -> dict:
     path = str(args.get("path", "") or "")
+    if name == "workspace_show":
+        return _request("POST", "/api/workspace/show", body={"path": path, "session_id": VBOT_SESSION})
     if name == "workspace_info":
         return _request("GET", "/api/workspace/info", params={"session_id": VBOT_SESSION})
     if name == "workspace_list":

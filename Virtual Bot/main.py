@@ -525,7 +525,13 @@ def _get_history(sid: str, req_history: list[dict[str, str]]) -> list[dict[str, 
     return chat_store.history(sid, cfg.CHAT_HISTORY_LIMIT)
 
 
-def _save_history(sid: str, history: list[dict[str, str]], user: str, assistant: str) -> None:
+def _save_history(
+    sid: str,
+    history: list[dict[str, str]],
+    user: str,
+    assistant: str,
+    steps: list | None = None,
+) -> None:
     """Дописує обмін до історії сесії: у памʼять процесу і на диск."""
     history.append({"role": "user", "content": user})
     history.append({"role": "assistant", "content": assistant})
@@ -533,7 +539,7 @@ def _save_history(sid: str, history: list[dict[str, str]], user: str, assistant:
         _cleanup_stale_sessions()
         _sessions[sid] = (history[-cfg.CHAT_HISTORY_LIMIT:], time.monotonic())
     try:
-        chat_store.append(sid, user, assistant)
+        chat_store.append(sid, user, assistant, steps)
     except Exception:  # noqa: BLE001 — збереження історії не має валити відповідь
         log.exception("Не вдалося зберегти чат на диск")
 
@@ -742,6 +748,19 @@ def api_session_get(session_id: str) -> dict:
     if not chat_store.is_valid_id(session_id):
         raise HTTPException(status_code=400, detail="Некоректний id сесії")
     return chat_store.load(session_id)
+
+
+class SessionStepsRequest(BaseModel):
+    steps: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@app.post("/api/sessions/{session_id}/steps")
+def api_session_steps(session_id: str, req: SessionStepsRequest) -> dict:
+    """Панель докладає кроки інструментів до останньої відповіді бота."""
+    if not chat_store.is_valid_id(session_id):
+        raise HTTPException(status_code=400, detail="Некоректний id сесії")
+    chat_store.set_last_steps(session_id, req.steps)
+    return {"ok": True}
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -1215,6 +1234,18 @@ class WorkspaceSaveUrlRequest(BaseModel):
 def api_workspace_save_url(req: WorkspaceSaveUrlRequest) -> dict:
     """Зберігає картинку з чату в бібліотеку сесії (кнопка в каруселі)."""
     return _workspace_call(req.session_id, workspace.save_url, req.url)
+
+
+@app.post("/api/workspace/show")
+def api_workspace_show(req: WorkspacePathRequest) -> dict:
+    """Бот просить показати файл — панель відкриє його у великому прев'ю."""
+    def _show(path: str) -> dict:
+        resolved = workspace._resolve(path, must_exist=True)
+        rel = workspace.rel_path(resolved)
+        events.publish_preview(rel)
+        return {"ok": True, "shown": rel}
+
+    return _workspace_call(req.session_id, _show, req.path)
 
 
 @app.post("/api/workspace/rename")

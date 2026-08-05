@@ -49,6 +49,20 @@ async def ws_delete(path: str) -> dict:
         return {"error": str(exc)}
 
 
+async def ws_show(path: str) -> dict:
+    """Відкриває файл у великому прев'ю панелі (сайт, картинка, нотатка)."""
+    import events
+
+    try:
+        info = workspace.read_file(path) if not path.lower().endswith(
+            (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
+        ) else {"path": workspace.rel_path(workspace._resolve(path, must_exist=True))}
+    except (ValueError, OSError) as exc:
+        return {"error": str(exc)}
+    events.publish_preview(info["path"])
+    return {"ok": True, "shown": info["path"]}
+
+
 async def ws_info() -> dict:
     try:
         return workspace.info()
@@ -57,6 +71,22 @@ async def ws_info() -> dict:
 
 
 SCHEMAS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace_show",
+            "description": (
+                "ПОКАЗАТИ користувачу файл із робочої теки прямо в панелі: сайт відкриється "
+                "сторінкою, картинка — зображенням, нотатка — текстом. Використовуй ЗАВЖДИ, "
+                "коли просять «відкрий» чи «покажи» — не диктуй команди для терміналу."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string", "description": "Напр. 'projects/cats/index.html'."}},
+                "required": ["path"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -144,6 +174,7 @@ SCHEMAS: list[dict] = [
 ]
 
 HANDLERS = {
+    "workspace_show": ws_show,
     "workspace_info": ws_info,
     "workspace_list": ws_list,
     "workspace_read": ws_read,
