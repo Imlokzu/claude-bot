@@ -24,6 +24,63 @@ import ImageGallery from './ImageGallery.jsx';
 
 /* Картинки з відповіді виносимо в карусель: markdown-рендер лишає текст,
    а самі зображення показуємо однією великою з навігацією. */
+/* Розкладає відповідь на блоки в тому порядку, в якому все відбувалось:
+   шматок тексту, під ним виклик інструмента, далі наступний шматок. Позицію
+   виклику дає step.at — довжина тексту на той момент. */
+function buildBlocks(content, steps) {
+  const text = String(content || '');
+  const ordered = [...(steps || [])].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  const blocks = [];
+  let cursor = 0;
+  ordered.forEach((step) => {
+    const at = Math.min(Math.max(step.at ?? text.length, 0), text.length);
+    if (at > cursor) blocks.push({ kind: 'text', text: text.slice(cursor, at) });
+    blocks.push({ kind: 'tool', step });
+    cursor = at;
+  });
+  if (cursor < text.length || blocks.length === 0) {
+    blocks.push({ kind: 'text', text: text.slice(cursor) });
+  }
+  return blocks;
+}
+
+/* Відповідь бота як хронологічна стрічка: текст, під ним інструмент, далі
+   решта тексту. Картинки кожного шматка збираються в карусель під ним. */
+function BotAnswer({ content, steps, streaming, sessionId, children }) {
+  const blocks = buildBlocks(content, steps);
+  const lastToolIndex = blocks.map((b) => b.kind).lastIndexOf('tool');
+  const lastTextIndex = blocks.map((b) => b.kind).lastIndexOf('text');
+
+  return (
+    <div className={`markdown-body${streaming ? ' is-streaming' : ''}`}>
+      {blocks.map((block, i) => {
+        if (block.kind === 'tool') {
+          return <ToolBlock key={`t-${block.step.id}-${i}`} step={block.step} isLatest={i === lastToolIndex} />;
+        }
+        const { text, images } = splitImages(block.text);
+        if (!text && images.length === 0) return null;
+        return (
+          <React.Fragment key={`x-${i}`}>
+            {text && (
+              <XMarkdown
+                streaming={
+                  streaming && i === lastTextIndex
+                    ? { ...STREAM_ANIMATION, hasNextChunk: true }
+                    : STREAM_DONE
+                }
+              >
+                {text}
+              </XMarkdown>
+            )}
+            {images.length > 0 && <ImageGallery images={images} sessionId={sessionId} />}
+          </React.Fragment>
+        );
+      })}
+      {children}
+    </div>
+  );
+}
+
 function splitImages(markdown) {
   const images = [];
   const text = String(markdown || '').replace(
@@ -148,6 +205,41 @@ function toolDetail(tool, input) {
       return first || '';
     }
   }
+}
+
+/* Один виклик інструмента: згорнутий рядок, який можна розгорнути.
+   Сам розкривається лише поки працює І якщо він найновіший — тоді видно
+   деталі саме поточної дії, а історія не захаращує відповідь. */
+function ToolBlock({ step, isLatest }) {
+  const running = step.type !== 'done';
+  const [open, setOpen] = useState(false);
+  const expanded = open || (running && isLatest);
+
+  const toolName = toolTitles[step.tool] || step.tool;
+  const icon = toolIcons[step.tool] || null;
+  const detail = step.detail || toolDetail(step.tool, step.input);
+  const hasError = step.type === 'done' && step.result?.error;
+  const state = running ? 'tool-step-running' : hasError ? 'tool-step-error' : 'tool-step-done';
+
+  return (
+    <div className={`tool-block ${state}${expanded ? ' tool-block-open' : ''}`}>
+      <button type="button" className="tool-block-head" onClick={() => setOpen((v) => !v)}>
+        <span className="tool-step-icon">{icon}</span>
+        <span className="tool-step-name">{toolName}</span>
+        {detail && <span className="tool-step-detail">{detail}</span>}
+        <span className="tool-step-state">
+          {running ? 'працюю…' : hasError ? 'помилка' : 'готово'}
+        </span>
+        <span className="tool-block-chevron">{expanded ? <UpOutlined /> : <DownOutlined />}</span>
+      </button>
+      {expanded && (
+        <div className="tool-block-body">
+          {detail && <div className="tool-block-arg">{detail}</div>}
+          {hasError && <div className="tool-block-error">{step.result.error}</div>}
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* Кроки інструментів із живим прогресом фетча (видно, що саме бот тягне з мережі).
@@ -388,7 +480,15 @@ function App() {
         if (payload.state === 'done' && existing >= 0) {
           steps[existing] = { ...steps[existing], type: 'done', result: {} };
         } else if (payload.state === 'start' && existing < 0) {
-          steps.push({ id, type: 'start', tool: payload.tool, detail: payload.detail || '' });
+          /* `at` — довжина тексту на момент виклику: за нею блоки шикуються
+             в тому порядку, в якому все відбувалось насправді. */
+          steps.push({
+            id,
+            type: 'start',
+            tool: payload.tool,
+            detail: payload.detail || '',
+            at: (next[index].content || '').length,
+          });
         }
         next[index] = { ...next[index], toolSteps: steps };
         return next;
@@ -608,6 +708,7 @@ function App() {
                         tool: payload.tool,
                         input: payload.input,
                         id: `${payload.tool}-${toolSteps.length}`,
+                        at: fullReply.length,
                       },
                     ];
                     updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps);
@@ -785,25 +886,13 @@ function App() {
                   )
                 : undefined
               : msg.role === 'ai'
-              ? (content) => {
-                  const { text, images } = splitImages(content);
-                  return (
-                  <div className={`markdown-body${msg.streaming ? ' is-streaming' : ''}`}>
-                    <XMarkdown
-                      streaming={
-                        msg.streaming
-                          ? { ...STREAM_ANIMATION, hasNextChunk: true }
-                          : STREAM_DONE
-                      }
-                    >
-                      {text}
-                    </XMarkdown>
-                    {/* Кроки — ПІД текстом: спершу бот каже, що зараз пошукає,
-                        і вже під цим видно сам виклик інструмента. */}
-                    <ToolSteps steps={msg.toolSteps} />
-                    {images.length > 0 && (
-                      <ImageGallery images={images} sessionId={sessionId} />
-                    )}
+              ? (content) => (
+                  <BotAnswer
+                    content={content}
+                    steps={msg.toolSteps}
+                    streaming={msg.streaming}
+                    sessionId={sessionId}
+                  >
                     {toolResults.map((tr) => (
                       <ToolCard
                         key={`${tr.tool}-${JSON.stringify(tr.input || {})}`}
@@ -812,9 +901,8 @@ function App() {
                         result={tr.result}
                       />
                     ))}
-                  </div>
-                  );
-                }
+                  </BotAnswer>
+                )
               : undefined,
         };
       }),
@@ -872,19 +960,13 @@ function App() {
       contentRender: (content, info) => {
         const item = items.find((it) => String(it.key) === String(info?.key));
         const isStreaming = !!item?.streaming;
-        const { text, images } = splitImages(content);
         return (
-          <div className={`markdown-body${isStreaming ? ' is-streaming' : ''}`}>
-            <XMarkdown
-              streaming={
-                isStreaming ? { ...STREAM_ANIMATION, hasNextChunk: true } : STREAM_DONE
-              }
-            >
-              {text}
-            </XMarkdown>
-            <ToolSteps steps={item?.toolSteps} />
-            {images.length > 0 && <ImageGallery images={images} sessionId={sessionId} />}
-          </div>
+          <BotAnswer
+            content={content}
+            steps={item?.toolSteps}
+            streaming={isStreaming}
+            sessionId={sessionId}
+          />
         );
       },
     },

@@ -1295,3 +1295,104 @@ body {
   height: auto;
   border-radius: 10px;
 }
+
+/* Виклик інструмента як згорнутий блок у стрічці відповіді */
+.tool-block {
+  margin: 8px 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.tool-block-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-muted);
+}
+
+.tool-block-head:hover {
+  background: rgba(201, 100, 66, 0.05);
+}
+
+.tool-block .tool-step-name {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tool-block .tool-step-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.tool-block-chevron {
+  font-size: 9px;
+  opacity: 0.6;
+}
+
+.tool-block-body {
+  padding: 0 10px 9px 32px;
+  color: var(--text-muted);
+  animation: tool-block-open 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes tool-block-open {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.tool-block-arg {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  word-break: break-word;
+}
+
+.tool-block-error {
+  color: var(--red);
+}
+
+.tool-block.tool-step-running {
+  border-color: rgba(201, 100, 66, 0.4);
+}
+
+.tool-block.tool-step-done .tool-step-state {
+  color: var(--ok);
+}
+
+/* Підпис під картинкою в каруселі */
+.img-gallery-caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  padding: 0 2px;
+}
+
+.img-gallery-alt {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.img-gallery-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
