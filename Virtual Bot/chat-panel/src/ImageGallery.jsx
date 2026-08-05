@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Dropdown, message, Modal } from 'antd';
+import { Button, Dropdown, message, Modal } from 'antd';
 import {
   LeftOutlined,
   RightOutlined,
@@ -40,6 +40,17 @@ export default function ImageGallery({ images, sessionId }) {
   useEffect(() => {
     setIndex(0);
   }, [images.length]);
+
+  /* Вантажимо ВСІ картинки одразу, а не по кліку: інакше кожне перегортання
+     чекало мережу, і карусель здавалась гальмівною. */
+  useEffect(() => {
+    const preloaded = (images || []).map((im) => {
+      const img = new Image();
+      img.src = im.src;
+      return img;
+    });
+    return () => preloaded.forEach((img) => { img.src = ''; });
+  }, [images]);
 
   if (!images || images.length === 0) return null;
   const current = images[Math.min(index, images.length - 1)];
@@ -195,8 +206,29 @@ export default function ImageGallery({ images, sessionId }) {
         onCancel={() => setPreview(false)}
         width="min(1100px, 94vw)"
         centered
+        title={current.alt || 'Перегляд'}
+        classNames={{ body: 'img-full-body' }}
       >
         <img className="img-gallery-full" src={current.src} alt={current.alt || ''} />
+        {/* Ті самі дії, що й у контекстному меню: у повний екран заходять
+            саме щоб роздивитись і забрати картинку. */}
+        <div className="img-full-actions">
+          <Button size="small" icon={<CopyOutlined />} onClick={copyImage}>Копіювати</Button>
+          <Button size="small" icon={<LinkOutlined />} onClick={copyUrl}>Посилання</Button>
+          <Button size="small" icon={<DownloadOutlined />} onClick={download}>Зберегти</Button>
+          <Button size="small" icon={<FolderAddOutlined />} onClick={addToLibrary}>У бібліотеку</Button>
+          <Button
+            size="small"
+            icon={liked ? <HeartFilled /> : <HeartOutlined />}
+            onClick={toggleLike}
+            danger={liked}
+          >
+            {liked ? 'Подобається' : 'Вподобати'}
+          </Button>
+          {images.length > 1 && (
+            <span className="img-full-count">{index + 1} / {images.length}</span>
+          )}
+        </div>
       </Modal>
     </div>
   );
