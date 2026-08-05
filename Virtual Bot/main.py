@@ -16,6 +16,7 @@ MJPEG-стрім фронтенд бере НАПРЯМУ з http://127.0.0.1:80
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
@@ -205,6 +206,7 @@ class ChatRequest(BaseModel):
     session_id: str = Field(default="", max_length=64)
     history: list[dict[str, str]] = Field(default_factory=list)
     reasoning_effort: str = Field(default="none", pattern="^(none|low|medium|high)$")
+    attachments: list[dict[str, str]] = Field(default_factory=list, max_length=8)
 
 
 class MemorySaveRequest(BaseModel):
@@ -532,6 +534,7 @@ def _save_history(
     user: str,
     assistant: str,
     steps: list | None = None,
+    attachments: list[dict] | None = None,
 ) -> None:
     """Дописує обмін до історії сесії: у памʼять процесу і на диск."""
     history.append({"role": "user", "content": user})
@@ -540,7 +543,7 @@ def _save_history(
         _cleanup_stale_sessions()
         _sessions[sid] = (history[-cfg.CHAT_HISTORY_LIMIT:], time.monotonic())
     try:
-        chat_store.append(sid, user, assistant, steps)
+        chat_store.append(sid, user, assistant, steps, attachments)
     except Exception:  # noqa: BLE001 — збереження історії не має валити відповідь
         log.exception("Не вдалося зберегти чат на диск")
 
@@ -594,12 +597,77 @@ def _chat_reasoning_kwargs(reasoning_effort: str) -> dict[str, str]:
     return {"reasoning_effort": reasoning_effort} if reasoning_effort != "none" else {}
 
 
+def _chat_image_kwargs(images: list[dict[str, str]]) -> dict[str, list[dict[str, str]]]:
+    """Не передає зайвий kwarg старим мозкам/тестовим адаптерам без зображень."""
+    return {"images": images} if images else {}
+
+
+_VISION_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+_VISION_MAX_BYTES = 10 * 1024 * 1024
+_VISION_SUFFIXES = {
+    "image/png": {".png"},
+    "image/jpeg": {".jpg", ".jpeg"},
+    "image/webp": {".webp"},
+    "image/gif": {".gif"},
+}
+
+
+def _matches_image_signature(data: bytes, mime: str) -> bool:
+    """Не довіряємо лише MIME із браузера: перевіряємо сигнатуру файла."""
+    if mime == "image/png":
+        return data.startswith(b"\x89PNG\r\n\x1a\n")
+    if mime == "image/jpeg":
+        return data.startswith(b"\xff\xd8\xff")
+    if mime == "image/gif":
+        return data.startswith((b"GIF87a", b"GIF89a"))
+    if mime == "image/webp":
+        return len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+    return False
+
+
+def _load_chat_images(attachments: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Читає лише зображення, які вже безпечно завантажені в uploads/."""
+    root = cfg.UPLOADS_DIR.resolve()
+    images: list[dict[str, str]] = []
+    for attachment in attachments[:8]:
+        url = str(attachment.get("url") or "")
+        mime = str(attachment.get("type") or "").lower()
+        if not url.startswith("/uploads/") or mime not in _VISION_MIME:
+            continue
+        filename = url.removeprefix("/uploads/")
+        if not filename or "/" in filename or "\\" in filename:
+            continue
+        candidate = root / filename
+        if candidate.is_symlink():
+            continue
+        path = candidate.resolve()
+        try:
+            path.relative_to(root)
+        except ValueError:
+            continue
+        if (
+            not path.is_file()
+            or path.stat().st_size > _VISION_MAX_BYTES
+            or path.suffix.lower() not in _VISION_SUFFIXES[mime]
+        ):
+            continue
+        data = path.read_bytes()
+        if not _matches_image_signature(data, mime):
+            continue
+        images.append({
+            "mime": mime,
+            "data": base64.b64encode(data).decode("ascii"),
+        })
+    return images
+
+
 # ------------------------------------------------------------------ чат
 
 @app.post("/api/chat")
 async def api_chat(req: ChatRequest):
     """Повідомлення користувача → відповідь бота + емоція (мозок за пріоритетом)."""
     message = req.message.strip()
+    images = await asyncio.to_thread(_load_chat_images, req.attachments)
     sid = _get_or_create_session_id(req)
     log.info("→ Запит у чат: session=%s %s", sid, message[:120])
     try:
@@ -614,10 +682,11 @@ async def api_chat(req: ChatRequest):
 
         if not req.stream:
             reply, emotion, mode, tool_results = await brains.chat(
-                message, history, **_chat_reasoning_kwargs(req.reasoning_effort),
+                message, history, **_chat_image_kwargs(images),
+                **_chat_reasoning_kwargs(req.reasoning_effort),
             )
             log.info("Чат (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
-            _save_history(sid, history, message, reply)
+            _save_history(sid, history, message, reply, attachments=req.attachments)
             # Назву чату генеруємо у фоні — відповідь на неї не чекає
             asyncio.create_task(_autoname_chat(sid, message, reply))
 
@@ -680,7 +749,8 @@ async def api_chat(req: ChatRequest):
                 await event_queue.put(event)
 
             chat_task = asyncio.create_task(brains.chat(
-                message, history, emit=emit, **_chat_reasoning_kwargs(req.reasoning_effort),
+                message, history, emit=emit, **_chat_image_kwargs(images),
+                **_chat_reasoning_kwargs(req.reasoning_effort),
             ))
 
             try:
@@ -696,7 +766,7 @@ async def api_chat(req: ChatRequest):
 
                 reply, emotion, mode, tool_results = chat_task.result()
                 log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
-                _save_history(sid, history, message, reply)
+                _save_history(sid, history, message, reply, attachments=req.attachments)
                 asyncio.create_task(_autoname_chat(sid, message, reply))
 
                 # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом)

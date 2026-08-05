@@ -597,6 +597,8 @@ function App() {
           streaming: false,
           toolResults: [],
           toolSteps: m.steps || [],
+          attachments: [],
+          imageAttachments: (m.attachments || []).filter((a) => a.type?.startsWith('image/')),
         }));
         if (restored.length) setMessages(restored);
       })
@@ -613,6 +615,8 @@ function App() {
           streaming: false,
           toolResults: [],
           toolSteps: m.steps || [],
+          attachments: [],
+          imageAttachments: (m.attachments || []).filter((a) => a.type?.startsWith('image/')),
         }))
       );
       setSessionId(sid);
@@ -755,7 +759,7 @@ function App() {
     if (!text && files.length === 0 && pastes.length === 0) return;
 
     const fileLinks = files
-      .filter((f) => f.status === 'done' && f.url)
+      .filter((f) => f.status === 'done' && f.url && !f.type?.startsWith('image/'))
       .map((f) => `[${f.name}](${f.url})`)
       .join('\n');
 
@@ -766,7 +770,12 @@ function App() {
       .join('\n\n');
 
     const userContent = [text, pasteBlocks, fileLinks].filter(Boolean).join('\n\n');
+    const imageAttachments = files
+      .filter((f) => f.status === 'done' && f.url && f.type?.startsWith('image/'))
+      .map((f) => ({ url: f.url, name: f.name, type: f.type }));
+    files.forEach((f) => f.previewUrl && URL.revokeObjectURL(f.previewUrl));
     const attachments = pastes.map((p) => ({ ...p }));
+    const requestMessage = userContent || 'Опиши прикріплене зображення.';
 
       setInput('');
       setFiles([]);
@@ -776,7 +785,7 @@ function App() {
       const botIndex = messages.length + 1;
       setMessages((prev) => [
         ...prev,
-        { role: 'user', content: text || fileLinks, attachments },
+        { role: 'user', content: text || fileLinks, attachments, imageAttachments },
         { role: 'ai', content: '', streaming: true, toolResults: [], mode: '', toolSteps: [] },
       ]);
 
@@ -796,10 +805,11 @@ function App() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: userContent,
+            message: requestMessage,
             stream: true,
             session_id: sessionId,
             reasoning_effort: effectiveReasoningEffort,
+            attachments: imageAttachments,
           }),
           signal: controller.signal,
         });
@@ -949,6 +959,8 @@ function App() {
         name: file.name,
         status: 'uploading',
         url: '',
+        type: file.type || 'application/octet-stream',
+        previewUrl: file.type?.startsWith('image/') ? URL.createObjectURL(file) : '',
       };
       setFiles((prev) => [...prev, uploadingFile]);
 
@@ -964,7 +976,7 @@ function App() {
         setFiles((prev) =>
           prev.map((f) =>
             f.uid === uid
-              ? { ...f, status: 'done', url: data.url, name: data.name }
+              ? { ...f, status: 'done', url: data.url, name: data.name, type: data.type || f.type }
               : f
           )
         );
@@ -983,7 +995,11 @@ function App() {
   };
 
   const removeFile = (uid) => {
-    setFiles((prev) => prev.filter((f) => f.uid !== uid));
+    setFiles((prev) => {
+      const removed = prev.find((f) => f.uid === uid);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      return prev.filter((f) => f.uid !== uid);
+    });
   };
 
   const items = useMemo(
@@ -991,6 +1007,7 @@ function App() {
       messages.map((msg, index) => {
         const toolResults = msg.toolResults || [];
         const attachments = msg.attachments || [];
+        const imageAttachments = msg.imageAttachments || attachments.filter((a) => a.type?.startsWith('image/'));
         return {
           key: index,
           role: msg.role,
@@ -998,13 +1015,14 @@ function App() {
           streaming: msg.streaming,
           toolResults,
           toolSteps: msg.toolSteps || [],
+          imageAttachments,
           mode: msg.mode || '',
           /* Увага: Bubble НЕ передає `info.streaming` (у його API є лише
              status/key/extraInfo), тому беремо ознаку стрімінгу з власного
              стану повідомлення (msg.streaming), який ставить updateBotMessage. */
           contentRender:
             msg.role === 'user'
-              ? attachments.length > 0
+              ? attachments.length > 0 || imageAttachments.length > 0
                 ? (content) => (
                     <div className="user-content" style={{ whiteSpace: 'pre-wrap' }}>
                       {content}
@@ -1023,6 +1041,13 @@ function App() {
                             </span>
                           </button>
                         ))}
+                        {imageAttachments.length > 0 && (
+                          <div className="sent-image-grid">
+                            {imageAttachments.map((att) => (
+                              <img key={att.url} src={att.url} alt={att.name || 'Зображення'} className="sent-image" />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )
@@ -1262,6 +1287,9 @@ function App() {
           <div className="attached-files">
             {files.map((f) => (
               <div key={f.uid} className={`attached-file ${f.status}`}>
+                {f.previewUrl && (
+                  <img src={f.previewUrl} alt={f.name} className="attached-file-image" />
+                )}
                 <span className="attached-file-name">{f.name}</span>
                 {f.status === 'uploading' && (
                   <span className="attached-file-status">завантаження…</span>

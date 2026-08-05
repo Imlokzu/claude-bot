@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import json
 import logging
 import re
@@ -36,6 +37,7 @@ import tools as tool_registry
 
 # Тип історії сесії: [{'role': 'user'|'assistant', 'content': str}, ...]
 ChatHistory = list[dict[str, str]]
+ImageAttachment = dict[str, str]
 
 log = logging.getLogger("virtual_bot.brains")
 
@@ -101,7 +103,13 @@ def build_system_prompt(user_message: str) -> str:
         f"- {profile_store.language_instruction(prof)} {profile_store.style_prompt(prof)}\n"
         f"{_EMOTION_RULES}"
     )
-    parts = [base]
+    now = datetime.now().astimezone()
+    parts = [
+        base,
+        "\nТочний поточний локальний час сервера: "
+        f"{now.isoformat(timespec='seconds')} ({now.tzname() or 'local'}). "
+        "Використовуй його для питань про сьогодні, дату, час і часові проміжки.",
+    ]
     parts.append(_tools_instruction())
 
     owner_root = brain_context.init_user_brain(None)
@@ -335,13 +343,14 @@ async def _omni_call(
     history: ChatHistory,
     emit=None,
     reasoning_effort: str | None = None,
+    images: list[ImageAttachment] | None = None,
 ) -> tuple[str, list[dict]]:
     """Одна спроба Omni з конкретною моделлю. Ключ — секрет, у відповіді/логах не світимо."""
     key = cfg.get_omni_key()
     if not key:
         raise RuntimeError("Немає ключа Omni (OMNI_API_KEY)")
 
-    messages = _build_messages(system_prompt, history, message)
+    messages = _build_messages(system_prompt, history, message, images)
     payload = {
         "model": model,
         "messages": messages,
@@ -387,6 +396,7 @@ async def chat_omni(
     history: ChatHistory,
     emit=None,
     reasoning_effort: str | None = None,
+    images: list[ImageAttachment] | None = None,
 ) -> tuple[str, list[dict]]:
     """
     Omni-роутер: пробує ОБРАНУ модель; якщо вона впала (напр. 401/404/503 від
@@ -398,6 +408,7 @@ async def chat_omni(
         return await _omni_call(
             message, system_prompt, selected, history, emit=emit,
             reasoning_effort=reasoning_effort,
+            images=images,
         )
     except Exception as primary_exc:  # noqa: BLE001 — падаємо на запасну модель
         fallback = cfg.OMNI_FALLBACK_MODEL
@@ -409,6 +420,7 @@ async def chat_omni(
             return await _omni_call(
                 message, system_prompt, fallback, history, emit=emit,
                 reasoning_effort=reasoning_effort,
+                images=images,
             )
         raise
 
@@ -465,13 +477,13 @@ def _openclaw_note_success() -> None:
     _openclaw_failed_at_mono = None
 
 
-async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, emit=None) -> tuple[str, list[dict]]:
+async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, emit=None, images=None) -> tuple[str, list[dict]]:
     """Питає OpenClaw gateway (токен — секрет, у відповіді/логах не світимо)."""
     token = cfg.get_openclaw_token()
     if not token:
         raise RuntimeError("Немає токена OpenClaw")
 
-    messages = _build_messages(system_prompt, history, message)
+    messages = _build_messages(system_prompt, history, message, images)
     payload = {
         "model": cfg.OPENCLAW_AGENT,
         "messages": messages,
@@ -511,7 +523,7 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
 
 # ------------------------------------------------------------------ мозок 2: Anthropic
 
-async def chat_anthropic(message: str, system_prompt: str, history: ChatHistory, emit=None) -> tuple[str, list[dict]]:
+async def chat_anthropic(message: str, system_prompt: str, history: ChatHistory, emit=None, images=None) -> tuple[str, list[dict]]:
     """Прямий виклик Anthropic Messages API через httpx (без SDK)."""
     key = cfg.get_anthropic_key()
     if not key:
@@ -523,7 +535,20 @@ async def chat_anthropic(message: str, system_prompt: str, history: ChatHistory,
         content = h.get("content")
         if role in ("user", "assistant") and isinstance(content, str) and content.strip():
             messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": message})
+    user_content: str | list[dict] = message
+    if images:
+        user_content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image["mime"],
+                    "data": image["data"],
+                },
+            }
+            for image in images
+        ] + [{"type": "text", "text": message or "Опиши зображення."}]
+    messages.append({"role": "user", "content": user_content})
 
     payload = {
         "model": cfg.ANTHROPIC_MODEL,
@@ -559,9 +584,9 @@ def _chat2api_headers() -> dict[str, str]:
     return headers
 
 
-async def chat_chat2api(message: str, system_prompt: str, history: ChatHistory, emit=None) -> tuple[str, list[dict]]:
+async def chat_chat2api(message: str, system_prompt: str, history: ChatHistory, emit=None, images=None) -> tuple[str, list[dict]]:
     """Питає локальний Chat2API (OpenAI-сумісний /chat/completions)."""
-    messages = _build_messages(system_prompt, history, message)
+    messages = _build_messages(system_prompt, history, message, images)
     payload = {
         "model": cfg.CHAT2API_MODEL,
         "messages": messages,
@@ -603,7 +628,12 @@ def _tool_progress_detail(name: str, input_data: dict) -> str:
     return "запит…"
 
 
-def _build_messages(system_prompt: str, history: ChatHistory, message: str) -> list[dict]:
+def _build_messages(
+    system_prompt: str,
+    history: ChatHistory,
+    message: str,
+    images: list[ImageAttachment] | None = None,
+) -> list[dict]:
     """Будує messages для OpenAI-сумісного API."""
     messages: list[dict] = [{"role": "system", "content": system_prompt}]
     for h in history:
@@ -611,7 +641,14 @@ def _build_messages(system_prompt: str, history: ChatHistory, message: str) -> l
         content = h.get("content")
         if role in ("user", "assistant") and isinstance(content, str) and content.strip():
             messages.append({"role": role, "content": content})
-    messages.append({"role": "user", "content": message})
+    user_content: str | list[dict] = message
+    if images:
+        user_content = [{"type": "text", "text": message or "Опиши зображення."}]
+        user_content.extend({
+            "type": "image_url",
+            "image_url": {"url": f"data:{image['mime']};base64,{image['data']}"},
+        } for image in images)
+    messages.append({"role": "user", "content": user_content})
     return messages
 
 
@@ -1305,6 +1342,7 @@ async def chat(
     history: ChatHistory | None = None,
     emit=None,
     reasoning_effort: str | None = None,
+    images: list[ImageAttachment] | None = None,
 ) -> tuple[str, str, str, list[dict]]:
     """
     Обробляє повідомлення користувача. Повертає (reply, emotion, mode, tool_results).
@@ -1327,7 +1365,7 @@ async def chat(
         else:
             try:
                 raw, tool_results = await asyncio.wait_for(
-                    chat_openclaw(message, system_prompt, history, emit=emit),
+                    chat_openclaw(message, system_prompt, history, emit=emit, images=images),
                     timeout=cfg.CHAT_OPENCLAW_TIMEOUT_S,
                 )
                 if _looks_like_gateway_error(raw):
@@ -1354,6 +1392,7 @@ async def chat(
                     chat_omni(
                         message, system_prompt, history, emit=emit,
                         reasoning_effort=reasoning_effort,
+                        images=images,
                     ),
                     timeout=cfg.CHAT_OMNI_TIMEOUT_S,
                 )
@@ -1372,7 +1411,7 @@ async def chat(
 
     if cfg.get_anthropic_key():
         try:
-            raw, tool_results = await chat_anthropic(message, system_prompt, history, emit=emit)
+            raw, tool_results = await chat_anthropic(message, system_prompt, history, emit=emit, images=images)
             reply, emotion = extract_emotion(raw)
             _remember_brain("anthropic", getattr(cfg, "ANTHROPIC_MODEL", "anthropic"))
             return reply, emotion, "anthropic", tool_results
@@ -1381,7 +1420,7 @@ async def chat(
 
     # Chat2API — локальний, ключа не потребує, тому пробуємо завжди
     try:
-        raw, tool_results = await chat_chat2api(message, system_prompt, history, emit=emit)
+        raw, tool_results = await chat_chat2api(message, system_prompt, history, emit=emit, images=images)
         reply, emotion = extract_emotion(raw)
         _remember_brain("chat2api", getattr(cfg, "CHAT2API_MODEL", "chat2api"))
         return reply, emotion, "chat2api", tool_results

@@ -72,7 +72,13 @@ def load(session_id: str) -> dict:
     return data
 
 
-def append(session_id: str, user: str, assistant: str, steps: list | None = None) -> None:
+def append(
+    session_id: str,
+    user: str,
+    assistant: str,
+    steps: list | None = None,
+    attachments: list[dict] | None = None,
+) -> None:
     """
     Дописує обмін до історії сесії (створює файл за потреби).
 
@@ -92,7 +98,12 @@ def append(session_id: str, user: str, assistant: str, steps: list | None = None
         data["title"] = make_title(user)
     data["id"] = session_id
     data["updated"] = now
-    data["messages"].append({"role": "user", "content": user, "ts": now})
+    data["messages"].append({
+        "role": "user",
+        "content": user,
+        "ts": now,
+        **({"attachments": attachments[:8]} if attachments else {}),
+    })
     data["messages"].append({
         "role": "assistant",
         "content": assistant,
