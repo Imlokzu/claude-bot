@@ -1072,7 +1072,18 @@ body {
 
 .chat-layout .chat-panel {
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 320px;
+}
+
+/* Коли відкрите прев'ю, на не-дуже-широкому екрані бокового списку чатів
+   не показуємо — інакше троє в один ряд не влазять. */
+@media (max-width: 1500px) {
+  .chat-layout:has(.side-preview) .chat-sidebar {
+    display: none;
+  }
+  .chat-layout:has(.side-preview) .chat-sidebar-toggle {
+    display: inline-flex;
+  }
 }
 
 /* На ПК список чатів завжди перед очима; на вузькому екрані його місце
@@ -1472,4 +1483,136 @@ body {
   font-size: 11px;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* Кнопки на блоках коду у відповіді */
+.chat-messages .markdown-body pre {
+  position: relative;
+}
+
+.code-actions {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.chat-messages .markdown-body pre:hover .code-actions {
+  opacity: 1;
+}
+
+.code-action {
+  padding: 3px 8px;
+  font-family: var(--font);
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  border: 1px solid var(--border-bright);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.code-action:hover {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+/* Прев'ю markdown та картинок у блоці файлу */
+.file-preview-md {
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 13px;
+}
+
+.file-preview-image {
+  display: flex;
+  justify-content: center;
+  padding: 10px;
+  background: var(--bg-inset);
+}
+
+.file-preview-image img {
+  max-width: 100%;
+  max-height: 220px;
+}
+
+/* Велике прев'ю збоку (SidePreview.jsx) */
+.side-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-width: 0;
+  /* Прев'ю не має права зʼїсти чат: максимум — менша половина ширини */
+  max-width: 46%;
+  margin: 14px 0 14px 14px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.side-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.side-preview-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-preview-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: auto;
+}
+
+.side-preview-body .file-preview {
+  flex: 1;
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-preview-big .file-preview-frame {
+  flex: 1;
+  height: auto;
+  min-height: 60vh;
+}
+
+.file-preview-big .file-preview-code,
+.file-preview-big .file-preview-md {
+  flex: 1;
+  max-height: none;
+}
+
+/* Смужка зміни ширини */
+.side-preview-grip {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+}
+
+.side-preview-grip:hover {
+  background: rgba(201, 100, 66, 0.18);
 }

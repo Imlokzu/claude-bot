@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Tooltip } from 'antd';
-import { ExportOutlined, ReloadOutlined, CodeOutlined, EyeOutlined } from '@ant-design/icons';
+import { ExportOutlined, ReloadOutlined, CodeOutlined, EyeOutlined, ExpandOutlined } from '@ant-design/icons';
+import { XMarkdown } from '@ant-design/x-markdown';
 
 /**
  * Міні-прев'ю файлу, який щойно написав бот — прямо в чаті.
@@ -23,9 +24,12 @@ const sessionId = () => {
 const previewUrl = (path) =>
   `/preview/${path.split('/').map(encodeURIComponent).join('/')}?session_id=${encodeURIComponent(sessionId())}`;
 
-export default function FilePreview({ path, live }) {
+export default function FilePreview({ path, live, big, onExpand }) {
   const isPage = /\.html?$/i.test(path || '');
-  const [mode, setMode] = useState(isPage ? 'page' : 'code');
+  const isMarkdown = /\.(md|markdown)$/i.test(path || '');
+  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(path || '');
+  const canRender = isPage || isMarkdown || isImage;
+  const [mode, setMode] = useState(canRender ? 'page' : 'code');
   const [code, setCode] = useState('');
   const [nonce, setNonce] = useState(0);
 
@@ -55,12 +59,12 @@ export default function FilePreview({ path, live }) {
   const shown = lines.slice(-14); // хвіст: цікаво саме те, що дописується
 
   return (
-    <div className="file-preview">
+    <div className={`file-preview${big ? ' file-preview-big' : ''}`}>
       <div className="file-preview-head">
         <span className="file-preview-path">{path}</span>
         <span className="file-preview-actions">
-          {isPage && (
-            <Tooltip title={mode === 'page' ? 'Показати код' : 'Показати сторінку'}>
+          {canRender && (
+            <Tooltip title={mode === 'page' ? 'Показати код' : 'Показати як є'}>
               <Button
                 size="small"
                 type="text"
@@ -69,9 +73,14 @@ export default function FilePreview({ path, live }) {
               />
             </Tooltip>
           )}
-          {isPage && (
+          {canRender && (
             <Tooltip title="Оновити">
               <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => setNonce((n) => n + 1)} />
+            </Tooltip>
+          )}
+          {onExpand && (
+            <Tooltip title="Розгорнути збоку">
+              <Button size="small" type="text" icon={<ExpandOutlined />} onClick={() => onExpand(path)} />
             </Tooltip>
           )}
           <Tooltip title="Відкрити в новій вкладці">
@@ -86,7 +95,15 @@ export default function FilePreview({ path, live }) {
         </span>
       </div>
 
-      {mode === 'page' ? (
+      {mode === 'page' && isImage ? (
+        <div className="file-preview-image">
+          <img src={previewUrl(path)} alt={path} />
+        </div>
+      ) : mode === 'page' && isMarkdown ? (
+        <div className="file-preview-md markdown-body">
+          <XMarkdown>{code}</XMarkdown>
+        </div>
+      ) : mode === 'page' ? (
         <iframe
           key={`${path}-${nonce}-${live ? lines.length : 'done'}`}
           className="file-preview-frame"

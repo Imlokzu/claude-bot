@@ -22,6 +22,8 @@ import MicButton from './MicButton.jsx';
 import SessionList from './SessionList.jsx';
 import ImageGallery from './ImageGallery.jsx';
 import FilePreview from './FilePreview.jsx';
+import CodeActions from './CodeActions.jsx';
+import SidePreview from './SidePreview.jsx';
 
 /* Картинки з відповіді виносимо в карусель: markdown-рендер лишає текст,
    а самі зображення показуємо однією великою з навігацією. */
@@ -47,7 +49,8 @@ function buildBlocks(content, steps) {
 
 /* Відповідь бота як хронологічна стрічка: текст, під ним інструмент, далі
    решта тексту. Картинки кожного шматка збираються в карусель під ним. */
-function BotAnswer({ content, steps, streaming, sessionId, children }) {
+function BotAnswer({ content, steps, streaming, sessionId, onExpand, children }) {
+  const bodyRef = React.useRef(null);
   const blocks = buildBlocks(content, steps);
   const lastToolIndex = blocks.map((b) => b.kind).lastIndexOf('tool');
   /* Останній запис файлу лишається розгорнутим, навіть якщо після нього бот
@@ -59,7 +62,10 @@ function BotAnswer({ content, steps, streaming, sessionId, children }) {
   const lastTextIndex = blocks.map((b) => b.kind).lastIndexOf('text');
 
   return (
-    <div className={`markdown-body${streaming ? ' is-streaming' : ''}`}>
+    <div className={`markdown-body${streaming ? ' is-streaming' : ''}`} ref={bodyRef}>
+      {/* Кнопки «копіювати/редагувати» на блоках коду: команду з відповіді
+          часто треба трохи підправити перед запуском. */}
+      <CodeActions containerRef={bodyRef} deps={[content, streaming]} />
       {blocks.map((block, i) => {
         if (block.kind === 'tool') {
           return (
@@ -68,11 +74,13 @@ function BotAnswer({ content, steps, streaming, sessionId, children }) {
               step={block.step}
               isLatest={i === lastToolIndex}
               isLatestWrite={i === lastWriteIndex}
+              onExpand={onExpand}
             />
           );
         }
-        const { text, images } = splitImages(block.text);
-        if (!text && images.length === 0) return null;
+        const { text: noEmbeds, embeds } = splitEmbeds(block.text);
+        const { text, images } = splitImages(noEmbeds);
+        if (!text && images.length === 0 && embeds.length === 0) return null;
         return (
           <React.Fragment key={`x-${i}`}>
             {text && (
@@ -87,12 +95,33 @@ function BotAnswer({ content, steps, streaming, sessionId, children }) {
               </XMarkdown>
             )}
             {images.length > 0 && <ImageGallery images={images} sessionId={sessionId} />}
+            {embeds.map((path) => (
+              <FilePreview key={path} path={path} onExpand={onExpand} />
+            ))}
           </React.Fragment>
         );
       })}
       {children}
     </div>
   );
+}
+
+/* OpenClaw-агент любить вставляти власну розмітку [embed url="…"] замість
+   виклику тулза. Розпізнаємо її й показуємо той самий файл із робочої теки —
+   інакше користувач бачив би сирий текст замість сторінки. */
+const EMBED_RE = /\[embed\s+url="([^"]+)"[^\]]*\]/gi;
+
+function splitEmbeds(markdown) {
+  const embeds = [];
+  const text = String(markdown || '').replace(EMBED_RE, (_m, url) => {
+    const path = String(url)
+      .replace(/^.*\/documents\//, '')
+      .replace(/^\/?preview\//, '')
+      .replace(/^\//, '');
+    if (path) embeds.push(path);
+    return '';
+  });
+  return { text, embeds };
 }
 
 function splitImages(markdown) {
@@ -224,7 +253,7 @@ function toolDetail(tool, input) {
 /* Один виклик інструмента: згорнутий рядок, який можна розгорнути.
    Сам розкривається лише поки працює І якщо він найновіший — тоді видно
    деталі саме поточної дії, а історія не захаращує відповідь. */
-function ToolBlock({ step, isLatest, isLatestWrite }) {
+function ToolBlock({ step, isLatest, isLatestWrite, onExpand }) {
   const running = step.type !== 'done';
   const writesFile = step.tool === 'workspace_write';
   const [open, setOpen] = useState(false);
@@ -255,7 +284,7 @@ function ToolBlock({ step, isLatest, isLatestWrite }) {
           {/* Пише файл — показуємо його прямо тут: код, що росте, а для
               сторінки ще й те, як вона виглядає. */}
           {step.tool === 'workspace_write' && detail ? (
-            <FilePreview path={detail} live={running} />
+            <FilePreview path={detail} live={running} onExpand={onExpand} />
           ) : (
             detail && <div className="tool-block-arg">{detail}</div>
           )}
@@ -462,6 +491,10 @@ function App() {
      після перезавантаження сторінки чи рестарту панелі до них можна вернутись. */
   const [sessions, setSessions] = useState([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /* Велике прев'ю збоку: сюди бот сам відкриває файл (workspace_show) або
+     ти тиснеш «розгорнути» на міні-прев'ю в відповіді. */
+  const [previewFile, setPreviewFile] = useState('');
+  const [previewWidth, setPreviewWidth] = useState(420);
   /* Модель, якою РЕАЛЬНО відповіли (мозки перемикаються самі при збоях) */
   const [activeModel, setActiveModel] = useState('');
   const [activeBrain, setActiveBrain] = useState('');
@@ -487,6 +520,10 @@ function App() {
       try {
         payload = JSON.parse(event.data);
       } catch {
+        return;
+      }
+      if (payload && payload.type === 'preview' && payload.path) {
+        setPreviewFile(payload.path);
         return;
       }
       if (!payload || payload.type !== 'tool') return;
@@ -530,7 +567,7 @@ function App() {
           content: m.content,
           streaming: false,
           toolResults: [],
-          toolSteps: [],
+          toolSteps: m.steps || [],
         }));
         if (restored.length) setMessages(restored);
       })
@@ -546,7 +583,7 @@ function App() {
           content: m.content,
           streaming: false,
           toolResults: [],
-          toolSteps: [],
+          toolSteps: m.steps || [],
         }))
       );
       setSessionId(sid);
@@ -632,6 +669,29 @@ function App() {
         content: text,
       },
     ]);
+  };
+
+  /* Кроки інструментів живуть у стані панелі; після відповіді відправляємо
+     їх у сесію, щоб історія відновлювалась цілком. */
+  const saveSteps = (index) => {
+    setMessages((prev) => {
+      const steps = prev[index]?.toolSteps || [];
+      const sid = (() => {
+        try {
+          return localStorage.getItem(SESSION_KEY) || '';
+        } catch {
+          return '';
+        }
+      })();
+      if (steps.length && sid) {
+        fetch(`/api/sessions/${encodeURIComponent(sid)}/steps`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ steps }),
+        }).catch(() => {});
+      }
+      return prev;
+    });
   };
 
   /* Розпізнане голосом дописуємо до вже набраного, а не затираємо його. */
@@ -773,6 +833,9 @@ function App() {
         }
         clearTimeout(watchdog);
         updateBotMessage(botIndex, fullReply || '(порожня відповідь)', false, toolResults, mode, toolSteps);
+        /* Кроки зберігаємо на диск разом із відповіддю — інакше при поверненні
+           до чату лишався б сам текст, без того, що бот робив. */
+        saveSteps(botIndex);
       } catch (err) {
         const text =
           err.name === 'AbortError'
@@ -915,6 +978,7 @@ function App() {
                     steps={msg.toolSteps}
                     streaming={msg.streaming}
                     sessionId={sessionId}
+                    onExpand={setPreviewFile}
                   >
                     {toolResults.map((tr) => (
                       <ToolCard
@@ -989,6 +1053,7 @@ function App() {
             steps={item?.toolSteps}
             streaming={isStreaming}
             sessionId={sessionId}
+            onExpand={setPreviewFile}
           />
         );
       },
@@ -1030,6 +1095,15 @@ function App() {
       >
         {drawerOpen ? sessionList : null}
       </Drawer>
+
+      {previewFile && (
+        <SidePreview
+          path={previewFile}
+          width={previewWidth}
+          onWidth={setPreviewWidth}
+          onClose={() => setPreviewFile('')}
+        />
+      )}
 
       <div className="chat-panel">
         <div className="chat-panel-header">
