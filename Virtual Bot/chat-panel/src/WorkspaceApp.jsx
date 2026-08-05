@@ -316,6 +316,11 @@ export default function WrappedWorkspace() {
         algorithm: theme.defaultAlgorithm,
         token: {
           colorPrimary: '#C96442',
+          /* Шрифт задаємо токеном antd: його власний reset інакше перебиває
+             body-стиль сторінки, і панель лишалась на дефолтному ui-sans-serif. */
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+
           colorBgContainer: '#FBFAF7',
           colorBorder: '#E4E1D6',
           colorText: '#2B2A26',

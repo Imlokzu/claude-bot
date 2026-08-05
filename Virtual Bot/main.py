@@ -1206,6 +1206,17 @@ def api_workspace_delete(req: WorkspacePathRequest) -> dict:
     return _workspace_call(req.session_id, workspace.delete, req.path)
 
 
+class WorkspaceSaveUrlRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2048)
+    session_id: str = Field(default="", max_length=64)
+
+
+@app.post("/api/workspace/save-url")
+def api_workspace_save_url(req: WorkspaceSaveUrlRequest) -> dict:
+    """Зберігає картинку з чату в бібліотеку сесії (кнопка в каруселі)."""
+    return _workspace_call(req.session_id, workspace.save_url, req.url)
+
+
 @app.post("/api/workspace/rename")
 def api_workspace_rename(req: WorkspaceRenameRequest) -> dict:
     return _workspace_call(req.session_id, workspace.rename, req.path, req.new_name)

@@ -17,7 +17,7 @@ const BY_EXTENSION = {
   ts: () => javascript({ typescript: true }),
   tsx: () => javascript({ typescript: true, jsx: true }),
   py: python,
-  md: markdown, markdown,
+  md: markdown, markdown: markdown,
   json,
   html, htm: html,
   css,

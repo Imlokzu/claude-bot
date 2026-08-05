@@ -38,16 +38,20 @@ function Browser() {
     setUrl(target);
     setDraft(target);
     if (push) {
-      setHistory((prev) => {
-        const cut = prev.slice(0, pos + 1);
-        return [...cut, target];
+      /* Історію будуємо з АКТУАЛЬНОЇ позиції у функційному оновленні:
+         кілька переходів поспіль із застарілим pos обрізали б її не там. */
+      setPos((prevPos) => {
+        setHistory((prev) => [...prev.slice(0, prevPos + 1), target]);
+        return prevPos + 1;
       });
-      setPos((p) => p + 1);
     }
   };
 
   useEffect(() => {
     const onMessage = (event) => {
+      /* Тільки від НАШОГО фрейма: інакше будь-яке вікно з хендлом на цю
+         сторінку могло б підсунути вкладці довільну навігацію. */
+      if (event.source !== frameRef.current?.contentWindow) return;
       const data = event.data;
       if (!data || data.type !== 'claudebot-navigate' || typeof data.url !== 'string') return;
       go(data.url);
@@ -113,6 +117,11 @@ export default function WrappedBrowser() {
         algorithm: theme.defaultAlgorithm,
         token: {
           colorPrimary: '#C96442',
+          /* Шрифт задаємо токеном antd: його власний reset інакше перебиває
+             body-стиль сторінки, і панель лишалась на дефолтному ui-sans-serif. */
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+
           colorBgContainer: '#FBFAF7',
           colorBorder: '#E4E1D6',
           colorText: '#2B2A26',

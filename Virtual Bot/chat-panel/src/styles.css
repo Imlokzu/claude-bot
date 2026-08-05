@@ -14,8 +14,9 @@
   --yellow: #B4802E;
   --red: #B4443A;
   --radius: 18px;
-  --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
+  /* Системний гротеск: на macOS це SF Pro — легко читається, без «мультяшності» */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", ui-sans-serif,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", "Fira Mono", Menlo, Consolas, ui-monospace, monospace;
 }
 
@@ -117,18 +118,29 @@ body {
 }
 
 .chat-input-area {
-  padding: 6px 12px 10px;
-  border-top: 1px solid transparent;
+  padding: 0 10px 10px;
 }
 
-/* Тінь-перехід: видно, що текст іде далі під смугу вводу */
-.chat-input-area::before {
-  content: '';
-  display: block;
-  height: 12px;
-  margin: -18px -12px 6px;
-  background: linear-gradient(to bottom, rgba(251, 250, 247, 0), var(--bg-panel));
-  pointer-events: none;
+/* Смуга вводу — мʼяка «пігулка» на тлі картки: без рамки й без підсвітки
+   фокуса, щоб текст писався наче просто на полотні. */
+.chat-input-area .ant-sender,
+.chat-input-area .ant-sender-content {
+  border-radius: 999px;
+  background: transparent;
+}
+
+.chat-input-area .ant-sender-content {
+  padding: 4px 6px;
+}
+
+.chat-input-area textarea,
+.chat-input-area textarea:focus,
+.chat-input-area .ant-input,
+.chat-input-area .ant-input:focus {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .attached-files {
@@ -625,7 +637,7 @@ body {
    inline-block НЕ використовуємо: воно ламає переноси рядків усередині
    слова й зсувало б текст відносно справжнього textarea. */
 .blur-typing-char {
-  animation: blur-char-in 260ms cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation: blur-char-in 320ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   will-change: filter, opacity;
 }
 
@@ -653,16 +665,18 @@ body {
 
 @keyframes blur-char-in {
   0% {
-    filter: blur(5px);
+    filter: blur(3.5px);
     opacity: 0;
+    transform: translateY(2px);
   }
-  60% {
-    filter: blur(1.2px);
+  55% {
+    filter: blur(0.8px);
     opacity: 0.85;
   }
   100% {
     filter: blur(0);
     opacity: 1;
+    transform: none;
   }
 }
 
@@ -678,16 +692,18 @@ body {
 
 @keyframes blur-chunk-in {
   0% {
-    filter: blur(6px);
+    filter: blur(4px);
     opacity: 0;
+    transform: translateY(3px) scale(0.995);
   }
-  55% {
-    filter: blur(1.4px);
-    opacity: 0.8;
+  45% {
+    filter: blur(1px);
+    opacity: 0.7;
   }
   100% {
     filter: blur(0);
     opacity: 1;
+    transform: none;
   }
 }
 
@@ -744,7 +760,25 @@ body {
 .sender-actions {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+}
+
+/* Усі кнопки смуги вводу — одного розміру: раніше «відправити» і «+»
+   були помітно більшими за мікрофон і режим розмови. */
+.chat-input-area .ant-sender-prefix button,
+.chat-input-area .sender-actions button,
+.chat-input-area .ant-sender-actions-btn {
+  width: 38px !important;
+  min-width: 38px !important;
+  height: 38px !important;
+  min-height: 38px !important;
+  font-size: 16px !important;
+}
+
+.chat-input-area .ant-sender-prefix .ant-btn-icon,
+.chat-input-area .sender-actions .ant-btn-icon,
+.chat-input-area .ant-sender-actions-btn .ant-btn-icon {
+  font-size: 16px !important;
 }
 
 .mic-button {
@@ -1164,4 +1198,100 @@ body {
 
 .chat-messages .ant-bubble-content {
   border-radius: 16px !important;
+}
+
+/* ============================================================
+   Карусель картинок (ImageGallery.jsx)
+   ============================================================ */
+
+.img-gallery {
+  position: relative;
+  margin-top: 10px;
+}
+
+.img-gallery-stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.img-gallery-stage img {
+  max-width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  cursor: zoom-in;
+  display: block;
+}
+
+.img-gallery-like {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  color: var(--red);
+  font-size: 16px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
+/* Стрілки зʼявляються на наведення — щоб не заважали дивитись */
+.img-gallery-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: rgba(251, 250, 247, 0.9);
+  border: 1px solid var(--border-bright);
+  border-radius: 999px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.img-gallery:hover .img-gallery-nav {
+  opacity: 1;
+}
+
+.img-gallery-nav:hover {
+  background: #fff;
+  color: var(--green);
+}
+
+.img-gallery-prev { left: 8px; }
+.img-gallery-next { right: 8px; }
+
+.img-gallery-dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.img-gallery-dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  background: var(--border-bright);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.img-gallery-dot-active {
+  background: var(--green);
+  transform: scale(1.35);
+}
+
+.img-gallery-full {
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
 }

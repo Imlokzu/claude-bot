@@ -20,6 +20,21 @@ import BlurTypingInput from './BlurTypingInput.jsx';
 import CodeEditor from './CodeEditor.jsx';
 import MicButton from './MicButton.jsx';
 import SessionList from './SessionList.jsx';
+import ImageGallery from './ImageGallery.jsx';
+
+/* Картинки з відповіді виносимо в карусель: markdown-рендер лишає текст,
+   а самі зображення показуємо однією великою з навігацією. */
+function splitImages(markdown) {
+  const images = [];
+  const text = String(markdown || '').replace(
+    /!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,
+    (_m, alt, src) => {
+      images.push({ alt, src });
+      return '';
+    }
+  );
+  return { text: text.replace(/\n{3,}/g, '\n\n').trim(), images };
+}
 
 /* Хвиля — символ розмови голосом (кнопка біля мікрофона) */
 function VoiceWave() {
@@ -770,11 +785,10 @@ function App() {
                   )
                 : undefined
               : msg.role === 'ai'
-              ? (content) => (
+              ? (content) => {
+                  const { text, images } = splitImages(content);
+                  return (
                   <div className={`markdown-body${msg.streaming ? ' is-streaming' : ''}`}>
-                    {/* Кроки інструментів видно й ПІСЛЯ появи тексту — раніше вони
-                        жили лише в loadingRender і зникали з першим же токеном. */}
-                    <ToolSteps steps={msg.toolSteps} />
                     <XMarkdown
                       streaming={
                         msg.streaming
@@ -782,8 +796,14 @@ function App() {
                           : STREAM_DONE
                       }
                     >
-                      {content}
+                      {text}
                     </XMarkdown>
+                    {/* Кроки — ПІД текстом: спершу бот каже, що зараз пошукає,
+                        і вже під цим видно сам виклик інструмента. */}
+                    <ToolSteps steps={msg.toolSteps} />
+                    {images.length > 0 && (
+                      <ImageGallery images={images} sessionId={sessionId} />
+                    )}
                     {toolResults.map((tr) => (
                       <ToolCard
                         key={`${tr.tool}-${JSON.stringify(tr.input || {})}`}
@@ -793,7 +813,8 @@ function App() {
                       />
                     ))}
                   </div>
-                )
+                  );
+                }
               : undefined,
         };
       }),
@@ -851,16 +872,18 @@ function App() {
       contentRender: (content, info) => {
         const item = items.find((it) => String(it.key) === String(info?.key));
         const isStreaming = !!item?.streaming;
+        const { text, images } = splitImages(content);
         return (
           <div className={`markdown-body${isStreaming ? ' is-streaming' : ''}`}>
-            <ToolSteps steps={item?.toolSteps} />
             <XMarkdown
               streaming={
                 isStreaming ? { ...STREAM_ANIMATION, hasNextChunk: true } : STREAM_DONE
               }
             >
-              {content}
+              {text}
             </XMarkdown>
+            <ToolSteps steps={item?.toolSteps} />
+            {images.length > 0 && <ImageGallery images={images} sessionId={sessionId} />}
           </div>
         );
       },
@@ -936,9 +959,11 @@ function App() {
                 </option>
               ))}
             </select>
-            {activeModel && (
+            {/* Дублювати назву моделі під самим селектором нема сенсу —
+                показуємо лише мозок, коли модель уже видно вгорі. */}
+            {activeBrain && !activeIsExternal && (
               <span className="chat-model-live" title="Мозок, який реально відповів">
-                {activeBrain ? `${activeBrain} · ${activeModel}` : activeModel}
+                {activeBrain}
               </span>
             )}
           </div>
@@ -1106,6 +1131,11 @@ export default function WrappedApp() {
         algorithm: theme.defaultAlgorithm,
         token: {
           colorPrimary: '#C96442',
+          /* Шрифт задаємо токеном antd: його власний reset інакше перебиває
+             body-стиль сторінки, і панель лишалась на дефолтному ui-sans-serif. */
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+
           colorBgContainer: '#FBFAF7',
           colorBorder: '#E4E1D6',
           colorText: '#2B2A26',

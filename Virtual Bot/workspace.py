@@ -247,6 +247,55 @@ def delete(rel: str) -> dict:
     return {"ok": True, "trashed": rel_path(target)}
 
 
+def save_url(url: str, subdir: str = "session/library") -> dict:
+    """
+    Качає картинку за посиланням у робочу теку (бібліотека сесії).
+
+    Це «додати в бібліотеку» з каруселі: файл лягає поруч із рештою матеріалів
+    сесії, тож бот може взяти його для того, що робить. Приймаємо лише https,
+    лише зображення й лише в межах ліміту — тека бота не смітник для довільних
+    завантажень.
+    """
+    import httpx
+
+    link = (url or "").strip()
+    if not link.startswith("https://"):
+        raise ValueError("Дозволені лише https-посилання")
+
+    with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+        with client.stream("GET", link) as resp:
+            resp.raise_for_status()
+            content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+            if not content_type.startswith("image/"):
+                raise ValueError("За посиланням не зображення")
+            chunks: list[bytes] = []
+            size = 0
+            for chunk in resp.iter_bytes():
+                chunks.append(chunk)
+                size += len(chunk)
+                if size > MAX_WRITE_BYTES:
+                    raise ValueError("Зображення завелике")
+    data = b"".join(chunks)
+
+    ext = {
+        "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
+        "image/webp": ".webp", "image/svg+xml": ".svg",
+    }.get(content_type, ".img")
+    name = _SLUG_RE.sub("-", link.rsplit("/", 1)[-1].split("?")[0])[:40].strip("-") or "image"
+    if not name.lower().endswith(ext):
+        name = f"{name}{ext}"
+
+    target = _resolve(f"{subdir}/{name}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    counter = 1
+    while target.exists():
+        stem = target.stem
+        target = target.parent / f"{stem}-{counter}{ext}"
+        counter += 1
+    target.write_bytes(data)
+    return {"ok": True, "path": rel_path(target), "size": len(data)}
+
+
 def rename(rel: str, new_name: str) -> dict:
     """Перейменування в межах тієї ж теки."""
     path = _resolve(rel, must_exist=True)
