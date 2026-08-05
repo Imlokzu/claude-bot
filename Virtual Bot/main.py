@@ -685,6 +685,7 @@ async def api_chat(req: ChatRequest):
                 message, history, **_chat_image_kwargs(images),
                 **_chat_reasoning_kwargs(req.reasoning_effort),
             )
+            final_emotion = emotions.settled_emotion(emotion)
             log.info("Чат (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
             _save_history(sid, history, message, reply, attachments=req.attachments)
             # Назву чату генеруємо у фоні — відповідь на неї не чекає
@@ -693,11 +694,11 @@ async def api_chat(req: ChatRequest):
             # Інтеграційний шар: SSE-подія, міст до дисплея, автожурнал.
             # Помилка будь-якої з цих дій НЕ ламає відповідь клієнту.
             try:
-                events.publish_emotion(emotion)
+                events.publish_emotion(final_emotion)
             except Exception:  # noqa: BLE001
                 log.exception("Не вдалося опублікувати SSE-подію емоції")
             try:
-                display_bridge.send_chat_exchange_bg(message, reply, emotion)
+                display_bridge.send_chat_exchange_bg(message, reply, final_emotion)
             except Exception:  # noqa: BLE001
                 log.exception("Не вдалося запустити відправку на дисплей")
             try:
@@ -707,7 +708,7 @@ async def api_chat(req: ChatRequest):
 
             return {
                 "reply": reply,
-                "emotion": emotion,
+                "emotion": final_emotion,
                 "session_id": sid,
                 "mode": mode,
                 "model": brains.get_last_model(),
@@ -765,6 +766,7 @@ async def api_chat(req: ChatRequest):
                         continue
 
                 reply, emotion, mode, tool_results = chat_task.result()
+                final_emotion = emotions.settled_emotion(emotion)
                 log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
                 _save_history(sid, history, message, reply, attachments=req.attachments)
                 asyncio.create_task(_autoname_chat(sid, message, reply))
@@ -795,16 +797,16 @@ async def api_chat(req: ChatRequest):
                         yield f"event: delta\ndata: {json.dumps({'chunk': chunk})}\n\n"
                         await asyncio.sleep(0.02)
 
-                yield f"event: emotion\ndata: {json.dumps({'emotion': emotion})}\n\n"
-                yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': emotion, 'session_id': sid, 'mode': mode, 'model': brains.get_last_model(), 'tool_results': tool_results})}\n\n"
+                yield f"event: emotion\ndata: {json.dumps({'emotion': final_emotion})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': final_emotion, 'session_id': sid, 'mode': mode, 'model': brains.get_last_model(), 'tool_results': tool_results})}\n\n"
 
                 # Інтеграційний шар після стрімінгу
                 try:
-                    events.publish_emotion(emotion)
+                    events.publish_emotion(final_emotion)
                 except Exception:  # noqa: BLE001
                     log.exception("Не вдалося опублікувати SSE-подію емоції")
                 try:
-                    display_bridge.send_chat_exchange_bg(message, reply, emotion)
+                    display_bridge.send_chat_exchange_bg(message, reply, final_emotion)
                 except Exception:  # noqa: BLE001
                     log.exception("Не вдалося запустити відправку на дисплей")
                 try:
@@ -813,6 +815,10 @@ async def api_chat(req: ChatRequest):
                     log.exception("Не вдалося дописати автожурнал")
             except Exception as exc:  # noqa: BLE001
                 log.exception("Помилка стрімінгу чату")
+                try:
+                    events.publish_emotion("idle")
+                except Exception:  # noqa: BLE001
+                    pass
                 yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")
@@ -838,6 +844,10 @@ class SessionStepsRequest(BaseModel):
     steps: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class SessionPinRequest(BaseModel):
+    pinned: bool
+
+
 @app.post("/api/sessions/{session_id}/steps")
 def api_session_steps(session_id: str, req: SessionStepsRequest) -> dict:
     """Панель докладає кроки інструментів до останньої відповіді бота."""
@@ -845,6 +855,16 @@ def api_session_steps(session_id: str, req: SessionStepsRequest) -> dict:
         raise HTTPException(status_code=400, detail="Некоректний id сесії")
     chat_store.set_last_steps(session_id, req.steps)
     return {"ok": True}
+
+
+@app.post("/api/sessions/{session_id}/pin")
+def api_session_pin(session_id: str, req: SessionPinRequest) -> dict:
+    """Зірочка чату: закріплені розмови повертаються першими у списку."""
+    if not chat_store.is_valid_id(session_id):
+        raise HTTPException(status_code=400, detail="Некоректний id сесії")
+    if not chat_store.set_pinned(session_id, req.pinned):
+        raise HTTPException(status_code=404, detail="Чат не знайдено")
+    return {"ok": True, "pinned": req.pinned}
 
 
 @app.delete("/api/sessions/{session_id}")

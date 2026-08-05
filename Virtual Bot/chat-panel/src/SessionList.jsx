@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Button, Input } from 'antd';
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
 
 /**
  * Список збережених розмов: пошук + назва, яку придумав бот, + коли востаннє.
@@ -17,7 +17,7 @@ function whenLabel(updated) {
   return new Date(updated * 1000).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
 }
 
-export default function SessionList({ sessions, activeId, onOpen, onNew }) {
+export default function SessionList({ sessions, activeId, onOpen, onNew, onPin }) {
   const [query, setQuery] = useState('');
 
   const shown = useMemo(() => {
@@ -42,15 +42,24 @@ export default function SessionList({ sessions, activeId, onOpen, onNew }) {
 
       <div className="session-list-items">
         {shown.map((s) => (
-          <button
+          <div
             key={s.id}
-            type="button"
             className={`session-row${s.id === activeId ? ' session-row-active' : ''}`}
-            onClick={() => onOpen(s.id)}
           >
-            <span className="session-row-title">{s.title || 'Без назви'}</span>
-            <span className="session-row-when">{whenLabel(s.updated)}</span>
-          </button>
+            <button type="button" className="session-row-open" onClick={() => onOpen(s.id)}>
+              <span className="session-row-title">{s.title || 'Без назви'}</span>
+              <span className="session-row-when">{whenLabel(s.updated)}</span>
+            </button>
+            <button
+              type="button"
+              className={`session-row-pin${s.pinned ? ' session-row-pin-active' : ''}`}
+              onClick={() => onPin(s.id, !s.pinned)}
+              title={s.pinned ? 'Відкріпити чат' : 'Закріпити чат зверху'}
+              aria-label={s.pinned ? 'Відкріпити чат' : 'Закріпити чат зверху'}
+            >
+              {s.pinned ? <StarFilled /> : <StarOutlined />}
+            </button>
+          </div>
         ))}
         {shown.length === 0 && (
           <div className="session-list-empty">

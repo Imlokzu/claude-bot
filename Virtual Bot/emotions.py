@@ -27,6 +27,15 @@ ALLOWED_EMOTIONS = {
     "cool",       # впевнений/незворушний (в окулярах)
 }
 
+# Ці стани описують процес, а не настрій після готової відповіді. Якщо модель
+# завершила відповідь із тегом working/searching, обличчя не має «працювати» вічно.
+TRANSIENT_ACTIVITY_EMOTIONS = {"searching", "web", "working", "writing", "loading", "thinking"}
+
+
+def settled_emotion(emotion: str) -> str:
+    """Емоція для дисплея після завершення запиту."""
+    return "idle" if emotion in TRANSIENT_ACTIVITY_EMOTIONS else emotion
+
 # Тег виду [емоція:happy] або [emotion:happy] на початку відповіді.
 # Назву ловимо і латиницею, і кирилицею (модель інколи пише «[емоція:щасливий]») —
 # такий тег теж треба прибрати з тексту і, за можливості, змапити на дозволену емоцію.

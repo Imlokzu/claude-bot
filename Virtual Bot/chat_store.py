@@ -223,9 +223,32 @@ def list_sessions(limit: int = 50) -> list[dict]:
             "title": data.get("title") or "Без назви",
             "updated": int(data.get("updated") or 0),
             "count": len(data.get("messages") or []),
+            "pinned": bool(data.get("pinned")),
         })
-    out.sort(key=lambda s: s["updated"], reverse=True)
+    # Закріплені чати завжди зверху; всередині групи — найсвіжіші першими.
+    out.sort(key=lambda s: (not s["pinned"], -s["updated"]))
     return out[:limit]
+
+
+def set_pinned(session_id: str, pinned: bool) -> bool:
+    """Закріплює/відкріплює чат; стан живе у JSON сесії після рестарту."""
+    try:
+        path = _path(session_id)
+    except ValueError:
+        return False
+    data = load(session_id)
+    if not data.get("messages"):
+        return False
+    data["pinned"] = bool(pinned)
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+        return True
+    except OSError:
+        log.exception("Не вдалося змінити закріплення чату %s", session_id)
+        tmp.unlink(missing_ok=True)
+        return False
 
 
 def delete(session_id: str) -> bool:

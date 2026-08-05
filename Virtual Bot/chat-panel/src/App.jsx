@@ -637,6 +637,19 @@ function App() {
     refreshSessions();
   };
 
+  const pinSession = async (sid, pinned) => {
+    try {
+      await api(`/api/sessions/${encodeURIComponent(sid)}/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned }),
+      });
+      await refreshSessions();
+    } catch (e) {
+      message.error(e.message);
+    }
+  };
+
   /* Список моделей + та, якою реально відповіли. Шапка має показувати
      ПРАВДУ: раніше там висіло «Claude Sonnet 5» із конфігу, хоча відповідав
      OpenClaw своєю моделлю. */
@@ -877,6 +890,9 @@ function App() {
                         )
                       : [];
                     mode = payload.mode || '';
+                    toolSteps = toolSteps.map((step) =>
+                      step.type === 'start' ? { ...step, type: 'done', result: step.result || {} } : step
+                    );
                     if (payload.model) setActiveModel(payload.model);
                     if (payload.mode) setActiveBrain(payload.mode);
                     if (payload.session_id && payload.session_id !== sessionId) {
@@ -907,7 +923,12 @@ function App() {
           err.name === 'AbortError'
             ? 'Звʼязок із ботом обірвався — спробуй ще раз.'
             : `Помилка: ${err.message}`;
-        updateBotMessage(botIndex, text, false, [], mode, []);
+        const finishedSteps = toolSteps.map((step) =>
+          step.type === 'start'
+            ? { ...step, type: 'done', result: { error: 'Запит завершився раніше' } }
+            : step
+        );
+        updateBotMessage(botIndex, text, false, [], mode, finishedSteps);
       } finally {
         abortRef.current = null;
         setLoading(false);
@@ -931,7 +952,14 @@ function App() {
           /* Порожній список НЕ затирає кроки: коли тули виконує зовнішній мозок,
              вони приходять окремим потоком /api/events, а стрім чату шле [] —
              і раніше фінальна подія done стирала все, що встигло показатись. */
-          toolSteps: toolSteps && toolSteps.length ? toolSteps : next[index].toolSteps || [],
+          toolSteps: (() => {
+            const current = toolSteps && toolSteps.length ? toolSteps : next[index].toolSteps || [];
+            return streaming
+              ? current
+              : current.map((step) =>
+                  step.type === 'start' ? { ...step, type: 'done', result: step.result || {} } : step
+                );
+          })(),
         };
       }
       return next;
@@ -1156,6 +1184,7 @@ function App() {
         newSession();
         setDrawerOpen(false);
       }}
+      onPin={pinSession}
     />
   );
 
