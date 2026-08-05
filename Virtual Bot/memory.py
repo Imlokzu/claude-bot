@@ -442,10 +442,16 @@ def _tokenize(text: str) -> list[str]:
 _USER_PROFILE_PATH = "people/user.md"
 
 
-def load_user_profile() -> str:
+def load_user_profile(root: Optional[Path] = None) -> str:
     """Повертає вміст brain/people/user.md або порожній рядок."""
     try:
-        return read_note(_USER_PROFILE_PATH)
+        if root is None:
+            return read_note(_USER_PROFILE_PATH)
+        resolved_root = root.resolve()
+        profile_path = (resolved_root / _USER_PROFILE_PATH).resolve()
+        if not profile_path.is_relative_to(resolved_root) or not profile_path.is_file():
+            return ""
+        return profile_path.read_text(encoding="utf-8", errors="replace")
     except (BrainPathError, FileNotFoundError, OSError):
         return ""
 
@@ -462,6 +468,9 @@ def append_user_profile(addition: str) -> None:
         except (BrainPathError, FileNotFoundError, OSError):
             pass
         lines = [ln for ln in current.splitlines() if ln.strip()]
+        normalized_addition = " ".join(addition.casefold().split())
+        if any(" ".join(line.lstrip("- ").casefold().split()) == normalized_addition for line in lines):
+            return
         if not lines or not lines[0].strip().startswith("#"):
             current = "# Профіль користувача\n\n" + current
         if current and not current.endswith("\n"):

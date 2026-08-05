@@ -28,6 +28,7 @@ from pathlib import Path
 import httpx
 
 import app_config as cfg
+import brain_context
 import profile_store
 from emotions import ALLOWED_EMOTIONS, extract_emotion, guess_emotion
 from memory import append_user_profile, find_relevant_notes, load_user_profile
@@ -70,6 +71,7 @@ def _tools_instruction() -> str:
         "- Для будь-якого питання, що потребує актуальної або фактологічної інформації, спочатку використай web_search, facts, weather або currency.",
         "- Не пиши 'я не знаю' без спроби пошуку. Пошукай інструментом і дай відповідь на основі результатів.",
         "- Якщо інструмент повернув помилку, повідом про це чесно, але не вигадуй дані.",
+        "- Якщо запит стосується користувача або минулих розмов, спочатку викликай memory_search.",
         "Доступні інструменти:",
     ]
     for t in tools:
@@ -102,9 +104,21 @@ def build_system_prompt(user_message: str) -> str:
     parts = [base]
     parts.append(_tools_instruction())
 
-    user_profile = load_user_profile().strip()
+    profiles = [load_user_profile().strip()]
+    owner_profile = load_user_profile(brain_context.init_user_brain(None)).strip()
+    if owner_profile and owner_profile not in profiles:
+        profiles.append(owner_profile)
+    user_profile = "\n".join(profile for profile in profiles if profile)
     if user_profile:
-        parts.append(f"\nПро користувача (запамʼятай і використовуй):\n{user_profile}")
+        parts.append(
+            "\nПро користувача (довгострокова памʼять; використовуй без повторного запитання):\n"
+            f"{user_profile}"
+        )
+    parts.append(
+        "\nПРАВИЛО ПАМʼЯТІ: якщо користувач питає про себе або раніше повідомлений факт, "
+        "спочатку перевір профіль і релевантні нотатки. Не кажи «я не знаю» і не "
+        "проси повторити факт, доки не використав доступну памʼять."
+    )
 
     notes = find_relevant_notes(user_message, top_n=3)
     if notes:
@@ -209,6 +223,9 @@ def _remember_brain(mode: str, model: str = "") -> None:
 # лише моделі з кованого списку config.yaml — довільні рядки не приймаємо.
 _selected_omni_model: str | None = None
 
+_REASONING_LEVELS = ("none", "low", "medium", "high")
+_REASONING_MODEL_MARKERS = ("deepseek", "qwen", "kimi", "glm", "minimax", "grok")
+
 
 def _omni_model_ids() -> set[str]:
     return {m["id"] for m in cfg.OMNI_MODELS}
@@ -228,6 +245,34 @@ def set_selected_omni_model(model: str) -> bool:
         _selected_omni_model = model
         return True
     return False
+
+
+def reasoning_capability(model: str) -> dict:
+    """Public, provider-safe reasoning metadata for a configured model."""
+    supported = any(marker in (model or "").casefold() for marker in _REASONING_MODEL_MARKERS)
+    return {
+        "supported": supported,
+        "levels": list(_REASONING_LEVELS if supported else ("none",)),
+        "default": "none",
+    }
+
+
+def models_with_capabilities() -> list[dict]:
+    return [
+        {**model, "reasoning": reasoning_capability(model["id"])}
+        for model in cfg.OMNI_MODELS
+    ]
+
+
+def _reasoning_payload(model: str, reasoning_effort: str | None) -> dict:
+    """Forward effort only to model families that accept the OpenAI-style field."""
+    effort = (reasoning_effort or "none").casefold()
+    capability = reasoning_capability(model)
+    if not capability["supported"] or effort == "none":
+        return {}
+    if effort not in capability["levels"]:
+        raise ValueError("Непідтримуваний рівень міркування")
+    return {"reasoning_effort": effort}
 
 
 async def check_omni_reachable(client: httpx.AsyncClient) -> bool:
@@ -276,7 +321,14 @@ def _omni_note_success() -> None:
     _omni_failed_at_mono = None
 
 
-async def _omni_call(message: str, system_prompt: str, model: str, history: ChatHistory, emit=None) -> tuple[str, list[dict]]:
+async def _omni_call(
+    message: str,
+    system_prompt: str,
+    model: str,
+    history: ChatHistory,
+    emit=None,
+    reasoning_effort: str | None = None,
+) -> tuple[str, list[dict]]:
     """Одна спроба Omni з конкретною моделлю. Ключ — секрет, у відповіді/логах не світимо."""
     key = cfg.get_omni_key()
     if not key:
@@ -288,6 +340,7 @@ async def _omni_call(message: str, system_prompt: str, model: str, history: Chat
         "messages": messages,
         # Стрімінг не використовуємо — читаємо відповідь цілком
         "stream": False,
+        **_reasoning_payload(model, reasoning_effort),
     }
     headers = {
         "Authorization": f"Bearer {key}",
@@ -321,7 +374,13 @@ async def _omni_call(message: str, system_prompt: str, model: str, history: Chat
     )
 
 
-async def chat_omni(message: str, system_prompt: str, history: ChatHistory, emit=None) -> tuple[str, list[dict]]:
+async def chat_omni(
+    message: str,
+    system_prompt: str,
+    history: ChatHistory,
+    emit=None,
+    reasoning_effort: str | None = None,
+) -> tuple[str, list[dict]]:
     """
     Omni-роутер: пробує ОБРАНУ модель; якщо вона впала (напр. 401/404/503 від
     провайдера) — пробує запасну (OMNI_FALLBACK_MODEL, «другий мозок» opencode-go).
@@ -329,7 +388,10 @@ async def chat_omni(message: str, system_prompt: str, history: ChatHistory, emit
     """
     selected = get_selected_omni_model()
     try:
-        return await _omni_call(message, system_prompt, selected, history, emit=emit)
+        return await _omni_call(
+            message, system_prompt, selected, history, emit=emit,
+            reasoning_effort=reasoning_effort,
+        )
     except Exception as primary_exc:  # noqa: BLE001 — падаємо на запасну модель
         fallback = cfg.OMNI_FALLBACK_MODEL
         if fallback and fallback != selected:
@@ -337,7 +399,10 @@ async def chat_omni(message: str, system_prompt: str, history: ChatHistory, emit
                 "Omni-модель %s не відповіла (%s), пробую запасну %s",
                 selected, type(primary_exc).__name__, fallback,
             )
-            return await _omni_call(message, system_prompt, fallback, history, emit=emit)
+            return await _omni_call(
+                message, system_prompt, fallback, history, emit=emit,
+                reasoning_effort=reasoning_effort,
+            )
         raise
 
 
@@ -524,6 +589,8 @@ def _tool_progress_detail(name: str, input_data: dict) -> str:
         return f"{data.get('base', '')} → {data.get('target', 'UAH')}"
     if name == "facts":
         return f"Вікіпедія: {str(data.get('query', ''))[:80]}"
+    if name == "memory_search":
+        return f"памʼять: {str(data.get('query', ''))[:80]}"
     if name.startswith("create_brain") or name.startswith("list_brain"):
         return f"пам’ять: {str(data.get('path', ''))[:80]}"
     return "запит…"
@@ -799,6 +866,17 @@ _LIVE_PATTERNS = [
     re.compile(r"я\s+з\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
 ]
 
+_FAVORITE_PATTERNS = [
+    re.compile(
+        r"мо(?:я|є|ї)\s+улюблен(?:а|е|і)\s+([\wʼ'\- ]{2,40}?)\s*(?:[-—:]\s*|\s+)(.+?)(?:[.,;!?]|$)",
+        re.IGNORECASE | re.UNICODE,
+    ),
+    re.compile(
+        r"мій\s+улюблений\s+([\wʼ'\- ]{2,40}?)\s*(?:[-—:]\s*|\s+)(.+?)(?:[.,;!?]|$)",
+        re.IGNORECASE | re.UNICODE,
+    ),
+]
+
 
 def _clean_fact(text: str) -> str:
     """Обрізає факт до розумної довжини та прибирає зайві пробіли."""
@@ -847,6 +925,15 @@ def extract_user_facts(message: str) -> list[str]:
             if place:
                 facts.append(f"Користувач живе/з: {place}")
                 break
+    for pattern in _FAVORITE_PATTERNS:
+        match = pattern.search(message)
+        if not match:
+            continue
+        category = _clean_fact(match.group(1)).casefold()
+        value = _clean_fact(match.group(2))
+        if category and value:
+            facts.append(f"Улюблене ({category}): {value}")
+            break
     return facts
 
 
@@ -1022,12 +1109,19 @@ def _facts_from_profile(profile_text: str) -> dict[str, str]:
             parts = line.split(":", 1)
             if len(parts) == 2:
                 facts["location"] = parts[1].strip().strip("- ").split("…")[0].strip()
+        if "улюблене (машина)" in line_lower or "улюблене (автомобіль)" in line_lower:
+            parts = line.split(":", 1)
+            if len(parts) == 2 and "favorite_car" not in facts:
+                facts["favorite_car"] = parts[1].strip()
     return facts
 
 
 def _collect_facts_from_history(history: ChatHistory) -> dict[str, str]:
     """Витягує факти з історії сесії + профілю користувача."""
     file_profile = load_user_profile()
+    owner_profile = load_user_profile(brain_context.init_user_brain(None))
+    if owner_profile and owner_profile not in file_profile:
+        file_profile = f"{file_profile}\n{owner_profile}"
     facts = _facts_from_profile(file_profile)
     for entry in history:
         if entry.get("role") == "user":
@@ -1039,6 +1133,8 @@ def _collect_facts_from_history(history: ChatHistory) -> dict[str, str]:
                     facts["likes"] = fact
                 elif "живе/з" in fact:
                     facts["location"] = fact.split(":", 1)[1].strip()
+                elif "Улюблене (машина)" in fact or "Улюблене (автомобіль)" in fact:
+                    facts["favorite_car"] = fact.split(":", 1)[1].strip()
     return facts
 
 
@@ -1067,6 +1163,11 @@ def _demo_reply_from_profile(message: str, history: ChatHistory) -> tuple[str, s
         if location:
             return f"Ти живеш у {location} 🦀", "happy"
         return None
+
+    if any(kw in lowered for kw in ("моя улюблена машина", "яка моя улюблена машина", "улюблений автомобіль")):
+        favorite_car = facts.get("favorite_car")
+        if favorite_car:
+            return f"Твоя улюблена машина — {favorite_car}.", "happy"
 
     return None
 
@@ -1150,6 +1251,7 @@ async def chat(
     message: str,
     history: ChatHistory | None = None,
     emit=None,
+    reasoning_effort: str | None = None,
 ) -> tuple[str, str, str, list[dict]]:
     """
     Обробляє повідомлення користувача. Повертає (reply, emotion, mode, tool_results).
@@ -1196,7 +1298,10 @@ async def chat(
         else:
             try:
                 raw, tool_results = await asyncio.wait_for(
-                    chat_omni(message, system_prompt, history, emit=emit),
+                    chat_omni(
+                        message, system_prompt, history, emit=emit,
+                        reasoning_effort=reasoning_effort,
+                    ),
                     timeout=cfg.CHAT_OMNI_TIMEOUT_S,
                 )
                 if _looks_like_gateway_error(raw):

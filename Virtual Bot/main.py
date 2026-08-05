@@ -204,6 +204,7 @@ class ChatRequest(BaseModel):
     stream: bool = False
     session_id: str = Field(default="", max_length=64)
     history: list[dict[str, str]] = Field(default_factory=list)
+    reasoning_effort: str = Field(default="none", pattern="^(none|low|medium|high)$")
 
 
 class MemorySaveRequest(BaseModel):
@@ -338,7 +339,7 @@ def api_models() -> dict:
     щоб у шапці було видно правду, а не намір.
     """
     return {
-        "models": cfg.OMNI_MODELS,
+        "models": brains.models_with_capabilities(),
         "selected": brains.get_selected_omni_model(),
         "default": cfg.OMNI_DEFAULT_MODEL,
         "active": brains.get_last_model(),
@@ -367,7 +368,7 @@ def api_setup_get() -> dict:
         "personas": [{"id": k, "label": v["label"], "icon": v.get("icon", ""), "hint": v.get("hint", "")}
                      for k, v in profile_store.PERSONAS.items()],
         "reply_lengths": [{"id": k, "label": v["label"]} for k, v in profile_store.REPLY_LENGTHS.items()],
-        "models": cfg.OMNI_MODELS,
+        "models": brains.models_with_capabilities(),
         "selected_model": brains.get_selected_omni_model(),
         # Чи задані ключі (лише факт, не значення)
         "keys_set": {
@@ -575,13 +576,27 @@ async def _autoname_chat(sid: str, user_message: str, reply: str) -> None:
 
 
 def _extract_and_save_facts(message: str) -> None:
-    """Витягує факти про користувача і дописує до brain/people/user.md."""
+    """Витягує факти у спільний профіль власника, доступний у нових чатах."""
     facts = brains.extract_user_facts(message)
+    # Лишаємо копію в активному brain для сумісності із сесійною ізоляцією та
+    # локальними memory tools, а канонічну копію — у профілі власника нижче.
     for fact in facts:
         try:
             memory.append_user_profile(fact)
         except Exception:  # noqa: BLE001
-            log.exception("Не вдалося зберегти факт у профіль користувача")
+            log.exception("Не вдалося зберегти факт у профіль активного чату")
+    owner_root = brain_context.init_user_brain(None)
+    with brain_context.set_brain_root(owner_root):
+        for fact in facts:
+            try:
+                memory.append_user_profile(fact)
+            except Exception:  # noqa: BLE001
+                log.exception("Не вдалося зберегти факт у профіль користувача")
+
+
+def _chat_reasoning_kwargs(reasoning_effort: str) -> dict[str, str]:
+    """Не змінює старий виклик brains.chat для типового вимкненого reasoning."""
+    return {"reasoning_effort": reasoning_effort} if reasoning_effort != "none" else {}
 
 
 # ------------------------------------------------------------------ чат
@@ -603,7 +618,9 @@ async def api_chat(req: ChatRequest):
         await asyncio.to_thread(_extract_and_save_facts, message)
 
         if not req.stream:
-            reply, emotion, mode, tool_results = await brains.chat(message, history)
+            reply, emotion, mode, tool_results = await brains.chat(
+                message, history, **_chat_reasoning_kwargs(req.reasoning_effort),
+            )
             log.info("Чат (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
             _save_history(sid, history, message, reply)
             # Назву чату генеруємо у фоні — відповідь на неї не чекає
@@ -667,7 +684,9 @@ async def api_chat(req: ChatRequest):
                     event = {**event, "chunk": visible}
                 await event_queue.put(event)
 
-            chat_task = asyncio.create_task(brains.chat(message, history, emit=emit))
+            chat_task = asyncio.create_task(brains.chat(
+                message, history, emit=emit, **_chat_reasoning_kwargs(req.reasoning_effort),
+            ))
 
             try:
                 # Читаємо події від тулзів, поки чат виконується

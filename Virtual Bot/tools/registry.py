@@ -14,6 +14,7 @@ from tools.search import search_web
 from tools.weather import get_weather
 from tools import workspace_tools
 import memory
+import brain_context
 
 log = logging.getLogger("virtual_bot.tools.registry")
 
@@ -34,6 +35,20 @@ _TOOL_SCHEMAS: list[dict] = [
                     },
                 },
                 "required": ["city"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "memory_search",
+            "description": "Знайти раніше збережені факти про користувача та релевантні нотатки памʼяті.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Факт або тема для пошуку в памʼяті."},
+                },
+                "required": ["query"],
             },
         },
     },
@@ -142,10 +157,25 @@ async def _list_brain_navigation() -> dict:
     return {"ok": True, "path": "_navigation.md", "content": memory.regenerate_brain_navigation()}
 
 
+async def _memory_search(query: str) -> dict:
+    query = (query or "").strip()
+    if not query:
+        return {"error": "Вкажи, що шукати в памʼяті"}
+    profile = memory.load_user_profile()
+    owner_profile = memory.load_user_profile(brain_context.init_user_brain(None))
+    if owner_profile and owner_profile not in profile:
+        profile = f"{profile}\n{owner_profile}".strip()
+    return {
+        "profile": profile,
+        "notes": memory.find_relevant_notes(query, top_n=3),
+    }
+
+
 _HANDLERS: dict[str, ToolHandler] = {
     "weather": get_weather,
     "currency": _currency_handler,
     "facts": get_fact,
+    "memory_search": _memory_search,
     "web_search": search_web,
     "image_search": search_images,
     "create_brain_directory": _create_brain_directory,
