@@ -14,6 +14,7 @@ import { Input } from 'antd';
  */
 
 const FRESH_MS = 260; // скільки символ лишається «свіжим»
+const ERASE_MS = 220; // скільки триває розмивання стертого фрагмента
 
 export default React.forwardRef(function BlurTypingInput(props, ref) {
   const { className, style, value, onChange, ...rest } = props;
@@ -22,6 +23,10 @@ export default React.forwardRef(function BlurTypingInput(props, ref) {
   const prevValueRef = useRef(typeof value === 'string' ? value : '');
   // Індекси символів, які щойно надруковані: Map<index, expiresAt>
   const [fresh, setFresh] = useState(() => new Map());
+  // Символи, які стираються: розмиваються й зникають (дзеркало друку).
+  // { text, at } — видалений фрагмент і його місце в новому тексті.
+  const [erasing, setErasing] = useState(null);
+  const eraseTimerRef = useRef(0);
   const [reduceMotion, setReduceMotion] = useState(false);
   const timerRef = useRef(0);
 
@@ -41,10 +46,21 @@ export default React.forwardRef(function BlurTypingInput(props, ref) {
   useEffect(() => {
     const prev = prevValueRef.current;
     prevValueRef.current = text;
-    if (reduceMotion || text.length <= prev.length) {
-      if (text.length < prev.length && fresh.size) setFresh(new Map());
+    if (reduceMotion) return;
+
+    // Стирання: показуємо видалений фрагмент ще коротку мить і розмиваємо його
+    if (text.length < prev.length) {
+      if (fresh.size) setFresh(new Map());
+      let s = 0;
+      const m = Math.min(prev.length, text.length);
+      while (s < m && prev[s] === text[s]) s += 1;
+      let e = 0;
+      while (e < m - s && prev[prev.length - 1 - e] === text[text.length - 1 - e]) e += 1;
+      const removed = prev.slice(s, prev.length - e);
+      if (removed) setErasing({ text: removed, at: s, id: Date.now() });
       return;
     }
+    if (text.length === prev.length) return;
     let start = 0;
     const max = Math.min(prev.length, text.length);
     while (start < max && prev[start] === text[start]) start += 1;
@@ -119,7 +135,14 @@ export default React.forwardRef(function BlurTypingInput(props, ref) {
     ov.scrollLeft = ta.scrollLeft;
   };
 
-  const active = !reduceMotion && fresh.size > 0;
+  /* Знімаємо фантом стертого тексту після анімації */
+  useEffect(() => {
+    if (!erasing) return undefined;
+    eraseTimerRef.current = window.setTimeout(() => setErasing(null), ERASE_MS + 20);
+    return () => window.clearTimeout(eraseTimerRef.current);
+  }, [erasing]);
+
+  const active = !reduceMotion && (fresh.size > 0 || !!erasing);
 
   useLayoutEffect(syncOverlay, [text, active]);
 
@@ -130,6 +153,8 @@ export default React.forwardRef(function BlurTypingInput(props, ref) {
      Сусідні символи однакового типу групуємо, щоб не плодити тисячі вузлів. */
   const segments = [];
   if (active) {
+    /* Фантом стертого фрагмента вставляємо в те саме місце, але position:absolute
+       й width:0 — так він НЕ зсуває решту тексту, а лише тане на місці. */
     let unit = 0;
     let buf = '';
     let bufFresh = false;
@@ -144,6 +169,26 @@ export default React.forwardRef(function BlurTypingInput(props, ref) {
       unit += ch.length;
     }
     if (buf !== '') segments.push({ text: buf, fresh: bufFresh, at: unit - buf.length });
+
+    if (erasing) {
+      // Знаходимо, після якого сегмента вставити фантом
+      let idx = segments.findIndex((s) => s.at + s.text.length >= erasing.at);
+      if (idx < 0) idx = segments.length - 1;
+      const ghost = { text: erasing.text, ghost: true, at: erasing.at, id: erasing.id };
+      if (segments.length === 0) segments.push(ghost);
+      else {
+        const seg = segments[idx];
+        const cut = erasing.at - seg.at;
+        if (cut > 0 && cut < seg.text.length) {
+          segments.splice(idx, 1,
+            { ...seg, text: seg.text.slice(0, cut) },
+            ghost,
+            { ...seg, text: seg.text.slice(cut), at: seg.at + cut });
+        } else {
+          segments.splice(cut <= 0 ? idx : idx + 1, 0, ghost);
+        }
+      }
+    }
   }
 
   return (
@@ -169,7 +214,11 @@ export default React.forwardRef(function BlurTypingInput(props, ref) {
       {active && (
         <div ref={overlayRef} className="blur-typing-overlay" aria-hidden="true">
           {segments.map((seg) =>
-            seg.fresh ? (
+            seg.ghost ? (
+              <span className="blur-typing-ghost" key={`g-${seg.id}`}>
+                {seg.text}
+              </span>
+            ) : seg.fresh ? (
               <span className="blur-typing-char" key={`f-${seg.at}`}>
                 {seg.text}
               </span>

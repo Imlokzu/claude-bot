@@ -9,8 +9,10 @@ from typing import Awaitable, Callable
 
 from tools.currency import get_common_rates, get_rate
 from tools.facts import get_fact
+from tools.images import search_images
 from tools.search import search_web
 from tools.weather import get_weather
+from tools import workspace_tools
 import memory
 
 log = logging.getLogger("virtual_bot.tools.registry")
@@ -94,9 +96,29 @@ _TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "image_search",
+            "description": (
+                "Знайти картинки в інтернеті. Повертає прямі https-посилання, які можна "
+                "вставити у відповідь як ![опис](посилання) — тоді користувач побачить саме зображення."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Що показати, напр. 'піксельний краб'."},
+                    "count": {"type": "integer", "description": "Скільки картинок (1-6), типово 3."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
     {"type": "function", "function": {"name": "create_brain_directory", "description": "Create a directory inside brain/ only.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "create_brain_file", "description": "Create a file inside brain/ only.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}, "overwrite": {"type": "boolean"}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "list_brain_navigation", "description": "Regenerate and return brain navigation.", "parameters": {"type": "object", "properties": {}}}},
+    # Власна тека бота на диску: файли, проєкти, ігри, тека сесії
+    *workspace_tools.SCHEMAS,
 ]
 
 async def _currency_handler(base: str, target: str = "UAH") -> dict:
@@ -125,9 +147,11 @@ _HANDLERS: dict[str, ToolHandler] = {
     "currency": _currency_handler,
     "facts": get_fact,
     "web_search": search_web,
+    "image_search": search_images,
     "create_brain_directory": _create_brain_directory,
     "create_brain_file": _create_brain_file,
     "list_brain_navigation": _list_brain_navigation,
+    **workspace_tools.HANDLERS,
 }
 
 

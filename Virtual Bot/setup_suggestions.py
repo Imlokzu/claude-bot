@@ -9,6 +9,8 @@ MCP додаються в OpenClaw через `openclaw mcp add <name> --command
 
 from __future__ import annotations
 
+from app_config import BASE_DIR
+
 # id, name, desc(укр), category, command+args(stdio), env(ключі), needs_key,
 # recommended(маст-хев), note
 MCP_SUGGESTIONS: list[dict] = [
@@ -92,6 +94,15 @@ MCP_SUGGESTIONS: list[dict] = [
                  "/Users/hhh/projects/claude bot/Virtual Bot/brain"],
         "env": [], "needs_key": False, "recommended": False,
         "note": "Офіційний; шлях можна змінити.",
+    },
+    {
+        "id": "workspace", "name": "Робоча тека бота",
+        "desc": "Власна тека бота на диску: проєкти, ігри, нотатки й окрема тека кожної сесії.",
+        "category": "Файли", "command": "python3",
+        "args": [str(BASE_DIR / "workspace_mcp.py")],
+        # VBOT_URL має дефолт у самому workspace_mcp.py, ключів не треба
+        "env": [], "needs_key": False, "recommended": True,
+        "note": "Свій MCP: ходить у workspace/ через панель (шляхи перевіряє бекенд).",
     },
 ]
 

@@ -48,6 +48,7 @@ Thumbs.db
 *.pid
 service_logs/
 brain/logs/
+Virtual Bot/user_data/
 
 # ---- Pi subagent runtime artifacts ----
 .pi-subagents/
@@ -57,3 +58,6 @@ brain/logs/
 .claude/
 .context/
 .postman/
+
+# ---- Робоча тека бота (файли бота, не код проєкту) ----
+Virtual Bot/workspace/

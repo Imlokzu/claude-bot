@@ -20,10 +20,11 @@ from urllib.parse import quote, unquote, urlsplit
 import httpx
 
 import app_config
+import brain_context
 import memory
 
 
-BRAIN_DIR = app_config.BRAIN_DIR
+BRAIN_DIR = brain_context.BRAIN_DIR
 CATEGORIES = ("people", "life", "topics", "pets")
 RECENT_LOG_DAYS = 3
 LOG_RETENTION_DAYS = 3
@@ -57,7 +58,7 @@ class FileSnapshot:
 
 
 def _root() -> Path:
-    return Path(BRAIN_DIR).resolve()
+    return brain_context.get_active_brain_root().resolve()
 
 
 def _category_directory(root: Path, category: str) -> Optional[Path]:
