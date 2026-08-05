@@ -71,6 +71,9 @@ const api = async (path, options = {}) => {
 
 const SESSION_KEY = 'virtual_bot_session_id';
 
+/* Скільки чекати наступний шматок відповіді, перш ніж вважати стрім мертвим */
+const STREAM_STALL_MS = 120000;
+
 const toolIcons = {
   weather: <CloudOutlined />,
   currency: <DollarOutlined />,
@@ -441,10 +444,24 @@ function App() {
         if (r.active) setActiveModel(r.active);
         if (r.brain) setActiveBrain(r.brain);
       })
-      .catch(() => setModels([]));
+      .catch(() => {
+        setModels([]);
+        return null;
+      });
 
   useEffect(() => {
-    loadModels();
+    /* Панель може завантажитись, поки бекенд ще піднімається — тоді в шапці
+       залипало «— недоступно —». Повторюємо кілька разів. */
+    let tries = 0;
+    const tick = () => {
+      loadModels().then(() => {
+        tries += 1;
+        if (tries < 5) setTimeout(() => {
+          if (!document.querySelector('.chat-panel-model option[value]:not([value=""])')) tick();
+        }, 3000);
+      });
+    };
+    tick();
   }, []);
 
   useEffect(() => {
@@ -515,10 +532,22 @@ function App() {
       ]);
 
       try {
+        /* Сторожовий таймер: якщо бекенд помер посеред стріму, читання може
+           не завершитись НІКОЛИ — і кнопка назавжди лишалась «стоп», а нове
+           повідомлення вже не надіслати. Кожен чанк перезапускає відлік. */
+        const controller = new AbortController();
+        let watchdog = 0;
+        const armWatchdog = () => {
+          clearTimeout(watchdog);
+          watchdog = setTimeout(() => controller.abort(), STREAM_STALL_MS);
+        };
+        armWatchdog();
+
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: userContent, stream: true, session_id: sessionId }),
+          signal: controller.signal,
         });
         if (!res.ok) {
           const errText = await res.text();
@@ -533,11 +562,12 @@ function App() {
         let toolResults = [];
         let mode = '';
         let toolSteps = [];
-        abortRef.current = { abort: () => reader.cancel() };
+        abortRef.current = { abort: () => { clearTimeout(watchdog); controller.abort(); } };
 
         while (true) {
           const { done, value: chunk } = await reader.read();
           if (done) break;
+          armWatchdog();
           buffer += decoder.decode(chunk, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop();
@@ -602,9 +632,14 @@ function App() {
             }
           }
         }
+        clearTimeout(watchdog);
         updateBotMessage(botIndex, fullReply || '(порожня відповідь)', false, toolResults, mode, toolSteps);
       } catch (err) {
-        updateBotMessage(botIndex, `Помилка: ${err.message}`, false, [], mode, []);
+        const text =
+          err.name === 'AbortError'
+            ? 'Звʼязок із ботом обірвався — спробуй ще раз.'
+            : `Помилка: ${err.message}`;
+        updateBotMessage(botIndex, text, false, [], mode, []);
       } finally {
         abortRef.current = null;
         setLoading(false);
