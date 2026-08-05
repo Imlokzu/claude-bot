@@ -88,15 +88,19 @@ export default function SidePreview({ path, width, onWidth, fullscreen, onToggle
               />
             </Tooltip>
           )}
-          <Tooltip title="Відкрити в новій вкладці">
+          <Tooltip title="Відкрити в новому вікні">
             <Button
               size="small"
               type="text"
               icon={<ExportOutlined />}
-              href={`/preview/${path.split('/').map(encodeURIComponent).join('/')}`}
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Відкрити в новій вкладці"
+              onClick={() =>
+                window.open(
+                  `/file/${path.split('/').map(encodeURIComponent).join('/')}`,
+                  '_blank',
+                  'noopener,noreferrer'
+                )
+              }
+              aria-label="Відкрити в новому вікні"
             />
           </Tooltip>
           <Button

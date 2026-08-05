@@ -52,7 +52,7 @@ body {
   display: grid;
   /* Кнопка чатів + пікер моделей одразу за нею; пікер тягнеться праворуч,
      але його вміст притиснутий вліво (не по центру). */
-  grid-template-columns: 40px 1fr;
+  grid-template-columns: 40px 1fr 40px;
   align-items: center;
   gap: 8px;
   padding: 4px 2px 10px;
@@ -1156,7 +1156,7 @@ body {
   /* На широкому екрані кнопки чатів немає, тож пікер стоїть першим і
      притиснутий вліво (без центрування). */
   .chat-panel-header {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto 1fr auto;
   }
 }
 
@@ -1752,4 +1752,32 @@ body {
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
   }
+}
+
+
+/* «Новий чат» — притиснутий до правого краю шапки */
+.chat-new-btn {
+  justify-self: end;
+}
+
+/* Нотатка на весь екран: у фулскріні прев'ю markdown має займати все місце,
+   а не лишатися смужкою на 220px. */
+.side-preview-fullscreen .file-preview-md,
+.side-preview-fullscreen .file-preview-code {
+  flex: 1;
+  max-height: none;
+  height: 100%;
+  font-size: 15px;
+  line-height: 1.7;
+  padding: 22px 26px;
+}
+
+.side-preview-fullscreen .file-preview-md {
+  max-width: 860px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.side-preview-fullscreen .file-preview-image img {
+  max-height: 80vh;
 }

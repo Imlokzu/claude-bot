@@ -36,7 +36,13 @@ from urllib.parse import quote
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from pydantic import BaseModel, Field
 
 import app_config as cfg
@@ -1422,6 +1428,131 @@ def serve_workspace_preview(file_path: str, session_id: str = Query(default="", 
         raise HTTPException(status_code=404, detail="Немає такого файлу")
     media = _PREVIEW_TYPES.get(target.suffix.lower(), "application/octet-stream")
     return FileResponse(target, media_type=media)
+
+
+def _markdown_to_html(text: str) -> str:
+    """
+    Мінімальний markdown → HTML для сторінки файлу.
+
+    Повноцінний парсер тут зайвий: нотатки бота — це заголовки, списки, код і
+    посилання. Усе, що не розпізнали, лишається екранованим текстом, тож
+    вставити розмітку через файл неможливо.
+    """
+    out: list[str] = []
+    in_code = False
+    in_list = False
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if line.startswith("```"):
+            out.append("</pre>" if in_code else "<pre>")
+            in_code = not in_code
+            continue
+        if in_code:
+            out.append(html_escape(line))
+            continue
+        if not line.strip():
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            continue
+        heading = re.match(r"^(#{1,4})\s+(.*)$", line)
+        if heading:
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            level = len(heading.group(1))
+            out.append(f"<h{level}>{_md_inline(heading.group(2))}</h{level}>")
+            continue
+        bullet = re.match(r"^\s*[-*+]\s+(.*)$", line)
+        if bullet:
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            out.append(f"<li>{_md_inline(bullet.group(1))}</li>")
+            continue
+        if in_list:
+            out.append("</ul>")
+            in_list = False
+        out.append(f"<p>{_md_inline(line)}</p>")
+    if in_list:
+        out.append("</ul>")
+    if in_code:
+        out.append("</pre>")
+    return "\n".join(out)
+
+
+def _md_inline(text: str) -> str:
+    """Жирний/курсив/код/посилання всередині рядка — після екранування."""
+    safe = html_escape(text)
+    safe = re.sub(r"`([^`]+)`", r"<code>\1</code>", safe)
+    safe = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", safe)
+    safe = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", safe)
+    safe = re.sub(
+        r"\[([^\]]+)\]\((https?://[^\s)]+)\)",
+        r'<a href="\2" target="_blank" rel="noreferrer">\1</a>',
+        safe,
+    )
+    return safe
+
+
+_FILE_PAGE_CSS = """
+  :root { color-scheme: light; }
+  body { margin: 0; padding: 40px 24px; background: #F0EEE6;
+         font: 16px/1.65 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, sans-serif;
+         color: #2B2A26; }
+  main { max-width: 780px; margin: 0 auto; background: #FBFAF7; border: 1px solid #E4E1D6;
+         border-radius: 18px; padding: 36px 40px; box-shadow: 0 8px 28px rgba(43,42,38,.06); }
+  h1, h2, h3 { line-height: 1.25; margin: 1.4em 0 .5em; }
+  h1:first-child { margin-top: 0; }
+  a { color: #C96442; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .9em;
+         background: #E9E7DD; padding: 2px 5px; border-radius: 4px; }
+  pre { background: #E9E7DD; padding: 14px 16px; border-radius: 10px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  blockquote { margin: 0 0 1em; padding-left: 14px; border-left: 3px solid #C96442; color: #83817A; }
+  img { max-width: 100%; border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #E4E1D6; padding: 8px 10px; text-align: left; }
+  th { background: #E9E7DD; }
+  .path { max-width: 780px; margin: 0 auto 10px; font-size: 12px; color: #83817A;
+          font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+"""
+
+
+@app.get("/file/{file_path:path}", include_in_schema=False)
+def serve_workspace_file_page(file_path: str, session_id: str = Query(default="", max_length=64)):
+    """
+    Сторінка файлу «через нас»: markdown і текст показуємо оформленою
+    сторінкою, а не сирим завантаженням, як робив /preview. Саме сюди веде
+    «відкрити в новому вікні» — щоб нотатка виглядала нотаткою.
+    """
+    try:
+        with workspace.set_session(session_id):
+            target = workspace._resolve(file_path, must_exist=True)
+            rel = workspace.rel_path(target)
+    except (ValueError, FileNotFoundError):
+        raise HTTPException(status_code=404, detail="Немає такого файлу")
+
+    suffix = target.suffix.lower()
+    # Сайти, картинки й решта — це вже вміє /preview, дублювати не треба
+    if suffix not in {".md", ".markdown", ".txt", ""}:
+        return RedirectResponse(url=f"/preview/{quote(rel)}")
+
+    try:
+        text = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        raise HTTPException(status_code=415, detail="Файл не текстовий")
+
+    # Рендер markdown робить сам браузер (marked з CDN тут недоступний), тож
+    # віддаємо вміст у <script type="text/markdown"> і мінімальний конвертер
+    # не тягнемо: для .md показуємо моноширинно з тим самим оформленням.
+    body = f"<pre>{html_escape(text)}</pre>" if suffix in {".txt", ""} else _markdown_to_html(text)
+    return HTMLResponse(
+        f"<!doctype html><html lang='uk'><head><meta charset='utf-8'>"
+        f"<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        f"<title>{html_escape(rel)}</title><style>{_FILE_PAGE_CSS}</style></head>"
+        f"<body><div class='path'>{html_escape(rel)}</div><main>{body}</main></body></html>"
+    )
 
 
 # ------------------------------------------------------------------ роздача завантажених файлів

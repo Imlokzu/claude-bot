@@ -24,6 +24,17 @@ const sessionId = () => {
 const previewUrl = (path) =>
   `/preview/${path.split('/').map(encodeURIComponent).join('/')}?session_id=${encodeURIComponent(sessionId())}`;
 
+/* Окреме вікно відкриваємо ЧЕРЕЗ НАС (/file/…): нотатка там показується
+   оформленою сторінкою, а не сирим текстом із диска. */
+const filePageUrl = (path) =>
+  `/file/${path.split('/').map(encodeURIComponent).join('/')}?session_id=${encodeURIComponent(sessionId())}`;
+
+const openInNewWindow = (path) => {
+  // antd-кнопка з href відкривала сторінку В ЦІЙ вкладці (target губився
+  // на обгортці Tooltip) — тому відкриваємо вікно явно.
+  window.open(filePageUrl(path), '_blank', 'noopener,noreferrer');
+};
+
 export default function FilePreview({ path, live, big, onExpand }) {
   const isPage = /\.html?$/i.test(path || '');
   const isMarkdown = /\.(md|markdown)$/i.test(path || '');
@@ -83,13 +94,12 @@ export default function FilePreview({ path, live, big, onExpand }) {
               <Button size="small" type="text" icon={<ExpandOutlined />} onClick={() => onExpand(path)} />
             </Tooltip>
           )}
-          <Tooltip title="Відкрити в новій вкладці">
+          <Tooltip title="Відкрити в новому вікні">
             <Button
               size="small"
               type="text"
               icon={<ExportOutlined />}
-              href={previewUrl(path)}
-              target="_blank"
+              onClick={() => openInNewWindow(path)}
             />
           </Tooltip>
         </span>

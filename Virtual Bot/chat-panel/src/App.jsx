@@ -1278,6 +1278,14 @@ function App() {
             )}
           </div>
 
+          {/* Новий чат — праворуч, окремо від пікера моделі */}
+          <Button
+            type="text"
+            className="chat-new-btn"
+            icon={<PlusOutlined />}
+            onClick={newSession}
+            title="Новий чат"
+          />
         </div>
 
         <div className="chat-body" onPasteCapture={handlePaste}>
