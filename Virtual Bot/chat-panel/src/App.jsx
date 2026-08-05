@@ -21,6 +21,7 @@ import CodeEditor from './CodeEditor.jsx';
 import MicButton from './MicButton.jsx';
 import SessionList from './SessionList.jsx';
 import ImageGallery from './ImageGallery.jsx';
+import FilePreview from './FilePreview.jsx';
 
 /* Картинки з відповіді виносимо в карусель: markdown-рендер лишає текст,
    а самі зображення показуємо однією великою з навігацією. */
@@ -49,13 +50,26 @@ function buildBlocks(content, steps) {
 function BotAnswer({ content, steps, streaming, sessionId, children }) {
   const blocks = buildBlocks(content, steps);
   const lastToolIndex = blocks.map((b) => b.kind).lastIndexOf('tool');
+  /* Останній запис файлу лишається розгорнутим, навіть якщо після нього бот
+     ще щось читав: саме результат роботи хочеться бачити одразу. */
+  const lastWriteIndex = blocks.reduce(
+    (acc, b, i) => (b.kind === 'tool' && b.step.tool === 'workspace_write' ? i : acc),
+    -1
+  );
   const lastTextIndex = blocks.map((b) => b.kind).lastIndexOf('text');
 
   return (
     <div className={`markdown-body${streaming ? ' is-streaming' : ''}`}>
       {blocks.map((block, i) => {
         if (block.kind === 'tool') {
-          return <ToolBlock key={`t-${block.step.id}-${i}`} step={block.step} isLatest={i === lastToolIndex} />;
+          return (
+            <ToolBlock
+              key={`t-${block.step.id}-${i}`}
+              step={block.step}
+              isLatest={i === lastToolIndex}
+              isLatestWrite={i === lastWriteIndex}
+            />
+          );
         }
         const { text, images } = splitImages(block.text);
         if (!text && images.length === 0) return null;
@@ -210,10 +224,13 @@ function toolDetail(tool, input) {
 /* Один виклик інструмента: згорнутий рядок, який можна розгорнути.
    Сам розкривається лише поки працює І якщо він найновіший — тоді видно
    деталі саме поточної дії, а історія не захаращує відповідь. */
-function ToolBlock({ step, isLatest }) {
+function ToolBlock({ step, isLatest, isLatestWrite }) {
   const running = step.type !== 'done';
+  const writesFile = step.tool === 'workspace_write';
   const [open, setOpen] = useState(false);
-  const expanded = open || (running && isLatest);
+  /* Розгорнутим лишається те, що зараз працює, і запис файлу — саме його
+     результат хочеться бачити, а не рядок «готово». */
+  const expanded = open || (running && isLatest) || (writesFile && isLatestWrite);
 
   const toolName = toolTitles[step.tool] || step.tool;
   const icon = toolIcons[step.tool] || null;
@@ -234,8 +251,14 @@ function ToolBlock({ step, isLatest }) {
       </button>
       {expanded && (
         <div className="tool-block-body">
-          {detail && <div className="tool-block-arg">{detail}</div>}
           {hasError && <div className="tool-block-error">{step.result.error}</div>}
+          {/* Пише файл — показуємо його прямо тут: код, що росте, а для
+              сторінки ще й те, як вона виглядає. */}
+          {step.tool === 'workspace_write' && detail ? (
+            <FilePreview path={detail} live={running} />
+          ) : (
+            detail && <div className="tool-block-arg">{detail}</div>
+          )}
         </div>
       )}
     </div>

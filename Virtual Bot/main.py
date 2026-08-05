@@ -1255,6 +1255,40 @@ async def api_browser_page(url: str = Query(min_length=1, max_length=2048)):
     return Response(content=page["content"], media_type=page["content_type"])
 
 
+# ------------------------------------------------------------------ прев'ю того, що зробив бот
+
+_PREVIEW_TYPES = {
+    ".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8",
+    ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+    ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
+    ".webp": "image/webp", ".ico": "image/x-icon", ".txt": "text/plain; charset=utf-8",
+}
+
+
+@app.get("/preview/{file_path:path}", include_in_schema=False)
+def serve_workspace_preview(file_path: str, session_id: str = Query(default="", max_length=64)):
+    """
+    Віддає файл із робочої теки, щоб сайт, який щойно зробив бот, можна було
+    відкрити прямо в панелі — а не «клацни двічі у Finder». Шлях перевіряє
+    workspace._resolve, тож вийти за корінь теки неможливо.
+    """
+    try:
+        with workspace.set_session(session_id):
+            target = workspace._resolve(file_path, must_exist=True)
+    except (ValueError, FileNotFoundError):
+        raise HTTPException(status_code=404, detail="Немає такого файлу")
+    if target.is_dir():
+        index = target / "index.html"
+        if not index.is_file():
+            raise HTTPException(status_code=404, detail="У теці немає index.html")
+        target = index
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="Немає такого файлу")
+    media = _PREVIEW_TYPES.get(target.suffix.lower(), "application/octet-stream")
+    return FileResponse(target, media_type=media)
+
+
 # ------------------------------------------------------------------ роздача завантажених файлів
 # Має бути ДО catch-all статики, інакше `/{asset_path:path}` перехопить /uploads/...
 
