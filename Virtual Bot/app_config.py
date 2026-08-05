@@ -167,6 +167,7 @@ OMNI_DEFAULT_MODEL: str = cfg_str("omni", "default_model", default="claude/claud
 # Запасна модель Omni («другий мозок»); порожнє/null → без запасної
 _omni_fallback_raw = cfg("omni", "fallback_model", default="")
 OMNI_FALLBACK_MODEL: str = str(_omni_fallback_raw).strip() if _omni_fallback_raw else ""
+OMNI_VISION_MODEL: str = cfg_str("omni", "vision_model", default="opencode-go/minimax-m3")
 OMNI_TIMEOUT_S: float = cfg_float("omni", "timeout_s", default=60)
 # Чат: короткий таймаут спроби Omni і бекоф-запобіжник після невдачі
 # (щоб завислий роутер не додавав десятки секунд до кожної відповіді чату)

@@ -88,6 +88,50 @@ class ChatImageTests(unittest.TestCase):
         self.assertEqual(observed["images"][0]["mime"], "image/png")
         self.assertTrue(observed["images"][0]["data"])
 
+    def test_image_request_skips_openclaw_and_uses_vision_capable_omni(self) -> None:
+        image = {"mime": "image/png", "data": "YWJj"}
+
+        async def fake_omni(message, system_prompt, history, emit=None, **kwargs):
+            self.assertEqual(kwargs["images"], [image])
+            return "[емоція:happy] Бачу", []
+
+        with (
+            patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
+            patch.object(brains.cfg, "get_omni_key", return_value="key"),
+            patch.object(brains, "chat_openclaw") as openclaw,
+            patch.object(brains, "chat_omni", side_effect=fake_omni),
+        ):
+            reply, _emotion, mode, _tools = asyncio.run(
+                brains.chat("Що тут?", [], images=[image])
+            )
+
+        openclaw.assert_not_called()
+        self.assertEqual(reply, "Бачу")
+        self.assertEqual(mode, "omni")
+
+    def test_image_uses_dedicated_vision_fallback(self) -> None:
+        calls = []
+        image = {"mime": "image/png", "data": "YWJj"}
+
+        async def fake_omni_call(message, system_prompt, model, history, **kwargs):
+            calls.append(model)
+            if len(calls) == 1:
+                raise RuntimeError("primary has no vision")
+            return "Бачу", []
+
+        with (
+            patch.object(brains, "get_selected_omni_model", return_value="claude/broken"),
+            patch.object(brains.cfg, "OMNI_VISION_MODEL", "opencode-go/minimax-m3"),
+            patch.object(brains, "_omni_call", side_effect=fake_omni_call),
+        ):
+            result, _tools = asyncio.run(brains.chat_omni(
+                "Що тут?", "system", [], images=[image],
+            ))
+
+        self.assertEqual(result, "Бачу")
+        self.assertEqual(calls, ["claude/broken", "opencode-go/minimax-m3"])
+        self.assertEqual(brains._last_omni_model, "opencode-go/minimax-m3")
+
 
 class CurrentTimePromptTests(unittest.TestCase):
     def test_current_time_is_generated_fresh_for_each_prompt(self) -> None:

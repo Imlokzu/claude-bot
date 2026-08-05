@@ -237,6 +237,7 @@ def _remember_brain(mode: str, model: str = "") -> None:
 # процесу; /api/models показує список і вибір, /api/model змінює. Дозволяємо
 # лише моделі з кованого списку config.yaml — довільні рядки не приймаємо.
 _selected_omni_model: str | None = None
+_last_omni_model: str = ""
 
 _REASONING_LEVELS = ("none", "low", "medium", "high")
 _REASONING_MODEL_MARKERS = ("deepseek", "qwen", "kimi", "glm", "minimax", "grok")
@@ -403,25 +404,32 @@ async def chat_omni(
     провайдера) — пробує запасну (OMNI_FALLBACK_MODEL, «другий мозок» opencode-go).
     Обидві невдачі → RuntimeError, і chat() падає на наступний мозок.
     """
+    global _last_omni_model
     selected = get_selected_omni_model()
     try:
-        return await _omni_call(
+        result = await _omni_call(
             message, system_prompt, selected, history, emit=emit,
             reasoning_effort=reasoning_effort,
             images=images,
         )
+        _last_omni_model = selected
+        return result
     except Exception as primary_exc:  # noqa: BLE001 — падаємо на запасну модель
-        fallback = cfg.OMNI_FALLBACK_MODEL
+        # Для зображень потрібен перевірений multimodal fallback: текстовий Kimi
+        # може прийняти payload, але не гарантує, що реально бачить пікселі.
+        fallback = cfg.OMNI_VISION_MODEL if images else cfg.OMNI_FALLBACK_MODEL
         if fallback and fallback != selected:
             log.warning(
                 "Omni-модель %s не відповіла (%s), пробую запасну %s",
                 selected, type(primary_exc).__name__, fallback,
             )
-            return await _omni_call(
+            result = await _omni_call(
                 message, system_prompt, fallback, history, emit=emit,
                 reasoning_effort=reasoning_effort,
                 images=images,
             )
+            _last_omni_model = fallback
+            return result
         raise
 
 
@@ -1358,7 +1366,11 @@ async def chat(
     system_prompt = build_system_prompt(message)
 
     # Мозок 0: OpenClaw gateway (ГОЛОВНИЙ) — персона/емоції/памʼять усередині OpenClaw
-    if cfg.get_openclaw_token():
+    # Поточний OpenClaw gateway приймає OpenAI-подібний image block, але мовчки
+    # викидає його перед агентом. Для реального vision-запиту йдемо одразу в
+    # Omni/Claude, який підтримує multimodal content; текстові запити лишаються
+    # на головному агентному мозку OpenClaw.
+    if cfg.get_openclaw_token() and not images:
         backoff_left = openclaw_backoff_remaining()
         if backoff_left > 0:
             log.info("OpenClaw у бекофі після невдачі — пропускаю (ще %.0f с)", backoff_left)
@@ -1380,6 +1392,8 @@ async def chat(
                     "OpenClaw недоступний (%s), пробую Omni; наступні ~%.0f с OpenClaw у чаті пропускаю",
                     type(exc).__name__, cfg.CHAT_OPENCLAW_BACKOFF_S,
                 )
+    elif images:
+        log.info("Запит містить %d зображень — пропускаю OpenClaw без vision", len(images))
 
     # Мозок 1: Omni-роутер (ШВИДКИЙ запасний) — якщо OpenClaw недоступний
     if cfg.get_omni_key():
@@ -1400,7 +1414,7 @@ async def chat(
                     raise RuntimeError(f"Omni віддав помилку замість відповіді: {raw.strip()[:120]}")
                 reply, emotion = extract_emotion(raw)
                 _omni_note_success()
-                _remember_brain("omni", get_selected_omni_model())
+                _remember_brain("omni", _last_omni_model or get_selected_omni_model())
                 return reply, emotion, "omni", tool_results
             except Exception as exc:  # noqa: BLE001 — свідомо ковтаємо, падаємо на наступний мозок
                 _omni_note_failure()
