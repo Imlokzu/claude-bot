@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import tempfile
 import unittest
@@ -43,6 +44,33 @@ class MemoryPersistenceTests(unittest.TestCase):
             brains.extract_user_facts("моя улюблена машина Subaru"),
         )
 
+    def test_rejects_non_asserted_or_explicitly_private_facts(self) -> None:
+        unsafe = (
+            "Я не люблю Subaru",
+            "Якби моя улюблена машина була Subaru, я був би радий",
+            "Він сказав: «моя улюблена машина Subaru»",
+            "Він сказав, що моя улюблена машина Subaru",
+            "Він навів приклад 'моя улюблена машина Subaru'",
+            "Моя улюблена машина Subaru, але не запамʼятовуй це",
+            "Моя улюблена машина не Subaru",
+            "Моя улюблена машина була б Subaru",
+            "Можливо, моя улюблена машина Subaru",
+            "Мене не звати Аліса",
+            "Я б сказав, що моя улюблена машина Subaru",
+            "я з нетерпінням чекаю Subaru",
+        )
+        for message in unsafe:
+            with self.subTest(message=message):
+                self.assertEqual(brains.extract_user_facts(message), [])
+
+    def test_unsafe_messages_do_not_create_durable_profile(self) -> None:
+        with main._brain_context("unsafe-chat"):
+            main._extract_and_save_facts("Не зберігай: моя улюблена машина Subaru")
+            main._extract_and_save_facts("Якби я жив у Львові, було б чудово")
+
+        owner = brain_context.init_user_brain(None)
+        self.assertEqual(memory.load_user_profile(owner), "")
+
     def test_fact_saved_once_and_available_in_new_chat_prompt(self) -> None:
         with main._brain_context("first-chat"):
             main._extract_and_save_facts("моя улюблена машина Subaru")
@@ -51,6 +79,8 @@ class MemoryPersistenceTests(unittest.TestCase):
         owner = brain_context.init_user_brain(None)
         profile = memory.load_user_profile(owner)
         self.assertEqual(profile.count("Улюблене (машина): Subaru"), 1)
+        first_chat = brain_context.init_user_brain("first-chat")
+        self.assertEqual(memory.load_user_profile(first_chat), "")
 
         with main._brain_context("brand-new-chat"):
             prompt = brains.build_system_prompt("Яка моя улюблена машина?")
@@ -59,6 +89,20 @@ class MemoryPersistenceTests(unittest.TestCase):
         self.assertIn("Subaru", prompt)
         self.assertIn("не кажи «я не знаю»", prompt.casefold())
         self.assertEqual(reply, ("Твоя улюблена машина — Subaru.", "happy"))
+
+    def test_owner_durable_note_is_available_in_new_chat_prompt_and_tool(self) -> None:
+        owner = brain_context.init_user_brain(None)
+        with brain_context.set_brain_root(owner):
+            memory.save_note("topics/garage.md", "# Гараж\n\nSubaru BRZ має синій колір")
+
+        with main._brain_context("new-chat"):
+            prompt = brains.build_system_prompt("Якого кольору Subaru BRZ?")
+            result = asyncio.run(registry.execute_tool(
+                "memory_search", {"query": "колір Subaru BRZ"},
+            ))
+
+        self.assertIn("Subaru BRZ має синій колір", prompt)
+        self.assertTrue(any("синій" in note["snippet"] for note in result["notes"]))
 
     def test_chat_api_persists_before_model_call_and_forwards_reasoning(self) -> None:
         observed: dict = {}

@@ -104,8 +104,9 @@ def build_system_prompt(user_message: str) -> str:
     parts = [base]
     parts.append(_tools_instruction())
 
+    owner_root = brain_context.init_user_brain(None)
     profiles = [load_user_profile().strip()]
-    owner_profile = load_user_profile(brain_context.init_user_brain(None)).strip()
+    owner_profile = load_user_profile(owner_root).strip()
     if owner_profile and owner_profile not in profiles:
         profiles.append(owner_profile)
     user_profile = "\n".join(profile for profile in profiles if profile)
@@ -120,7 +121,13 @@ def build_system_prompt(user_message: str) -> str:
         "проси повторити факт, доки не використав доступну памʼять."
     )
 
-    notes = find_relevant_notes(user_message, top_n=3)
+    owner_notes = find_relevant_notes(user_message, top_n=3, root=owner_root)
+    session_notes = find_relevant_notes(user_message, top_n=3)
+    known_paths = {note["path"] for note in owner_notes}
+    notes = owner_notes + [
+        note for note in session_notes if note["path"] not in known_paths
+    ]
+    notes = notes[:3]
     if notes:
         lines = ["\nТвоя памʼять (нотатки з brain/, використовуй якщо доречно):"]
         for note in notes:
@@ -877,6 +884,50 @@ _FAVORITE_PATTERNS = [
     ),
 ]
 
+_DO_NOT_SAVE_RE = re.compile(
+    r"(?:не\s+(?:запам(?:ʼ|')?ятовуй|зберігай|записуй)|"
+    r"не\s+треба\s+(?:це\s+)?(?:запам(?:ʼ|')?ятовувати|зберігати|записувати)|"
+    r"don't\s+(?:save|remember|store)|do\s+not\s+(?:save|remember|store))",
+    re.IGNORECASE | re.UNICODE,
+)
+_HYPOTHETICAL_RE = re.compile(
+    r"(?:якби|якщо\s+б|\bя\s+б\b|\b(?:був|була|було|були)\s+б\b|"
+    r"припустимо|уявімо|уяви(?:мо)?\s*,?\s*що|гіпотетично|можливо|"
+    r"if\s+i|suppose|hypothetically|would\s+be)",
+    re.IGNORECASE | re.UNICODE,
+)
+_QUOTED_TEXT_RE = re.compile(
+    r"(?:[«“\"])[^»”\"]+(?:[»”\"])|(?<!\w)'[^'\r\n]+'(?!\w)"
+)
+_NEGATED_FACT_RE = re.compile(
+    r"\b(?:це\s+)?(?:неправда|не\s+правда|не\s+так|не\s+мій|не\s+моя|"
+    r"я\s+не\s+люблю|я\s+не\s+живу|мене\s+не\s+звати|"
+    r"(?:мій|моя|моє)\s+улюблен\w*\s+\w+\s+не)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+_REPORTED_SPEECH_RE = re.compile(
+    r"\b(?:він|вона|вони|хтось|друг|подруга)\s+(?:сказав|сказала|сказали|каже|казав|казала)\b",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _eligible_fact_statement(message: str) -> bool:
+    """Reject contexts where matching words are not an asserted durable fact."""
+    text = (message or "").strip()
+    if (
+        not text
+        or _DO_NOT_SAVE_RE.search(text)
+        or _HYPOTHETICAL_RE.search(text)
+        or _REPORTED_SPEECH_RE.search(text)
+    ):
+        return False
+    if _NEGATED_FACT_RE.search(text):
+        return False
+    # Conservative by design: quoted text may describe somebody else or an example.
+    if _QUOTED_TEXT_RE.search(text):
+        return False
+    return True
+
 
 def _clean_fact(text: str) -> str:
     """Обрізає факт до розумної довжини та прибирає зайві пробіли."""
@@ -894,6 +945,8 @@ def _clean_fact(text: str) -> str:
 
 def extract_user_facts(message: str) -> list[str]:
     """Витягує прості факти про користувача для довгострокової памʼяті."""
+    if not _eligible_fact_statement(message):
+        return []
     facts: list[str] = []
     for pattern in _NAME_PATTERNS:
         match = pattern.search(message)
@@ -922,7 +975,7 @@ def extract_user_facts(message: str) -> list[str]:
         match = pattern.search(message)
         if match:
             place = _clean_fact(match.group(1))
-            if place:
+            if place and not place.casefold().startswith(("нетерпінням", "нетерпением")):
                 facts.append(f"Користувач живе/з: {place}")
                 break
     for pattern in _FAVORITE_PATTERNS:

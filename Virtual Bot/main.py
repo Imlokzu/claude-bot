@@ -578,13 +578,8 @@ async def _autoname_chat(sid: str, user_message: str, reply: str) -> None:
 def _extract_and_save_facts(message: str) -> None:
     """Витягує факти у спільний профіль власника, доступний у нових чатах."""
     facts = brains.extract_user_facts(message)
-    # Лишаємо копію в активному brain для сумісності із сесійною ізоляцією та
-    # локальними memory tools, а канонічну копію — у профілі власника нижче.
-    for fact in facts:
-        try:
-            memory.append_user_profile(fact)
-        except Exception:  # noqa: BLE001
-            log.exception("Не вдалося зберегти факт у профіль активного чату")
+    # Автоматично витягнуті факти мають одне канонічне місце: brain власника.
+    # Ручні нотатки та memory API активного чату лишаються сесійно ізольованими.
     owner_root = brain_context.init_user_brain(None)
     with brain_context.set_brain_root(owner_root):
         for fact in facts:

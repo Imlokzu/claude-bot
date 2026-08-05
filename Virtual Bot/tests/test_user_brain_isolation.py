@@ -408,8 +408,12 @@ class BrainApiIsolationTests(unittest.TestCase):
 
             alice_root = self.runtime / hashlib.sha256(b"alice-api").hexdigest() / "brain"
             self.assertTrue(alice_root.is_dir())
-            profile = (alice_root / "people" / "user.md").read_text(encoding="utf-8")
+            owner_root = self.runtime / hashlib.sha256(
+                brain_context.DEFAULT_BRAIN_ID.encode()
+            ).hexdigest() / "brain"
+            profile = (owner_root / "people" / "user.md").read_text(encoding="utf-8")
             self.assertIn("Аліса", profile)
+            self.assertFalse((alice_root / "people" / "user.md").exists())
 
             logs = list((alice_root / "logs").rglob("*.md"))
             self.assertTrue(logs)

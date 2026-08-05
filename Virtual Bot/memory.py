@@ -557,7 +557,11 @@ def _linked_note_path(root: Path, source: Path, raw_target: str) -> Optional[Pat
     return resolved
 
 
-def find_relevant_notes(query: str, top_n: int = 3) -> list[dict[str, str]]:
+def find_relevant_notes(
+    query: str,
+    top_n: int = 3,
+    root: Optional[Path] = None,
+) -> list[dict[str, str]]:
     """
     Топ-N нотаток за збігом ключових слів запиту з текстом нотатки.
     Повертає [{"path", "title", "snippet"}] тільки з ненульовим скором.
@@ -566,7 +570,9 @@ def find_relevant_notes(query: str, top_n: int = 3) -> list[dict[str, str]]:
     if not tokens:
         return []
 
-    root = _ensure_brain_dir()
+    root = root.resolve() if root is not None else _ensure_brain_dir()
+    if not root.is_dir():
+        return []
     scored: list[tuple[int, str, str, str, Path]] = []
     for path in _durable_note_paths(root):
         try:

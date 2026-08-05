@@ -161,14 +161,34 @@ async def _memory_search(query: str) -> dict:
     query = (query or "").strip()
     if not query:
         return {"error": "Вкажи, що шукати в памʼяті"}
+    owner_root = brain_context.init_user_brain(None)
     profile = memory.load_user_profile()
-    owner_profile = memory.load_user_profile(brain_context.init_user_brain(None))
+    owner_profile = memory.load_user_profile(owner_root)
     if owner_profile and owner_profile not in profile:
         profile = f"{profile}\n{owner_profile}".strip()
     return {
         "profile": profile,
-        "notes": memory.find_relevant_notes(query, top_n=3),
+        "notes": _merge_memory_notes(
+            memory.find_relevant_notes(query, top_n=3, root=owner_root),
+            memory.find_relevant_notes(query, top_n=3),
+        ),
     }
+
+
+def _merge_memory_notes(*groups: list[dict]) -> list[dict]:
+    """Merge session and canonical owner results without duplicate paths."""
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for group in groups:
+        for note in group:
+            path = note.get("path", "")
+            if path in seen:
+                continue
+            seen.add(path)
+            merged.append(note)
+            if len(merged) == 3:
+                return merged
+    return merged
 
 
 _HANDLERS: dict[str, ToolHandler] = {
