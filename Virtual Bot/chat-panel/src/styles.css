@@ -50,7 +50,9 @@ body {
    Без рамки й тіні: вона частина спільної картки, а не окремий блок. */
 .chat-panel-header {
   display: grid;
-  grid-template-columns: 40px 1fr 40px;
+  /* Кнопка чатів + пікер моделей одразу за нею; пікер тягнеться праворуч,
+     але його вміст притиснутий вліво (не по центру). */
+  grid-template-columns: 40px 1fr;
   align-items: center;
   gap: 8px;
   padding: 4px 2px 10px;
@@ -64,9 +66,11 @@ body {
 
 .chat-panel-model {
   display: flex;
-  flex-direction: column;
+  flex-flow: row wrap;
   align-items: center;
-  gap: 2px;
+  /* Притиснуто вліво, одразу біля кнопки «Мої чати» — не по центру шапки */
+  justify-self: start;
+  gap: 6px 10px;
   min-width: 0;
 }
 
@@ -83,6 +87,19 @@ body {
 
 .chat-panel-model select:hover {
   border-color: var(--green);
+}
+
+.reasoning-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.reasoning-control select {
+  padding: 6px 10px;
 }
 
 /* Модель, якою реально відповіли (може відрізнятись від обраної) */
@@ -275,8 +292,14 @@ body {
 
 .chat-messages .markdown-body table {
   border-collapse: collapse;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   margin-bottom: 0.6em;
+}
+
+.chat-messages .markdown-body .x-markdown-table-wrapper,
+.chat-messages .markdown-body:has(table) {
+  max-width: 100%;
 }
 
 .chat-messages .markdown-body th,
@@ -1106,12 +1129,17 @@ body {
   .chat-sidebar-toggle {
     display: none;
   }
+  /* На широкому екрані кнопки чатів немає, тож пікер стоїть першим і
+     притиснутий вліво (без центрування). */
   .chat-panel-header {
-    grid-template-columns: 1fr auto 1fr;
+    grid-template-columns: auto 1fr;
   }
-  .chat-new-btn {
-    justify-self: end;
-  }
+}
+
+/* У фулскрін-режимі прев'ю список чатів ховаємо повністю — превʼю
+   висувається знизу на всю ширину, і збоку йому нічого не заважає. */
+.chat-layout-preview-full .chat-sidebar {
+  display: none;
 }
 
 .session-list {
@@ -1209,6 +1237,11 @@ body {
 
 .chat-messages .ant-bubble-content {
   border-radius: 16px !important;
+  max-width: min(100%, 920px) !important;
+}
+
+.chat-messages .ant-bubble-start .ant-bubble-content {
+  width: min(100%, 920px);
 }
 
 /* ============================================================
@@ -1615,4 +1648,44 @@ body {
 
 .side-preview-grip:hover {
   background: rgba(201, 100, 66, 0.18);
+}
+
+/* Фулскрін-прев'ю: панель висувається ЗНИЗУ на всю ширину вікна (а не збоку).
+   Так сайт видно велико, а кнопка «назад до чату» повертає до розмови. */
+.side-preview.side-preview-fullscreen {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 100dvh;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  z-index: 1000;
+  box-shadow: none;
+  animation: preview-rise 180ms ease-out;
+}
+
+.side-preview-fullscreen .side-preview-head {
+  min-height: 54px;
+  padding-inline: 14px;
+}
+
+@keyframes preview-rise {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@media (max-width: 680px) {
+  .chat-panel-model {
+    gap: 5px;
+  }
+
+  .reasoning-control > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
 }

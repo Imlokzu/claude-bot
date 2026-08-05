@@ -495,10 +495,31 @@ function App() {
      ти тиснеш «розгорнути» на міні-прев'ю в відповіді. */
   const [previewFile, setPreviewFile] = useState('');
   const [previewWidth, setPreviewWidth] = useState(420);
+  /* Фулскрін-режим прев'ю: панель висувається знизу на всю ширину, список
+     чатів ховається, а зверху зʼявляється кнопка «назад до чату». */
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState('auto');
   /* Модель, якою РЕАЛЬНО відповіли (мозки перемикаються самі при збоях) */
   const [activeModel, setActiveModel] = useState('');
   const [activeBrain, setActiveBrain] = useState('');
   const abortRef = useRef(null);
+
+  useEffect(() => {
+    const className = 'chat-preview-fullscreen-active';
+    document.body.classList.toggle(className, Boolean(previewFile && previewFullscreen));
+    if (!(previewFile && previewFullscreen)) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setPreviewFullscreen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.classList.remove(className);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [previewFile, previewFullscreen]);
 
   const refreshSessions = () =>
     api('/api/sessions')
@@ -628,15 +649,22 @@ function App() {
     /* Панель може завантажитись, поки бекенд ще піднімається — тоді в шапці
        залипало «— недоступно —». Повторюємо кілька разів. */
     let tries = 0;
+    let timer = 0;
+    let cancelled = false;
     const tick = () => {
       loadModels().then(() => {
+        if (cancelled) return;
         tries += 1;
-        if (tries < 5) setTimeout(() => {
+        if (tries < 5) timer = window.setTimeout(() => {
           if (!document.querySelector('.chat-panel-model option[value]:not([value=""])')) tick();
         }, 3000);
       });
     };
     tick();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -744,7 +772,12 @@ function App() {
         const res = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: userContent, stream: true, session_id: sessionId }),
+          body: JSON.stringify({
+            message: userContent,
+            stream: true,
+            session_id: sessionId,
+            reasoning_effort: reasoningEffort === 'auto' ? null : reasoningEffort,
+          }),
           signal: controller.signal,
         });
         if (!res.ok) {
@@ -993,7 +1026,7 @@ function App() {
               : undefined,
         };
       }),
-    [messages]
+    [messages, sessionId]
   );
 
   const roles = {
@@ -1079,7 +1112,7 @@ function App() {
   );
 
   return (
-    <div className="chat-layout">
+    <div className={`chat-layout${previewFile && previewFullscreen ? ' chat-layout-preview-full' : ''}`}>
       {/* На широкому екрані список чатів завжди збоку, на вузькому —
           ховається під кнопку зліва й виїжджає шухлядою. */}
       <aside className="chat-sidebar">{sessionList}</aside>
@@ -1101,7 +1134,12 @@ function App() {
           path={previewFile}
           width={previewWidth}
           onWidth={setPreviewWidth}
-          onClose={() => setPreviewFile('')}
+          fullscreen={previewFullscreen}
+          onToggleFullscreen={() => setPreviewFullscreen((v) => !v)}
+          onClose={() => {
+            setPreviewFile('');
+            setPreviewFullscreen(false);
+          }}
         />
       )}
 
@@ -1145,15 +1183,21 @@ function App() {
                 {activeBrain}
               </span>
             )}
+            <label className="reasoning-control">
+              <span>Міркування</span>
+              <select
+                value={reasoningEffort}
+                onChange={(event) => setReasoningEffort(event.target.value)}
+                title="Рівень міркування для наступної відповіді"
+              >
+                <option value="auto">Авто</option>
+                <option value="low">Швидко</option>
+                <option value="medium">Збалансовано</option>
+                <option value="high">Глибоко</option>
+              </select>
+            </label>
           </div>
 
-          <Button
-            type="text"
-            icon={<PlusOutlined />}
-            onClick={newSession}
-            title="Новий чат"
-            className="chat-new-btn"
-          />
         </div>
 
         <div className="chat-body" onPasteCapture={handlePaste}>
@@ -1214,6 +1258,7 @@ function App() {
           ref={fileInputRef}
           style={{ display: 'none' }}
           onChange={handleFileSelect}
+          aria-label="Прикріпити файл до повідомлення"
           multiple
         />
 

@@ -292,6 +292,35 @@ body {
   justify-self: stretch;
 }
 
+/* React-превʼю справді займає весь екран: ховаємо за ним фізичне обличчя
+   бота й не залишаємо другу колонку, що могла мигнути під час анімації. */
+body.chat-preview-fullscreen-active .chat-grid {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "chat";
+}
+
+body.chat-preview-fullscreen-active .chat-grid .area-face,
+body.chat-preview-fullscreen-active .dashboard-tabs,
+body.chat-preview-fullscreen-active .topbar {
+  display: none;
+}
+
+body.chat-preview-fullscreen-active .dashboard {
+  padding: 0;
+}
+
+body.chat-preview-fullscreen-active .chat-grid,
+body.chat-preview-fullscreen-active .dashboard-panel.active {
+  height: 100dvh;
+  min-height: 0;
+}
+
+body.chat-preview-fullscreen-active .chat-grid .area-chat {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
 .chat-grid .area-face .panel-title {
   display: none;
 }
