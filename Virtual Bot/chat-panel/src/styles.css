@@ -1027,9 +1027,18 @@ body {
 
 .chat-layout {
   display: flex;
+  flex: 1 1 auto;      /* корінь панелі — flex-контейнер: без цього обгортка
+                          стискалась до вмісту, і чат ставав крихітним */
+  width: 100%;
+  min-width: 0;
   height: 100%;
   min-height: 0;
   gap: 12px;
+}
+
+.chat-layout .chat-panel {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* На ПК список чатів завжди перед очима; на вузькому екрані його місце
