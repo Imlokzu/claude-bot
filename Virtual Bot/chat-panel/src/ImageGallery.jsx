@@ -154,6 +154,19 @@ export default function ImageGallery({ images, sessionId }) {
         </div>
       </Dropdown>
 
+      {/* Підпис моделі до саме цієї картинки — коли їх кілька, це єдине,
+          з чого видно, що на кожній. Плюс лічильник. */}
+      {(current.alt || images.length > 1) && (
+        <div className="img-gallery-caption">
+          {current.alt && <span className="img-gallery-alt">{current.alt}</span>}
+          {images.length > 1 && (
+            <span className="img-gallery-count">
+              {index + 1} / {images.length}
+            </span>
+          )}
+        </div>
+      )}
+
       {images.length > 1 && (
         <>
           <button type="button" className="img-gallery-nav img-gallery-prev" onClick={() => move(-1)}>
