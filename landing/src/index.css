@@ -1,0 +1,276 @@
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+:root {
+  --bg: #05070b;
+  --bg-soft: #0a0e15;
+  --ink: #c3ccda;
+  --ink-dim: #6b7789;
+  --ink-faint: #3a4553;
+  --line: #1b232f;
+  --rim: #9fb6d6;
+  --accent: #7fd0ff;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden; /* scroll is owned by drei ScrollControls */
+}
+
+#root {
+  position: relative;
+}
+
+::selection {
+  background: rgba(127, 208, 255, 0.25);
+  color: #fff;
+}
+
+/* ── Typographic helpers ───────────────────────────── */
+.tag {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.slash {
+  color: var(--ink-faint);
+}
+.big {
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.01em;
+}
+
+/* glowing text — igloo-style: soft layered text-shadow, cold blue */
+.glow-text {
+  color: #eaf1fb;
+  text-shadow:
+    0 0 6px rgba(159, 182, 214, 0.55),
+    0 0 22px rgba(127, 208, 255, 0.35),
+    0 0 60px rgba(127, 208, 255, 0.18);
+}
+.glow-text--accent {
+  color: var(--accent);
+  text-shadow:
+    0 0 6px rgba(127, 208, 255, 0.7),
+    0 0 26px rgba(127, 208, 255, 0.45),
+    0 0 64px rgba(127, 208, 255, 0.22);
+}
+
+/* ── HUD bracket button — igloo's "[X] ↑" / "CLICK TO EXPLORE" style ── */
+.hud-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(127, 208, 255, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+.hud-btn::before,
+.hud-btn::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-color: currentColor;
+  opacity: 0.8;
+  transition: width 0.2s ease, height 0.2s ease;
+}
+.hud-btn::before {
+  top: 0;
+  left: 0;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+.hud-btn::after {
+  bottom: 0;
+  right: 0;
+  border-bottom: 1px solid;
+  border-right: 1px solid;
+}
+.hud-btn:hover {
+  color: #fff;
+  text-shadow: 0 0 12px rgba(127, 208, 255, 0.85);
+}
+.hud-btn:hover::before,
+.hud-btn:hover::after {
+  width: 14px;
+  height: 14px;
+}
+
+/* underlined HUD text-link, e.g. "D 01.02.2020 / CLICK TO EXPLORE" */
+.hud-link {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-shadow: 0 0 8px rgba(159, 182, 214, 0.4);
+  border-bottom: 1px solid rgba(159, 182, 214, 0.4);
+  padding-bottom: 6px;
+}
+
+/* ── Film grain overlay (fights flat gradients) ───── */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Cold vignette ────────────────────────────────── */
+.vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 90% at 50% 40%,
+    transparent 55%,
+    rgba(2, 4, 8, 0.65) 100%
+  );
+}
+
+/* ── Whole-viewport "old camera recording" grade ──── */
+.tv-grade {
+  position: fixed;
+  inset: 0;
+  filter: url(#crt-chromab) saturate(1.1) contrast(1.06) brightness(1.02);
+}
+
+.tv-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  mix-blend-mode: normal;
+}
+
+.tv-overlay__scan {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.16) 3px,
+    rgba(0, 0, 0, 0.16) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+.tv-overlay__vig {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 12vw rgba(0, 0, 0, 0.75), inset 0 0 3vw rgba(0, 0, 0, 0.55);
+}
+
+.tv-overlay__roll {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 14%;
+  top: -14%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(200, 220, 255, 0.035) 45%,
+    rgba(200, 220, 255, 0.06) 50%,
+    rgba(200, 220, 255, 0.035) 55%,
+    transparent
+  );
+  animation: tvRoll 9s linear infinite;
+}
+@keyframes tvRoll {
+  to {
+    top: 120%;
+  }
+}
+
+.tv-overlay__flicker {
+  position: absolute;
+  inset: 0;
+  background: #cfe4ff;
+  opacity: 0;
+  animation: tvFlicker 6.5s steps(40) infinite;
+}
+@keyframes tvFlicker {
+  0%, 91%, 100% { opacity: 0; }
+  92% { opacity: 0.05; }
+  92.5% { opacity: 0; }
+  94% { opacity: 0.03; }
+  94.4% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-overlay__roll,
+  .tv-overlay__flicker {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ── Rain (thin cold streaks drifting on wind) ────── */
+.rain {
+  position: fixed;
+  inset: -20% -10% -20% -10%;
+  z-index: 45;
+  pointer-events: none;
+  overflow: hidden;
+}
+.rain i {
+  position: absolute;
+  top: -12%;
+  width: 1px;
+  height: 90px;
+  background: linear-gradient(to bottom, transparent, rgba(159, 182, 214, 0.35));
+  transform: rotate(9deg);
+  animation: fall linear infinite;
+}
+@keyframes fall {
+  to {
+    transform: translateY(130vh) rotate(9deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rain i {
+    animation: none;
+    opacity: 0.2;
+  }
+}
