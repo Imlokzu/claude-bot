@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/react'
 import FileList from './components/FileList'
 import Editor from './components/Editor'
 import MemoryMap from './components/MemoryMap'
@@ -178,6 +179,15 @@ function App() {
 
   return (
     <div className="memory-app">
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border, #e5e5e5)' }}>
+        <Show when="signed-out">
+          <SignInButton />
+          <SignUpButton />
+        </Show>
+        <Show when="signed-in">
+          <UserButton />
+        </Show>
+      </div>
       <div className="memory-sidebar">
         <div className="memory-tabs" role="tablist" aria-label="Розділи пам'яті">
           <button

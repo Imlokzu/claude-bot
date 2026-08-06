@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ScreenManager } from "./components/ScreenManager";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -216,7 +217,16 @@ export default function App() {
                 <WeatherWidget weather={weather} compact />
                 <ClockWidget clock={clock} compact />
               </div>
-              <div className={`connection-dot ${connected ? "online" : "offline"}`} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Show when="signed-out">
+                  <SignInButton />
+                  <SignUpButton />
+                </Show>
+                <Show when="signed-in">
+                  <UserButton />
+                </Show>
+                <div className={`connection-dot ${connected ? "online" : "offline"}`} />
+              </div>
             </header>
 
             <ErrorBoundary>

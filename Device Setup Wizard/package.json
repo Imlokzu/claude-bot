@@ -13,6 +13,7 @@
     "electron:build": "vite build && electron-builder"
   },
   "dependencies": {
+    "@clerk/react": "^6.12.11",
     "json5": "^2.2.3",
     "lucide-react": "^1.24.0",
     "react": "^19.0.0",

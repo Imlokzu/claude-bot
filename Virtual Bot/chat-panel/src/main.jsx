@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { ClerkProvider } from '@clerk/react';
 import App from './App.jsx';
 import WorkspaceApp from './WorkspaceApp.jsx';
 import BrowserApp from './BrowserApp.jsx';
@@ -10,7 +11,11 @@ import './styles.css';
 const mount = (id, element) => {
   const node = document.getElementById(id);
   if (!node) return;
-  ReactDOM.createRoot(node).render(<React.StrictMode>{element}</React.StrictMode>);
+  ReactDOM.createRoot(node).render(
+    <React.StrictMode>
+      <ClerkProvider afterSignOutUrl="/">{element}</ClerkProvider>
+    </React.StrictMode>
+  );
 };
 
 mount('chat-panel-root', <App />);
