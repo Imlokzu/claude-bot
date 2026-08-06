@@ -24,13 +24,13 @@ export default function Crab({
     });
     crabRef.current = crab;
     if (isStatic) {
-      // let it settle into its idle pose for a couple of frames, then
-      // freeze — a nav logo shouldn't breathe/blink while you're reading
-      const t = setTimeout(() => crab.destroy(), 80);
-      return () => {
-        clearTimeout(t);
-        crab.destroy();
-      };
+      // A frozen logo still has to be drawn once. Stepping the sprite
+      // directly guarantees a painted canvas even where rAF never runs —
+      // a background tab, or a reduced-motion setting — instead of
+      // depending on the animation loop we're about to shut down.
+      crab.destroy();
+      for (let i = 0; i < 6; i++) crab._update(1 / 60);
+      return () => crab.destroy();
     }
     return () => crab.destroy();
     // eslint-disable-next-line react-hooks/exhaustive-deps

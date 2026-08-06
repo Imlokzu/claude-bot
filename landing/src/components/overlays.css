@@ -1,0 +1,72 @@
+.ov {
+  width: 100vw;
+  pointer-events: none;
+}
+
+.ov a,
+.ov button {
+  pointer-events: auto;
+}
+
+.ov__screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* act 1 sits low so the meteorites own the upper frame */
+.ov__screen--hero {
+  justify-content: flex-end;
+  padding-bottom: 14vh;
+}
+
+/* act 2 sits high — the asteroid ring and its readouts own the middle
+   band of frame, so the copy must stay clear of it */
+.ov__screen--tools {
+  justify-content: flex-start;
+  padding-top: 9vh;
+}
+
+.ov__screen--tail {
+  justify-content: center;
+}
+
+.ov__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.ov__title {
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: clamp(40px, 7.8vw, 96px);
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+}
+
+.ov__title--sm {
+  font-size: clamp(28px, 4.6vw, 58px);
+  letter-spacing: -0.02em;
+}
+
+.ov__sub {
+  margin-top: 16px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(210, 222, 236, 0.7);
+}
+
+.ov__kicker {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(159, 182, 214, 0.75);
+}

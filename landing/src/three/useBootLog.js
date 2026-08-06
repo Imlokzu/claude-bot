@@ -98,6 +98,28 @@ export function useBootLog(onDone) {
   const done = useRef(false);
   const TOTAL = logRef.current.length;
 
+  // Skip the whole cold-boot: any key, or ?skipIntro in the URL. Worth
+  // having on its own (nobody wants the intro twice), and it's the escape
+  // hatch when a background tab throttles the log's timers to a crawl.
+  useEffect(() => {
+    const skip = () => {
+      setTyped(COMMAND);
+      setN(TOTAL);
+      setPhase("done");
+      finish();
+    };
+    if (new URLSearchParams(window.location.search).has("skipIntro")) {
+      skip();
+      return undefined;
+    }
+    const onKey = (e) => {
+      if (e.key === "Escape" || e.key === "Enter" || e.key === " ") skip();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // 1 ─ type the command
   useEffect(() => {
     if (phase !== "typing") return;

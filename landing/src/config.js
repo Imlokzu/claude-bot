@@ -31,20 +31,82 @@ export const MODELS = [
   { id: "mimo", icon: "siXiaomi", label: "◐", name: "Xiaomi MiMo", accent: "#ff9a6c" },
 ];
 
-// Everyday tools the bot unifies (rendered as an icon grid).
+// The tool planets. Each is an MCP server the bot can reach — clicking one
+// flies the camera in and opens its dossier, so every field here is copy
+// that ends up on screen.
 export const TOOLS = [
-  { id: "mail", label: "Mail", glyph: "✉" },
-  { id: "youtube", label: "YouTube", glyph: "▶" },
-  { id: "notes", label: "Notes", glyph: "✎" },
-  { id: "weather", label: "Weather", glyph: "❄" },
-  { id: "calendar", label: "Calendar", glyph: "▦" },
-  { id: "memory", label: "Memory", glyph: "◉" },
-  { id: "vision", label: "Vision", glyph: "◎" },
-  { id: "voice", label: "Voice", glyph: "◜◝" },
-  { id: "search", label: "Web Search", glyph: "⌕" },
-  { id: "code", label: "Code", glyph: "⌘" },
-  { id: "files", label: "Files", glyph: "▤" },
-  { id: "music", label: "Music", glyph: "♪" },
+  {
+    id: "mail",
+    label: "Mail",
+    glyph: "✉",
+    server: "mcp://mail",
+    accent: "#7fd0ff",
+    tagline: "Reads the inbox, drafts the reply, never sends without you.",
+    caps: ["Triage unread", "Draft replies", "Extract attachments", "Follow-up reminders"],
+  },
+  {
+    id: "youtube",
+    label: "YouTube",
+    glyph: "▶",
+    server: "mcp://youtube",
+    accent: "#ff7b7b",
+    tagline: "Watches so you don't have to. Summarises, timestamps, quotes.",
+    caps: ["Transcript search", "Chapter summary", "Clip timestamps", "Channel digest"],
+  },
+  {
+    id: "notes",
+    label: "Notes",
+    glyph: "✎",
+    server: "mcp://notes",
+    accent: "#ffd479",
+    tagline: "A second brain that files itself while you think out loud.",
+    caps: ["Capture on speech", "Auto-linking", "Daily log", "Full-text recall"],
+  },
+  {
+    id: "weather",
+    label: "Weather",
+    glyph: "❄",
+    server: "mcp://weather",
+    accent: "#a8e6ff",
+    tagline: "Knows the sky before you look outside.",
+    caps: ["Live conditions", "Hourly forecast", "Storm alerts", "Travel windows"],
+  },
+  {
+    id: "vision",
+    label: "Vision",
+    glyph: "◎",
+    server: "mcp://vision",
+    accent: "#c3a0ff",
+    tagline: "Point the camera. It sees what you see, and names it.",
+    caps: ["Object recall", "Screen reading", "OCR", "Scene description"],
+  },
+  {
+    id: "voice",
+    label: "Voice",
+    glyph: "◜◝",
+    server: "mcp://voice",
+    accent: "#74e3c3",
+    tagline: "Talks back. Listens first.",
+    caps: ["Wake word", "Live transcription", "Natural TTS", "Interrupt-aware"],
+  },
+  {
+    id: "memory",
+    label: "Memory",
+    glyph: "◉",
+    server: "mcp://brain",
+    accent: "#ff9a6c",
+    tagline: "Remembers you across every session, on your own disk.",
+    caps: ["Persistent facts", "People & pets", "Project context", "Local-first"],
+  },
+  {
+    id: "search",
+    label: "Web Search",
+    glyph: "⌕",
+    server: "mcp://search",
+    accent: "#9aa7ff",
+    tagline: "Goes and finds out, then cites where it looked.",
+    caps: ["Live web", "Source citing", "Deep research", "Fact cross-check"],
+  },
 ];
 
 // Slogans etched on the drifting monolith faces.
@@ -56,18 +118,34 @@ export const PILLARS = [
   { key: "friendly", title: "Friendly", copy: "Cold on the outside. Warm where it counts." },
 ];
 
-export const PRICING = [
+// Which brain the bot ships with. The picker lets you spec the machine
+// before you buy it — the price shifts with the board you choose.
+export const HARDWARE = [
   {
-    id: "unit",
-    kicker: "Hardware",
-    title: "Buy the Bot",
-    price: "$1,290",
-    unit: "one-time",
-    desc: "The finished machine. Assembled, calibrated, ready to wake.",
-    features: ["Assembled unit", "Calibrated sensors", "1-year warranty", "Free OTA updates"],
-    highlight: false,
-    cta: "Order a unit",
+    id: "zero",
+    board: "Pi Zero 2 W",
+    price: 79,
+    specs: ["512 MB RAM", "Quad-core 1 GHz", "Cloud inference"],
+    note: "The pocket one. Tiny body, everything thinks in the cloud.",
   },
+  {
+    id: "pi4",
+    board: "Raspberry Pi 4",
+    price: 119,
+    specs: ["4 GB RAM", "Quad-core 1.8 GHz", "Voice + vision on-device"],
+    note: "The balanced one. Hears and sees without asking the network.",
+    popular: true,
+  },
+  {
+    id: "pi5",
+    board: "Raspberry Pi 5",
+    price: 149,
+    specs: ["8 GB RAM", "Quad-core 2.4 GHz", "Full local inference"],
+    note: "The whole brain, offline. Nothing ever leaves the house.",
+  },
+];
+
+export const PRICING = [
   {
     id: "diy",
     kicker: "Open source",
@@ -76,7 +154,6 @@ export const PRICING = [
     unit: "forever",
     desc: "Every schematic, model and part list. Build it yourself.",
     features: ["Full schematics", "Bill of materials", "Firmware source", "Community support"],
-    highlight: true,
     cta: "Get the blueprints",
   },
   {
@@ -85,9 +162,9 @@ export const PRICING = [
     title: "AI Subscription",
     price: "$19",
     unit: "/ month",
-    desc: "We are also the provider. One key, every frontier model.",
+    desc: "We are the provider too. One key, all thirteen models.",
     features: ["All models, one key", "Unlimited routing", "Priority latency", "Cancel anytime"],
-    highlight: false,
+    highlight: true,
     cta: "Power it up",
   },
 ];
@@ -110,4 +187,17 @@ export const COLORS = {
 // kept short while only the fusion stage exists — each wheel tick should
 // carry real distance. Raise this as later sections (tools, pillars,
 // pricing) get built and need their own scroll range.
-export const SCROLL_PAGES = 3;
+export const SCROLL_PAGES = 4;
+
+// Where each act of the scroll lives, as a 0..1 fraction of the whole
+// track. Keeping these in one place means the scene and the HTML overlays
+// can never drift out of sync.
+// With SCROLL_PAGES=4 the track is 400vh tall and scrolls 300vh, so each
+// 100vh overlay block lands at a fixed offset: block N is centred at
+// (N-1)/3. These ranges are pinned to that grid — the camera arrives at an
+// act exactly when its copy fills the frame.
+export const ACTS = {
+  fusion: [0.0, 0.26], // meteorites converge into the core   (block 1 @ 0.00)
+  tools: [0.3, 0.42], // asteroid tool bodies, clickable      (block 2 @ 0.33)
+  pricing: [0.6, 0.72], // spec the machine, pick a plan      (block 3 @ 0.67)
+};

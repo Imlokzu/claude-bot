@@ -1,0 +1,246 @@
+.pricing {
+  width: 100vw;
+  height: 100vh; /* must stay exactly one block tall — see Overlays */
+  padding: 4vh 5vw;
+  overflow: hidden;
+  font-family: var(--mono);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(14px, 2.2vh, 26px);
+}
+
+.pricing__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+/* ── board picker ──────────────────────────────────── */
+.spec {
+  width: min(1020px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spec__label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(159, 182, 214, 0.6);
+}
+
+.spec__boards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.board {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 14px 14px 12px;
+  text-align: left;
+  background: rgba(9, 13, 20, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(159, 182, 214, 0.16);
+  color: var(--ink);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+.board:hover {
+  border-color: rgba(127, 208, 255, 0.5);
+  transform: translateY(-2px);
+}
+.board.is-active {
+  border-color: var(--accent);
+  background: rgba(12, 24, 34, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(127, 208, 255, 0.25), 0 0 40px rgba(127, 208, 255, 0.12);
+}
+
+.board__flag {
+  position: absolute;
+  top: -1px;
+  right: -1px;
+  padding: 4px 9px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #04121c;
+  background: var(--accent);
+}
+
+.board__name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+
+.board__price {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+  text-shadow: 0 0 18px rgba(127, 208, 255, 0.4);
+}
+
+.board__specs {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 2px;
+}
+.board__specs li {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgba(210, 222, 236, 0.6);
+}
+
+.spec__note {
+  font-size: 11.5px;
+  color: rgba(210, 222, 236, 0.7);
+}
+
+.spec__total {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 18px;
+  border: 1px solid rgba(159, 182, 214, 0.2);
+  background: rgba(6, 10, 16, 0.66);
+  backdrop-filter: blur(10px);
+}
+.spec__total-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(159, 182, 214, 0.55);
+}
+.spec__total-board {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+.spec__total-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.spec__total-price {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 0 22px rgba(127, 208, 255, 0.35);
+}
+
+/* ── standing offers ───────────────────────────────── */
+.plans {
+  width: min(1020px, 100%);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 16px 18px;
+  border: 1px solid rgba(159, 182, 214, 0.16);
+  background: rgba(9, 13, 20, 0.6);
+  backdrop-filter: blur(10px);
+}
+.plan.is-hero {
+  border-color: rgba(127, 208, 255, 0.45);
+  box-shadow: 0 0 50px rgba(127, 208, 255, 0.1);
+}
+
+.plan__kicker {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(127, 208, 255, 0.8);
+}
+.plan__title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+.plan__price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.plan__unit {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(159, 182, 214, 0.6);
+}
+.plan__desc {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: rgba(210, 222, 236, 0.75);
+}
+.plan__features {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 14px;
+  margin-top: 2px;
+}
+.plan__features li {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgba(210, 222, 236, 0.8);
+}
+.plan__cta {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+
+/* Narrow frames can't hold three boards and two plans side by side, so
+   they stack — and the block is allowed to grow past one viewport there,
+   since the camera act it lines up with is only pinned on wide screens. */
+@media (max-width: 760px) {
+  .pricing {
+    height: auto;
+    min-height: 100vh;
+    padding: 6vh 5vw;
+    gap: 18px;
+    overflow: visible;
+  }
+  .spec__boards {
+    grid-template-columns: 1fr;
+  }
+  .plans {
+    grid-template-columns: 1fr;
+  }
+  .spec__total-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

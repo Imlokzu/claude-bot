@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Downloaded source archives for public/ assets (regenerable, ~6 MB)
+.assets-cache

@@ -1,18 +1,32 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import CRTScene from "./three/CRTScene";
-import ModelsScene from "./three/ModelsScene";
+import SpaceScene from "./three/SpaceScene";
+import { preloadBodies } from "./three/ToolPlanets";
 import Nav from "./components/Nav";
 import "./crab/crab.css";
 
 export default function App() {
   const [booted, setBooted] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [introGone, setIntroGone] = useState(false);
+
+  // The boot sequence is several seconds of screen time we'd otherwise
+  // waste — spend it fetching the asteroid meshes the later acts need.
+  useEffect(() => {
+    preloadBodies();
+  }, []);
 
   function handleDone() {
-    // the 3D screen has already collapsed to black itself — just cut
-    // through to the next section without an extra CSS flash on top.
-    setLeaving(true);
-    setTimeout(() => setBooted(true), 260);
+    // the camera has just flown through the CRT glass — mount the site
+    // underneath first, then dissolve the intro over it, so the two frames
+    // blend instead of cutting to black between them.
+    setBooted(true);
+    requestAnimationFrame(() => setLeaving(true));
+    setTimeout(() => setIntroGone(true), 700);
+  }
+
+  function handleNavigate(position) {
+    window.dispatchEvent(new CustomEvent("landing:navigate", { detail: { position } }));
   }
 
   return (
@@ -66,13 +80,14 @@ export default function App() {
         <div className="vignette" />
         <div className="grain" />
 
-        {!booted && (
+        {!introGone && (
           <div
             style={{
               position: "fixed",
               inset: 0,
               zIndex: 100,
-              transition: "opacity 0.26s linear",
+              pointerEvents: leaving ? "none" : "auto",
+              transition: "opacity 0.55s ease",
               opacity: leaving ? 0 : 1,
             }}
           >
@@ -85,12 +100,12 @@ export default function App() {
             <main
               id="fusion"
               tabIndex={-1}
-              aria-label="Claude Bot model fusion field"
+              aria-label="Claude Bot"
               style={{ position: "fixed", inset: 0 }}
             >
-              <ModelsScene />
+              <SpaceScene />
             </main>
-            <Nav />
+            <Nav onNavigate={handleNavigate} />
           </>
         )}
       </div>

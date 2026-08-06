@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useScroll, useGLTF } from "@react-three/drei";
+import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { MODELS } from "../config";
 import { createGlyphTexture } from "./glyphTexture";
@@ -134,6 +134,7 @@ function useNormalizedRock(path) {
 
 function Stone({ model, index, total, fusedPos, rock, progressRef }) {
   const group = useRef();
+  const rockRef = useRef();
   const start = useMemo(() => scatterStart(index), [index]);
   const rotStart = useMemo(
     () => [seeded(index * 9.1) * Math.PI * 2, seeded(index * 4.4) * Math.PI * 2, seeded(index * 1.7) * Math.PI * 2],
@@ -146,7 +147,8 @@ function Stone({ model, index, total, fusedPos, rock, progressRef }) {
     () => [0.94 + seeded(index * 3.3) * 0.14, 0.94 + seeded(index * 8.8) * 0.14, 0.94 + seeded(index * 1.2) * 0.14],
     [index]
   );
-  const finalScale = 0.92 + seeded(index * 2.1) * 0.2;
+  const finalScale = 0.62 + seeded(index * 2.1) * 0.14;
+  const driftPhase = useMemo(() => seeded(index * 11.7) * Math.PI * 2, [index]);
 
   const tex = useMemo(() => createGlyphTexture(model), [model]);
   const glyphMat = useMemo(
@@ -162,22 +164,35 @@ function Stone({ model, index, total, fusedPos, rock, progressRef }) {
 
   const delay = (index / total) * 0.25;
 
-  useFrame(() => {
+  useFrame((state) => {
     const raw = progressRef.current;
     const local = THREE.MathUtils.clamp((raw - delay) / (1 - delay), 0, 1);
     const t = THREE.MathUtils.smoothstep(local, 0, 1);
     const g = group.current;
     if (!g) return;
+
+    // even fused, each meteorite keeps breathing on its own orbit — a dead
+    // still cluster reads as a screenshot, not a place
+    const clock = state.clock.elapsedTime;
+    const dx = Math.sin(clock * 0.21 + driftPhase) * 0.07;
+    const dy = Math.cos(clock * 0.17 + driftPhase) * 0.06;
+    const dz = Math.sin(clock * 0.13 + driftPhase) * 0.05;
+
     g.position.set(
-      THREE.MathUtils.lerp(start[0], fusedPos[0], t),
-      THREE.MathUtils.lerp(start[1], fusedPos[1], t),
-      THREE.MathUtils.lerp(start[2], fusedPos[2], t)
+      THREE.MathUtils.lerp(start[0], fusedPos[0], t) + dx * t,
+      THREE.MathUtils.lerp(start[1], fusedPos[1], t) + dy * t,
+      THREE.MathUtils.lerp(start[2], fusedPos[2], t) + dz * t
     );
+    // NB: the group must settle to rotation 0 — the glyph plate is parented
+    // to it, and any residual spin here turns the logo away from camera.
     g.rotation.set(
       THREE.MathUtils.lerp(rotStart[0], 0, t),
       THREE.MathUtils.lerp(rotStart[1], 0, t),
       THREE.MathUtils.lerp(rotStart[2], rotFinal, t)
     );
+    // the idle tumble lives on the rock mesh alone, so the face stays put
+    if (rockRef.current) rockRef.current.rotation.y = clock * 0.05 * t;
+
     const s = THREE.MathUtils.lerp(finalScale * 0.85, finalScale, t);
     g.scale.setScalar(s);
     glyphMat.opacity = THREE.MathUtils.smoothstep(t, 0.5, 1);
@@ -185,7 +200,7 @@ function Stone({ model, index, total, fusedPos, rock, progressRef }) {
 
   return (
     <group ref={group}>
-      <mesh geometry={rock.geometry} material={rock.material} scale={proportions} />
+      <mesh ref={rockRef} geometry={rock.geometry} material={rock.material} scale={proportions} />
       <mesh position={[0, TARGET_SIZE * 0.5, TARGET_SIZE * 0.78]} material={glyphMat}>
         <planeGeometry args={[0.8, 0.8]} />
       </mesh>
@@ -230,11 +245,12 @@ function Wordmark({ progressRef, halfH }) {
   );
 }
 
-export default function StoneField() {
-  const scroll = useScroll();
-  const progressRef = useRef(0);
+// The camera is owned by the scene's rig now (see SpaceScene), so this
+// component only animates its own meteorites and reports the footprint the
+// rig should frame.
+export default function StoneField({ progressRef, onBounds }) {
   const layout = useMemo(() => fusedLayout(MODELS.length), []);
-  const { halfW, halfH } = useMemo(() => layoutBounds(layout), [layout]);
+  const bounds = useMemo(() => layoutBounds(layout), [layout]);
 
   const rockA = useNormalizedRock(ROCK_MODELS[0]);
   const rockB = useNormalizedRock(ROCK_MODELS[1]);
@@ -242,44 +258,8 @@ export default function StoneField() {
   const rocks = [rockA, rockB, rockC];
 
   useEffect(() => {
-    const navigate = (event) => {
-      const position = THREE.MathUtils.clamp(event.detail?.position ?? 0, 0, 1);
-      const maximum = scroll.el.scrollHeight - scroll.el.clientHeight;
-      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      scroll.el.scrollTo({
-        top: maximum * position,
-        behavior: reduceMotion ? "auto" : "smooth",
-      });
-    };
-
-    window.addEventListener("landing:navigate", navigate);
-    return () => window.removeEventListener("landing:navigate", navigate);
-  }, [scroll]);
-
-  useFrame((state) => {
-    // Use the complete normalized scroll range so the three index destinations
-    // remain distinct: Origin is scattered, Fusion is in progress, and Core
-    // reaches the final locked arrangement.
-    progressRef.current = THREE.MathUtils.clamp(scroll.offset, 0, 1);
-
-    // fit-to-frame: width and height are fit independently against the
-    // honeycomb's own (stretched, non-circular) footprint, so a wide
-    // cluster actually uses the width of a wide viewport instead of being
-    // held back by the vertical fit and leaving the sides empty
-    const cam = state.camera;
-    const vFov = THREE.MathUtils.degToRad(cam.fov);
-    const aspect = Math.max(cam.aspect, 0.55); // clamp so tall phones don't zoom out forever
-    const distV = halfH / Math.tan(vFov / 2);
-    const distH = halfW / (Math.tan(vFov / 2) * aspect);
-    // Keep a small safety margin around the true layout bounds so the
-    // already-centred cluster is not visibly cropped, while still sitting
-    // close to the viewport edges.
-    const fitZ = Math.max(distV, distH) * 1.06;
-    const targetZ = THREE.MathUtils.lerp(fitZ * 1.03, fitZ, progressRef.current);
-    cam.position.z += (targetZ - cam.position.z) * 0.06;
-    cam.position.y += (0.2 - cam.position.y) * 0.06;
-    cam.lookAt(0, -0.1, 0);
-  });
+    onBounds?.(bounds);
+  }, [bounds, onBounds]);
 
   return (
     <group>
@@ -294,7 +274,7 @@ export default function StoneField() {
           progressRef={progressRef}
         />
       ))}
-      <Wordmark progressRef={progressRef} halfH={halfH} />
+      <Wordmark progressRef={progressRef} halfH={bounds.halfH} />
     </group>
   );
 }
