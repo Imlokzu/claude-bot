@@ -6,11 +6,12 @@ import * as THREE from "three";
 import { ACTS, COLORS, SCROLL_PAGES, TOOLS } from "../config";
 import StoneField from "./StoneField";
 import ToolPlanets, { TOOLS_Y, planetOrbit } from "./ToolPlanets";
+import Pillars, { PILLARS_Y, PILLARS_SPAN } from "./Pillars";
 import Overlays from "../components/Overlays";
 import ToolDossier from "../components/ToolDossier";
 import { Trail } from "./TrailEffect";
 
-const PRICING_Y = TOOLS_Y * 2;
+const PRICING_Y = PILLARS_Y - 16;
 
 // maps a scroll offset onto 0..1 within one act's range
 function actProgress(offset, [from, to]) {
@@ -19,7 +20,7 @@ function actProgress(offset, [from, to]) {
 
 // Owns the camera for the whole page: it descends through the acts as you
 // scroll, and detours to a planet when one is selected.
-function Rig({ fusionRef, toolsRef, selected, boundsRef, onScroll }) {
+function Rig({ fusionRef, toolsRef, pillarsRef, selected, boundsRef, onScroll }) {
   const scroll = useScroll();
   const look = useRef(new THREE.Vector3(0, 0, 0));
 
@@ -38,6 +39,7 @@ function Rig({ fusionRef, toolsRef, selected, boundsRef, onScroll }) {
     const offset = THREE.MathUtils.clamp(scroll.offset, 0, 1);
     fusionRef.current = actProgress(offset, ACTS.fusion);
     toolsRef.current = actProgress(offset, ACTS.tools);
+    pillarsRef.current = actProgress(offset, ACTS.pillars);
     onScroll(offset);
 
     const cam = state.camera;
@@ -52,16 +54,31 @@ function Rig({ fusionRef, toolsRef, selected, boundsRef, onScroll }) {
 
     // the camera descends: fusion (y≈0) → tools → pricing
     const toTools = THREE.MathUtils.smoothstep(offset, ACTS.fusion[1], ACTS.tools[0]);
-    const toPricing = THREE.MathUtils.smoothstep(offset, ACTS.tools[1], ACTS.pricing[0]);
+    const toPillars = THREE.MathUtils.smoothstep(offset, ACTS.tools[1], ACTS.pillars[0]);
+    const toPricing = THREE.MathUtils.smoothstep(offset, ACTS.pillars[1], ACTS.pricing[0]);
     let y = THREE.MathUtils.lerp(0.2, TOOLS_Y, toTools);
+    // the pillars act isn't a stop but a descent: the camera travels the
+    // full run of slabs across its scroll range, meeting each in turn
+    const pillarTop = PILLARS_Y + PILLARS_SPAN / 2;
+    const pillarBottom = PILLARS_Y - PILLARS_SPAN / 2;
+    const throughPillars = THREE.MathUtils.lerp(
+      pillarTop,
+      pillarBottom,
+      pillarsRef.current
+    );
+    y = THREE.MathUtils.lerp(y, throughPillars, toPillars);
     y = THREE.MathUtils.lerp(y, PRICING_Y, toPricing);
 
     let z = THREE.MathUtils.lerp(fitZ * 1.03, fitZ, fusionRef.current);
     z = THREE.MathUtils.lerp(z, 19, toTools);
+    // far enough that a whole slab fits its side of frame as you pass it
+    z = THREE.MathUtils.lerp(z, 12.2, toPillars);
     z = THREE.MathUtils.lerp(z, 20, toPricing);
 
     let x = 0;
-    let lookAt = new THREE.Vector3(0, y - 0.3, 0);
+    // during the pillars descent the heading sits at the top of frame, so
+    // aim lower there and let the slabs own the bottom two thirds
+    let lookAt = new THREE.Vector3(0, y - 0.3 - toPillars * 1.9, 0);
 
     // detour: fly to the selected body and hold there. It stays a portrait
     // — far enough that the whole silhouette reads, offset to the side the
@@ -90,6 +107,7 @@ function Rig({ fusionRef, toolsRef, selected, boundsRef, onScroll }) {
 export default function SpaceScene() {
   const fusionRef = useRef(0);
   const toolsRef = useRef(0);
+  const pillarsRef = useRef(0);
   const boundsRef = useRef({ halfW: 4, halfH: 2.6 });
   const [selected, setSelected] = useState(null);
   const [offset, setOffset] = useState(0);
@@ -135,6 +153,7 @@ export default function SpaceScene() {
           <Rig
             fusionRef={fusionRef}
             toolsRef={toolsRef}
+            pillarsRef={pillarsRef}
             boundsRef={boundsRef}
             selected={selected}
             onScroll={setOffset}
@@ -142,6 +161,7 @@ export default function SpaceScene() {
           <Suspense fallback={null}>
             <StoneField progressRef={fusionRef} onBounds={handleBounds} />
             <ToolPlanets selected={selected} onSelect={setSelected} visibleRef={toolsRef} />
+            <Pillars visibleRef={pillarsRef} />
             <Environment preset="city" environmentIntensity={0.4} />
           </Suspense>
 

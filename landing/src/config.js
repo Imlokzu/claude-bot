@@ -183,21 +183,22 @@ export const COLORS = {
   fog: "#0a0f16",
 };
 
-// Scroll layout — number of scrollable "pages" (viewport heights).
-// kept short while only the fusion stage exists — each wheel tick should
-// carry real distance. Raise this as later sections (tools, pillars,
-// pricing) get built and need their own scroll range.
-export const SCROLL_PAGES = 4;
+// Scroll layout — number of scrollable "pages" (viewport heights). One per
+// overlay block: hero, tools, pillars, pricing, tail.
+export const SCROLL_PAGES = 5;
 
 // Where each act of the scroll lives, as a 0..1 fraction of the whole
 // track. Keeping these in one place means the scene and the HTML overlays
 // can never drift out of sync.
-// With SCROLL_PAGES=4 the track is 400vh tall and scrolls 300vh, so each
+// With SCROLL_PAGES=5 the track is 500vh tall and scrolls 400vh, so each
 // 100vh overlay block lands at a fixed offset: block N is centred at
-// (N-1)/3. These ranges are pinned to that grid — the camera arrives at an
+// (N-1)/4. These ranges are pinned to that grid — the camera arrives at an
 // act exactly when its copy fills the frame.
+// `pillars` is deliberately wide: it isn't a place the camera stops but a
+// descent it makes, meeting one slab at a time across the whole range.
 export const ACTS = {
-  fusion: [0.0, 0.26], // meteorites converge into the core   (block 1 @ 0.00)
-  tools: [0.3, 0.42], // asteroid tool bodies, clickable      (block 2 @ 0.33)
-  pricing: [0.6, 0.72], // spec the machine, pick a plan      (block 3 @ 0.67)
+  fusion: [0.0, 0.2], //   meteorites converge into the core  (block 1 @ 0.00)
+  tools: [0.22, 0.32], //  asteroid tool bodies, clickable    (block 2 @ 0.25)
+  pillars: [0.4, 0.63], //  carved slabs: what it stands for  (block 3 @ 0.50)
+  pricing: [0.72, 0.82], // spec the machine, pick a plan     (block 4 @ 0.75)
 };

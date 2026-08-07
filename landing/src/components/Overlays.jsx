@@ -1,8 +1,8 @@
 import Pricing from "./Pricing";
 import "./overlays.css";
 
-// Four 100vh blocks stacked down the scroll track. With SCROLL_PAGES=4
-// that puts block N at offset (N-1)/3, which is exactly where the camera
+// Five 100vh blocks stacked down the scroll track. With SCROLL_PAGES=5
+// that puts block N at offset (N-1)/4, which is exactly where the camera
 // rig parks for each act — see ACTS in config.
 export default function Overlays() {
   return (
@@ -30,10 +30,20 @@ export default function Overlays() {
         </div>
       </section>
 
-      {/* ── block 3 · pricing ─────────────────────────── */}
+      {/* ── block 3 · what it stands for ──────────────── */}
+      <section className="ov__screen ov__screen--tools">
+        <div className="ov__stack">
+          <span className="ov__kicker">
+            <span className="chrome__slash">//</span> 03 · The position
+          </span>
+          <h2 className="ov__title ov__title--sm glow-text">FIVE THINGS, IN STONE</h2>
+        </div>
+      </section>
+
+      {/* ── block 4 · pricing ─────────────────────────── */}
       <Pricing />
 
-      {/* ── block 4 · tail, lets the last act settle ──── */}
+      {/* ── block 5 · tail, lets the last act settle ──── */}
       <section className="ov__screen ov__screen--tail">
         <div className="ov__stack">
           <span className="ov__kicker">
