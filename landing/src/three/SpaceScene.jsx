@@ -3,12 +3,13 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Environment, ScrollControls, Scroll, useScroll, Stars } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette, Noise, Autofocus } from "@react-three/postprocessing";
 import * as THREE from "three";
-import { ACTS, COLORS, SCROLL_PAGES, TOOLS } from "../config";
+import { ACTS, COLORS, PILLARS, SCROLL_PAGES, TOOLS } from "../config";
 import StoneField from "./StoneField";
 import ToolPlanets, { TOOLS_Y, planetOrbit } from "./ToolPlanets";
-import Pillars, { PILLARS_Y, PILLARS_SPAN } from "./Pillars";
+import Pillars, { PILLARS_Y, PILLARS_SPAN, pillarPosition, pillarNormal } from "./Pillars";
 import Overlays from "../components/Overlays";
 import ToolDossier from "../components/ToolDossier";
+import PillarDossier from "../components/PillarDossier";
 import { Trail } from "./TrailEffect";
 
 const PRICING_Y = PILLARS_Y - 16;
@@ -20,7 +21,7 @@ function actProgress(offset, [from, to]) {
 
 // Owns the camera for the whole page: it descends through the acts as you
 // scroll, and detours to a planet when one is selected.
-function Rig({ fusionRef, toolsRef, pillarsRef, selected, boundsRef, onScroll }) {
+function Rig({ fusionRef, toolsRef, pillarsRef, selected, selectedPillar, boundsRef, onRawScroll }) {
   const scroll = useScroll();
   const look = useRef(new THREE.Vector3(0, 0, 0));
 
@@ -28,22 +29,28 @@ function Rig({ fusionRef, toolsRef, pillarsRef, selected, boundsRef, onScroll })
     const navigate = (e) => {
       const p = THREE.MathUtils.clamp(e.detail?.position ?? 0, 0, 1);
       const max = scroll.el.scrollHeight - scroll.el.clientHeight;
-      // Jump the container outright rather than asking for smooth scroll:
-      // ScrollControls damps its own offset toward scrollTop every frame,
-      // and the browser's smooth animation fights that, stalling partway.
-      // Setting it directly lets the damping do the easing.
+      // Jump directly; ScrollControls supplies the only camera damping.
       scroll.el.scrollTop = max * p;
     };
     window.addEventListener("landing:navigate", navigate);
-    return () => window.removeEventListener("landing:navigate", navigate);
+    // Continuous scroll: the wheel/trackpad owns the position and the
+    // camera eases toward it. Make sure no stale snap rules are left on
+    // the scroll container from a previous render/HMR cycle.
+    scroll.el.style.scrollSnapType = "";
+    return () => {
+      window.removeEventListener("landing:navigate", navigate);
+      scroll.el.style.scrollSnapType = "";
+    };
   }, [scroll]);
 
   useFrame((state, dt) => {
     const offset = THREE.MathUtils.clamp(scroll.offset, 0, 1);
+    const max = Math.max(1, scroll.el.scrollHeight - scroll.el.clientHeight);
+    const rawOffset = THREE.MathUtils.clamp(scroll.el.scrollTop / max, 0, 1);
     fusionRef.current = actProgress(offset, ACTS.fusion);
     toolsRef.current = actProgress(offset, ACTS.tools);
     pillarsRef.current = actProgress(offset, ACTS.pillars);
-    onScroll(offset);
+    onRawScroll(rawOffset);
 
     const cam = state.camera;
     const { halfW, halfH } = boundsRef.current;
@@ -87,6 +94,7 @@ function Rig({ fusionRef, toolsRef, pillarsRef, selected, boundsRef, onScroll })
     // — far enough that the whole silhouette reads, offset to the side the
     // dossier isn't on so the panel never covers it.
     const active = selected && TOOLS.find((t) => t.id === selected);
+    const activePillarIdx = selectedPillar ? PILLARS.findIndex((p) => p.key === selectedPillar) : -1;
     if (active) {
       const [px, py, pz] = planetOrbit(TOOLS.indexOf(active), TOOLS.length);
       const narrow = cam.aspect < 1.1; // panel docks to the bottom instead
@@ -94,9 +102,23 @@ function Rig({ fusionRef, toolsRef, pillarsRef, selected, boundsRef, onScroll })
       y = py + (narrow ? 1.5 : 0.35);
       z = pz + 8.2;
       lookAt = new THREE.Vector3(px, py, pz);
+    } else if (activePillarIdx >= 0) {
+      // stand in front of the slab's own face, not a fixed world spot —
+      // alternating slabs turn opposite ways
+      const [px, py, pz] = pillarPosition(activePillarIdx, PILLARS.length);
+      const [nx, , nz] = pillarNormal(activePillarIdx, PILLARS.length);
+      const narrow = cam.aspect < 1.1;
+      const dist = 6.4;
+      x = px + nx * dist + (narrow ? 0 : 1.3);
+      y = py + 0.35;
+      z = pz + nz * dist;
+      lookAt = new THREE.Vector3(px, py, pz);
     }
 
-    const ease = active ? 1 - Math.pow(0.006, dt) : 1 - Math.pow(0.05, dt);
+    // The scroll-driven path stays close to the damped offset so the
+    // user feels in control; a selected body or slab eases in gently
+    // rather than snapping, then keeps a slow living drift.
+    const ease = active || activePillarIdx >= 0 ? 1 - Math.pow(0.12, dt) : 1 - Math.pow(0.05, dt);
     cam.position.x += (x - cam.position.x) * ease;
     cam.position.y += (y - cam.position.y) * ease;
     cam.position.z += (z - cam.position.z) * ease;
@@ -113,24 +135,51 @@ export default function SpaceScene() {
   const pillarsRef = useRef(0);
   const boundsRef = useRef({ halfW: 4, halfH: 2.6 });
   const [selected, setSelected] = useState(null);
-  const [offset, setOffset] = useState(0);
+  const [selectedPillar, setSelectedPillar] = useState(null);
+  const [rawOffset, setRawOffset] = useState(0);
 
   const handleBounds = useCallback((b) => {
     boundsRef.current = b;
   }, []);
 
-  // leaving the tools act closes any open dossier
+  const pickTool = useCallback((id) => {
+    setSelectedPillar(null);
+    setSelected(id);
+  }, []);
+  const pickPillar = useCallback((key) => {
+    setSelected(null);
+    setSelectedPillar((cur) => (cur === key ? null : key));
+  }, []);
+  const closePillar = useCallback(() => setSelectedPillar(null), []);
+
+  // leaving the tools act closes any open tool dossier.
+  // a picked stone stays open while the user is still in the pillars act,
+  // but if they scroll materially past it we give camera authority back
+  // to the scroll track instead of leaving it pinned indefinitely.
   useEffect(() => {
-    if (selected && (offset < ACTS.tools[0] - 0.06 || offset > ACTS.tools[1] + 0.1)) {
+    if (selected && (rawOffset < ACTS.tools[0] - 0.06 || rawOffset > ACTS.tools[1] + 0.1)) {
       setSelected(null);
     }
-  }, [offset, selected]);
+  }, [rawOffset, selected]);
 
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && setSelected(null);
+    if (
+      selectedPillar &&
+      (rawOffset < ACTS.pillars[0] - 0.08 || rawOffset > ACTS.pillars[1] + 0.1)
+    ) {
+      setSelectedPillar(null);
+    }
+  }, [rawOffset, selectedPillar]);
+
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      setSelected(null);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [selected]);
 
   return (
     <>
@@ -152,19 +201,27 @@ export default function SpaceScene() {
             meteorites rather than props on a black card */}
         <Stars radius={70} depth={45} count={2600} factor={3.4} saturation={0} fade speed={0.4} />
 
-        <ScrollControls pages={SCROLL_PAGES} damping={0.4}>
+        {/* damping is a time-constant on how fast the rig's offset catches
+            up to the real scrollTop — higher reads as smoother/heavier,
+            lower as snappier/twitchier. 0.1 keeps small deltas visible and
+            tied closely to the user's wheel/trackpad, with no snap stages. */}
+        <ScrollControls
+          pages={SCROLL_PAGES}
+          damping={0.1}
+        >
           <Rig
             fusionRef={fusionRef}
             toolsRef={toolsRef}
             pillarsRef={pillarsRef}
             boundsRef={boundsRef}
             selected={selected}
-            onScroll={setOffset}
+            selectedPillar={selectedPillar}
+            onRawScroll={setRawOffset}
           />
           <Suspense fallback={null}>
             <StoneField progressRef={fusionRef} onBounds={handleBounds} />
-            <ToolPlanets selected={selected} onSelect={setSelected} visibleRef={toolsRef} />
-            <Pillars visibleRef={pillarsRef} />
+            <ToolPlanets selected={selected} onSelect={pickTool} visibleRef={toolsRef} />
+            <Pillars visibleRef={pillarsRef} selected={selectedPillar} onSelect={pickPillar} />
             <Environment preset="city" environmentIntensity={0.4} />
           </Suspense>
 
@@ -174,7 +231,7 @@ export default function SpaceScene() {
             <div
               style={{
                 transition: "opacity 0.35s ease",
-                opacity: selected ? 0.12 : 1,
+                opacity: selected || selectedPillar ? 0.12 : 1,
               }}
             >
               <Overlays />
@@ -203,6 +260,11 @@ export default function SpaceScene() {
       </Canvas>
 
       <ToolDossier tool={TOOLS.find((t) => t.id === selected)} onClose={() => setSelected(null)} />
+      <PillarDossier
+        pillar={PILLARS.find((p) => p.key === selectedPillar)}
+        index={PILLARS.findIndex((p) => p.key === selectedPillar)}
+        onClose={closePillar}
+      />
     </>
   );
 }

@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -37,9 +37,21 @@ function slabPlacement(i, total) {
   };
 }
 
-function Slab({ pillar, index, total, geometry, material, visibleRef }) {
+// Where the camera should stand to face a selected slab head-on — its
+// rest position plus a step back along the face's own normal, not a
+// fixed world direction, since alternating slabs face opposite ways.
+export function pillarPosition(index, total) {
+  return slabPlacement(index, total).position;
+}
+export function pillarNormal(index, total) {
+  const ry = slabPlacement(index, total).rotation[1];
+  return [Math.sin(ry), 0, Math.cos(ry)];
+}
+
+function Slab({ pillar, index, total, geometry, material, visibleRef, active, onSelect, onHoverStart, onHoverEnd }) {
   const group = useRef();
   const plate = useRef();
+  const [hovered, setHovered] = useState(false);
   const place = useMemo(() => slabPlacement(index, total), [index, total]);
   const phase = useMemo(() => seeded(index * 9.1) * Math.PI * 2, [index]);
 
@@ -58,11 +70,14 @@ function Slab({ pillar, index, total, geometry, material, visibleRef }) {
     const g = group.current;
     if (!g) return;
     const t = state.clock.elapsedTime;
-    g.position.y = place.position[1] + Math.sin(t * 0.16 + phase) * 0.22;
-    g.rotation.y = place.rotation[1] + Math.sin(t * 0.1 + phase) * 0.05;
-    // the carving only shows while this act is on screen
+    // once picked, the slab keeps drifting — just slower, so it stays a
+    // living object in frame rather than freezing mid-air like a prop
+    const settle = active ? 0.4 : 1;
+    g.position.y = place.position[1] + Math.sin(t * 0.16 + phase) * 0.22 * settle;
+    g.rotation.y = place.rotation[1] + Math.sin(t * 0.1 + phase) * 0.05 * settle;
+    // the carving shows while the act is on screen, or always once picked
     if (plate.current) {
-      const want = visibleRef.current > 0.04 ? 1 : 0;
+      const want = active || hovered || visibleRef.current > 0.04 ? 1 : 0;
       plate.current.material.opacity += (want - plate.current.material.opacity) * 0.08;
     }
   });
@@ -71,7 +86,24 @@ function Slab({ pillar, index, total, geometry, material, visibleRef }) {
   const H = W / 2;
 
   return (
-    <group ref={group} position={place.position} rotation={place.rotation}>
+    <group
+      ref={group}
+      position={place.position}
+      rotation={place.rotation}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect(pillar.key);
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHovered(true);
+        onHoverStart(pillar.key);
+      }}
+      onPointerOut={() => {
+        setHovered(false);
+        onHoverEnd(pillar.key);
+      }}
+    >
       {/* the stone itself, flattened into a slab */}
       {/* the slab has to out-measure the carving plate below, or the words
           spill off the rock and stop reading as cut into it */}
@@ -91,7 +123,7 @@ function Slab({ pillar, index, total, geometry, material, visibleRef }) {
   );
 }
 
-export default function Pillars({ visibleRef }) {
+export default function Pillars({ visibleRef, selected, onSelect }) {
   const { scene } = useGLTF(SLAB_MODEL, DRACO_PATH);
   const { geometry, material } = useMemo(() => {
     let mesh = null;
@@ -111,9 +143,48 @@ export default function Pillars({ visibleRef }) {
     return { geometry: geo, material: mesh.material };
   }, [scene]);
 
+  // Central cursor ownership: the parent tracks which slabs are currently
+  // hovered and swaps the body cursor exactly once. This avoids duplicate
+  // restore races when moving between stones and guarantees cleanup if the
+  // whole run becomes invisible while the pointer is stationary.
+  const hoveredPillars = useRef(new Set());
+  const savedCursor = useRef("");
+
+  const restoreCursor = useCallback(() => {
+    if (hoveredPillars.current.size === 0) return;
+    document.body.style.cursor = savedCursor.current;
+    hoveredPillars.current.clear();
+  }, []);
+
+  const onHoverStart = useCallback((key) => {
+    if (hoveredPillars.current.has(key)) return;
+    if (hoveredPillars.current.size === 0) {
+      savedCursor.current = document.body.style.cursor;
+      document.body.style.cursor = "pointer";
+    }
+    hoveredPillars.current.add(key);
+  }, []);
+
+  const onHoverEnd = useCallback((key) => {
+    hoveredPillars.current.delete(key);
+    if (hoveredPillars.current.size === 0) {
+      document.body.style.cursor = savedCursor.current;
+    }
+  }, []);
+
+  useEffect(() => restoreCursor, [restoreCursor]);
+
   const groupRef = useRef();
   useFrame(() => {
-    if (groupRef.current) groupRef.current.visible = visibleRef.current > 0.01;
+    // once a slab is picked, keep the whole run mounted and visible even
+    // if the scroll drifts out of range — closing is a deliberate click,
+    // not an accident of losing the act
+    const visible = selected || visibleRef.current > 0.01;
+    if (groupRef.current) groupRef.current.visible = visible;
+    // If the run has just hidden while a slab was hovered, the browser may
+    // not emit pointerout. Force the cursor back to its saved state so it
+    // cannot stay stuck as a pointer.
+    if (!visible) restoreCursor();
   });
 
   return (
@@ -127,6 +198,10 @@ export default function Pillars({ visibleRef }) {
           geometry={geometry}
           material={material}
           visibleRef={visibleRef}
+          active={selected === p.key}
+          onSelect={onSelect}
+          onHoverStart={onHoverStart}
+          onHoverEnd={onHoverEnd}
         />
       ))}
     </group>

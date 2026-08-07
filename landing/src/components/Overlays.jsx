@@ -23,7 +23,7 @@ export default function Overlays() {
           <span className="ov__kicker">
             <span className="chrome__slash">//</span> 02 · The system
           </span>
-          <h2 className="ov__title ov__title--sm glow-text">EVERYTHING IT REACHES</h2>
+          <h2 className="ov__title ov__title--sm glow-text">TOOLS, WITH CONTEXT</h2>
           <p className="ov__sub">
             eight live MCP servers, each riding a real asteroid — point at one
           </p>

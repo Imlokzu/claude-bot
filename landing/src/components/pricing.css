@@ -9,6 +9,7 @@
   align-items: center;
   justify-content: center;
   gap: clamp(14px, 2.2vh, 26px);
+  /* continuous scroll: no snap checkpoints on the pricing block. */
 }
 
 .pricing__head {
