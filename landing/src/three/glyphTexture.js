@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import * as simpleIcons from "simple-icons";
+import { BRAND_PATHS } from "./brandPaths";
 
 // Official marks not in simple-icons (trademark policy declines them there),
 // sourced directly as real vector paths from each brand's own logo files
@@ -30,10 +30,11 @@ const CUSTOM_ICONS = {
   },
 };
 
-// Emissive canvas texture for a stone's face: a real brand logo — from
-// simple-icons where available, from the brand's own official SVG file
-// otherwise (CUSTOM_ICONS). All 13 models now resolve to an actual logo.
-export function createGlyphTexture({ id, icon, accent }) {
+// Emissive canvas texture for a stone's face: a real brand logo — from the
+// simple-icons outlines in brandPaths, or from the brand's own official SVG
+// file (CUSTOM_ICONS) where simple-icons declines to carry the mark.
+// All 13 models resolve to an actual logo.
+export function createGlyphTexture({ id, accent }) {
   const W = 256;
   const H = 256;
   const canvas = document.createElement("canvas");
@@ -46,12 +47,13 @@ export function createGlyphTexture({ id, icon, accent }) {
   ctx.shadowColor = accent;
   ctx.shadowBlur = 28;
 
-  const iconDef = icon && simpleIcons[icon];
+  const brand = BRAND_PATHS[id];
   const custom = CUSTOM_ICONS[id];
   const size = 132; // target rendered size in canvas px
 
-  const { path: d, viewBox, frame } = iconDef
-    ? { path: iconDef.path, viewBox: 24, frame: false }
+  // simple-icons outlines are all drawn on a 24×24 viewBox
+  const { path: d, viewBox, frame } = brand
+    ? { path: brand, viewBox: 24, frame: false }
     : custom;
   const path = new Path2D(d);
   const scale = size / viewBox;

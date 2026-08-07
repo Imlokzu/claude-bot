@@ -11,24 +11,24 @@ export const BRAND = {
   domain: "wavelab.inc",
 };
 
-// AI models whose "stones" fly in and fuse into the monolith.
-// icon = simple-icons export key (real brand logo, drawn from its SVG path).
-// label = unicode glyph fallback for brands simple-icons won't ship
-// (OpenAI, xAI/Grok and Zhipu/GLM decline inclusion under its trademark policy).
+// AI models whose meteorites fly in and fuse into the core. Each id maps to
+// a brand outline — see BRAND_PATHS (simple-icons marks) and CUSTOM_ICONS
+// (OpenAI, xAI/Grok and Z.ai/GLM, which simple-icons won't carry) in
+// three/glyphTexture.js.
 export const MODELS = [
-  { id: "claude", icon: "siClaude", label: "✳", name: "Claude", accent: "#d9a066" },
-  { id: "chatgpt", label: "◍", name: "ChatGPT", accent: "#74e3c3" },
-  { id: "gemini", icon: "siGooglegemini", label: "✧", name: "Gemini", accent: "#8ab4ff" },
-  { id: "deepseek", icon: "siDeepseek", label: "⌖", name: "DeepSeek", accent: "#6f8bff" },
-  { id: "qwen", icon: "siQwen", label: "❖", name: "Qwen", accent: "#a78bff" },
-  { id: "mistral", icon: "siMistralai", label: "▲", name: "Mistral", accent: "#ffb35c" },
-  { id: "grok", label: "𝕏", name: "Grok", accent: "#cfd6e0" },
-  { id: "glm", label: "◆", name: "GLM", accent: "#7fd0ff" },
-  { id: "kimi", icon: "siKimi", label: "☾", name: "Kimi", accent: "#b6c2d9" },
-  { id: "perplexity", icon: "siPerplexity", label: "≈", name: "Perplexity", accent: "#5fd0c8" },
-  { id: "minimax", icon: "siMinimax", label: "⬡", name: "MiniMax", accent: "#9aa7ff" },
-  { id: "meta", icon: "siMeta", label: "∞", name: "Meta", accent: "#7aa7ff" },
-  { id: "mimo", icon: "siXiaomi", label: "◐", name: "Xiaomi MiMo", accent: "#ff9a6c" },
+  { id: "claude", name: "Claude", accent: "#d9a066" },
+  { id: "chatgpt", name: "ChatGPT", accent: "#74e3c3" },
+  { id: "gemini", name: "Gemini", accent: "#8ab4ff" },
+  { id: "deepseek", name: "DeepSeek", accent: "#6f8bff" },
+  { id: "qwen", name: "Qwen", accent: "#a78bff" },
+  { id: "mistral", name: "Mistral", accent: "#ffb35c" },
+  { id: "grok", name: "Grok", accent: "#cfd6e0" },
+  { id: "glm", name: "GLM", accent: "#7fd0ff" },
+  { id: "kimi", name: "Kimi", accent: "#b6c2d9" },
+  { id: "perplexity", name: "Perplexity", accent: "#5fd0c8" },
+  { id: "minimax", name: "MiniMax", accent: "#9aa7ff" },
+  { id: "meta", name: "Meta", accent: "#7aa7ff" },
+  { id: "mimo", name: "Xiaomi MiMo", accent: "#ff9a6c" },
 ];
 
 // The tool planets. Each is an MCP server the bot can reach — clicking one

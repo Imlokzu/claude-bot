@@ -6,14 +6,23 @@ import { MODELS } from "../config";
 import { createGlyphTexture } from "./glyphTexture";
 import { createWordmarkTexture } from "./wordmarkTexture";
 
-// Real photogrammetry-scanned rocks (Poly Haven, CC0) — high-poly scan
-// meshes with real diffuse/normal/AO-rough-metal maps, not procedural.
+// Real photogrammetry-scanned rocks (Poly Haven, CC0) — actual scan meshes
+// with their own diffuse/normal/ARM maps, not procedural noise.
+//
+// Decimated and Draco-packed for the web: the raw scans were 6.1 MB for
+// bodies that render ~60 px tall, where the extra half-million triangles
+// are invisible. See npm run assets:rocks.
 const ROCK_MODELS = [
-  "/models/rocks/boulder_01/boulder_01.gltf",
-  "/models/rocks/rock_09/rock_09.gltf",
-  "/models/rocks/namaqualand_boulder_03/namaqualand_boulder_03.gltf",
+  "/models/rocks-opt/boulder_01.glb",
+  "/models/rocks-opt/rock_09.glb",
+  "/models/rocks-opt/namaqualand_boulder_03.glb",
 ];
-ROCK_MODELS.forEach((p) => useGLTF.preload(p));
+
+// Self-hosted Draco decoder. drei defaults to a gstatic CDN, which is a
+// third-party request on the critical path — and the meshes can't decode
+// at all if it's blocked.
+const DRACO_PATH = "/draco/gltf/";
+ROCK_MODELS.forEach((p) => useGLTF.preload(p, DRACO_PATH));
 
 // deterministic pseudo-random (no Math.random flicker across re-renders)
 function seeded(i) {
@@ -112,7 +121,7 @@ function scatterStart(i) {
 // becomes TARGET_SIZE, and re-center it on its own bounds — scans come in
 // wildly different native scales (centimetres vs metres).
 function useNormalizedRock(path) {
-  const { scene } = useGLTF(path);
+  const { scene } = useGLTF(path, DRACO_PATH);
   return useMemo(() => {
     let mesh = null;
     scene.traverse((o) => {
