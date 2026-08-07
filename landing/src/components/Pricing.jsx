@@ -10,7 +10,7 @@ export default function Pricing() {
     <section className="pricing">
       <div className="pricing__head">
         <span className="ov__kicker">
-          <span className="chrome__slash">//</span> 03 · Take one home
+          <span className="chrome__slash">//</span> 04 · Take one home
         </span>
         <h2 className="ov__title ov__title--sm glow-text">SPEC YOUR MACHINE</h2>
       </div>

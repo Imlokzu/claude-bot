@@ -6,10 +6,14 @@ import "./nav.css";
 // igloo's chrome isn't a nav bar — it's plain typographic copy anchored to
 // the corners of the frame. Same idea here: a masthead block at top-left,
 // the mascot + section list at top-right, a status line bottom-left.
+// Scroll destinations, one per act. These are the block centres the
+// overlay grid lands on — see ACTS/SCROLL_PAGES in config; with five
+// blocks, block N sits at (N-1)/4.
 const SECTIONS = [
-  { label: "Models", to: 0.18 },
-  { label: "Tools", to: 0.52 },
-  { label: "Pricing", to: 0.85 },
+  { label: "Models", to: 0.0 },
+  { label: "Tools", to: 0.25 },
+  { label: "Position", to: 0.5 },
+  { label: "Pricing", to: 0.75 },
 ];
 
 export default function Nav({ onNavigate }) {

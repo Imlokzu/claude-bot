@@ -44,17 +44,20 @@
 .ov__title {
   font-family: var(--mono);
   font-weight: 700;
-  font-size: clamp(40px, 7.8vw, 96px);
+  /* the longest line is "THIRTEEN MODELS." — 16 monospace characters, so
+     the floor has to stay small enough for that to fit a 375 px phone */
+  font-size: clamp(25px, 7.8vw, 96px);
   line-height: 0.92;
   letter-spacing: -0.035em;
 }
 
 .ov__title--sm {
-  font-size: clamp(28px, 4.6vw, 58px);
+  font-size: clamp(21px, 4.6vw, 58px);
   letter-spacing: -0.02em;
 }
 
 .ov__sub {
+  max-width: 90vw;
   margin-top: 16px;
   font-family: var(--mono);
   font-size: 11px;

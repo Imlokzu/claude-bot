@@ -3,6 +3,7 @@ import CRTScene from "./three/CRTScene";
 import SpaceScene from "./three/SpaceScene";
 import { preloadBodies } from "./three/ToolPlanets";
 import Nav from "./components/Nav";
+import Loader from "./components/Loader";
 import "./crab/crab.css";
 
 export default function App() {
@@ -106,6 +107,7 @@ export default function App() {
               <SpaceScene />
             </main>
             <Nav onNavigate={handleNavigate} />
+            <Loader />
           </>
         )}
       </div>

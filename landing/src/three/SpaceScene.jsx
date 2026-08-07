@@ -28,8 +28,11 @@ function Rig({ fusionRef, toolsRef, pillarsRef, selected, boundsRef, onScroll })
     const navigate = (e) => {
       const p = THREE.MathUtils.clamp(e.detail?.position ?? 0, 0, 1);
       const max = scroll.el.scrollHeight - scroll.el.clientHeight;
-      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      scroll.el.scrollTo({ top: max * p, behavior: reduce ? "auto" : "smooth" });
+      // Jump the container outright rather than asking for smooth scroll:
+      // ScrollControls damps its own offset toward scrollTop every frame,
+      // and the browser's smooth animation fights that, stalling partway.
+      // Setting it directly lets the damping do the easing.
+      scroll.el.scrollTop = max * p;
     };
     window.addEventListener("landing:navigate", navigate);
     return () => window.removeEventListener("landing:navigate", navigate);
