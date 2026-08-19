@@ -36,6 +36,13 @@
   --off: #a8998a;
 }
 
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 .hidden { display: none !important; }

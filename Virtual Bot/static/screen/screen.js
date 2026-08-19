@@ -33,8 +33,8 @@ import { makeSvgIcon, ICON_COLORS } from "./icons.js";
 const $ = (id) => document.getElementById(id);
 
 const STAGE_W = 320;
-const IDLE_HOME_MS = 20000;   // повернення на циферблат
-const IDLE_SLEEP_MS = 180000; // «сон» екрана
+const DEFAULT_IDLE_HOME_MS = 20000;   // повернення на циферблат
+const DEFAULT_IDLE_SLEEP_MS = 180000; // «сон» екрана
 const SWIPE_MIN = 28;         // поріг жесту в пікселях сцени
 
 const stage = $("stage");
@@ -48,6 +48,11 @@ let layer = null;      // null | "apps" | "quick"
 let asleep = false;
 let bright = 100;      // яскравість 15..100 (повзунок у швидких діях)
 let volume = 70;       // гучність голосу 0..100
+let idleHomeMs = DEFAULT_IDLE_HOME_MS;
+let idleSleepMs = DEFAULT_IDLE_SLEEP_MS;
+let clockFormat = "24";
+let showClockDate = true;
+let reducedMotion = false;
 let idleTimer = 0;
 let sleepTimer = 0;
 let sayAt = 0;         // коли бот сказав останню репліку
@@ -183,8 +188,8 @@ function wake() {
   // Розмова — це теж «взаємодія»: не смикаємо екран на циферблат, поки
   // користувач пише або поки бот ще відповідає.
   if (chatBusy || listening) return;
-  idleTimer = setTimeout(goHome, IDLE_HOME_MS);
-  sleepTimer = setTimeout(sleep, IDLE_SLEEP_MS);
+  if (idleHomeMs > 0) idleTimer = setTimeout(goHome, idleHomeMs);
+  if (idleSleepMs > 0) sleepTimer = setTimeout(sleep, idleSleepMs);
 }
 
 function sleep() {
@@ -281,7 +286,8 @@ const faceClockCtx = $("faceClockCanvas").getContext("2d");
 
 function tickClock() {
   const d = new Date();
-  const hhmm = two(d.getHours()) + ":" + two(d.getMinutes());
+  const hours = clockFormat === "12" ? (d.getHours() % 12 || 12) : d.getHours();
+  const hhmm = (clockFormat === "12" ? String(hours) : two(hours)) + ":" + two(d.getMinutes());
   // Той самий піксельний шрифт, лише дрібніший — щоб шапка циферблата
   // не була єдиним місцем із системним шрифтом
   drawGlyphString(faceClockCtx, hhmm, {
@@ -294,7 +300,9 @@ function tickClock() {
     shadow: crab.colors.shadow,
     skip: d.getSeconds() % 2 === 0 ? "" : ":",
   });
-  $("clockDate").textContent = d.getDate() + " " + MONTHS[d.getMonth()] + ", " + WEEKDAYS[d.getDay()];
+  $("clockDate").textContent = showClockDate
+    ? d.getDate() + " " + MONTHS[d.getMonth()] + ", " + WEEKDAYS[d.getDay()]
+    : "";
   updateAges();
 }
 tickClock();
@@ -581,6 +589,28 @@ const BRIGHT_KEY = "botScreenBright";
 const VOL_KEY = "botScreenVol";
 const VOICE_KEY = "botScreenVoice";
 const ORDER_KEY = "botScreenQuickOrder";
+const IDLE_HOME_KEY = "botScreenIdleHome";
+const IDLE_SLEEP_KEY = "botScreenIdleSleep";
+const CLOCK_FORMAT_KEY = "botScreenClockFormat";
+const CLOCK_DATE_KEY = "botScreenClockDate";
+const MOTION_KEY = "botScreenMotion";
+
+const IDLE_HOME_OPTIONS = [
+  { value: "10000", label: "10 секунд" },
+  { value: "20000", label: "20 секунд" },
+  { value: "40000", label: "40 секунд" },
+  { value: "0", label: "Не повертати" },
+];
+const IDLE_SLEEP_OPTIONS = [
+  { value: "60000", label: "1 хвилина" },
+  { value: "180000", label: "3 хвилини" },
+  { value: "300000", label: "5 хвилин" },
+  { value: "0", label: "Не засинати" },
+];
+const CLOCK_FORMAT_OPTIONS = [
+  { value: "24", label: "24 години" },
+  { value: "12", label: "12 годин" },
+];
 
 let voiceOn = false;
 let ttsAvailable = false;
@@ -614,6 +644,16 @@ function readPref(key, fallback) {
 }
 function writePref(key, value) {
   try { localStorage.setItem(key, String(value)); } catch (e) { /* приватний режим */ }
+}
+
+function validOption(value, options, fallback) {
+  const normalized = String(value);
+  return options.some((item) => item.value === normalized) ? normalized : String(fallback);
+}
+
+function applyMotion(value) {
+  reducedMotion = value === "reduced";
+  document.documentElement.dataset.motion = reducedMotion ? "reduced" : "full";
 }
 
 /* ---- Голос: Piper через /api/tts, гучність — цим самим повзунком ---- */
@@ -799,6 +839,13 @@ volRange.addEventListener("input", () => {
   const theme = readPref(THEME_KEY, null);
   if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
 
+  idleHomeMs = Number(validOption(readPref(IDLE_HOME_KEY, String(DEFAULT_IDLE_HOME_MS)), IDLE_HOME_OPTIONS, DEFAULT_IDLE_HOME_MS));
+  idleSleepMs = Number(validOption(readPref(IDLE_SLEEP_KEY, String(DEFAULT_IDLE_SLEEP_MS)), IDLE_SLEEP_OPTIONS, DEFAULT_IDLE_SLEEP_MS));
+  clockFormat = validOption(readPref(CLOCK_FORMAT_KEY, "24"), CLOCK_FORMAT_OPTIONS, "24");
+  showClockDate = readPref(CLOCK_DATE_KEY, "1") !== "0";
+  const savedMotion = readPref(MOTION_KEY, "full");
+  applyMotion(savedMotion === "reduced" ? "reduced" : "full");
+
   const savedIconStyle = readPref(ICON_KEY, "pixel");
   if (ICON_STYLES[savedIconStyle]) iconStyle = savedIconStyle;
   const savedIconTint = readPref(ICON_TINT_KEY, DEFAULT_ICON_TINT);
@@ -826,6 +873,7 @@ volRange.addEventListener("input", () => {
   $("quickEdit").appendChild(uiIcon("pencil", { cell: 2 }));
 
   renderQuickTiles();
+  tickClock();
   checkTts();
 })();
 
@@ -1926,19 +1974,28 @@ function openPanel() {
 }
 
 function resetScreenPrefs() {
-  [THEME_KEY, BRIGHT_KEY, VOL_KEY, VOICE_KEY, ORDER_KEY, ICON_KEY, ICON_TINT_KEY]
+  [THEME_KEY, BRIGHT_KEY, VOL_KEY, VOICE_KEY, ORDER_KEY, ICON_KEY, ICON_TINT_KEY,
+    IDLE_HOME_KEY, IDLE_SLEEP_KEY, CLOCK_FORMAT_KEY, CLOCK_DATE_KEY, MOTION_KEY]
     .forEach(removePref);
   document.documentElement.dataset.theme = "dark";
+  document.documentElement.dataset.motion = "full";
   iconStyle = "pixel";
   iconTint = DEFAULT_ICON_TINT;
   bright = 100;
   volume = 70;
+  idleHomeMs = DEFAULT_IDLE_HOME_MS;
+  idleSleepMs = DEFAULT_IDLE_SLEEP_MS;
+  clockFormat = "24";
+  showClockDate = true;
+  reducedMotion = false;
   voiceOn = false;
   editing = false;
   picked = null;
   quickOrder = DEFAULT_ORDER.slice();
   applyBright(bright);
   applyVolume(volume);
+  tickClock();
+  wake();
   voiceAudio.pause();
   rebuildIcons();
   renderQuickTiles();
@@ -1960,6 +2017,11 @@ function openSettings() {
     const volumeRangeSettings = document.createElement("input");
     const volumeValue = document.createElement("span");
     const testVoice = document.createElement("button");
+    const idleHomeSelect = document.createElement("select");
+    const idleSleepSelect = document.createElement("select");
+    const clockFormatSelect = document.createElement("select");
+    const dateToggle = document.createElement("button");
+    const motionToggle = document.createElement("button");
     const note = document.createElement("div");
 
     box.classList.add("settings-body");
@@ -1998,6 +2060,31 @@ function openSettings() {
       el.appendChild(copy);
       parent.appendChild(el);
       return el;
+    }
+
+    function fillSelect(select, options) {
+      select.className = "settings-select";
+      options.forEach((item) => {
+        const option = document.createElement("option");
+        option.value = item.value;
+        option.textContent = item.label;
+        select.appendChild(option);
+      });
+      return select;
+    }
+
+    function setupSwitch(button, onText, offText, onChange) {
+      button.type = "button";
+      button.className = "settings-switch";
+      button.addEventListener("click", () => {
+        onChange();
+        sync();
+        wake();
+      });
+      button.dataset.onText = onText;
+      button.dataset.offText = offText;
+      button.setAttribute("aria-pressed", "false");
+      return button;
     }
 
     const appearance = section("Вигляд", "застосовується одразу");
@@ -2066,6 +2153,52 @@ function openSettings() {
     brightRow.appendChild(brightRangeSettings);
     brightValue.className = "settings-value";
     brightRow.appendChild(brightValue);
+
+    const behavior = section("Поведінка", "локальні параметри пристрою");
+    const homeRow = row(behavior, "Повернення додому", "після бездіяльності");
+    fillSelect(idleHomeSelect, IDLE_HOME_OPTIONS);
+    idleHomeSelect.addEventListener("change", () => {
+      idleHomeMs = Number(idleHomeSelect.value);
+      writePref(IDLE_HOME_KEY, idleHomeSelect.value);
+      wake();
+      sync();
+    });
+    homeRow.appendChild(idleHomeSelect);
+
+    const sleepRow = row(behavior, "Автосон", "затемнює екран і повертає додому");
+    fillSelect(idleSleepSelect, IDLE_SLEEP_OPTIONS);
+    idleSleepSelect.addEventListener("change", () => {
+      idleSleepMs = Number(idleSleepSelect.value);
+      writePref(IDLE_SLEEP_KEY, idleSleepSelect.value);
+      wake();
+      sync();
+    });
+    sleepRow.appendChild(idleSleepSelect);
+
+    const clockRow = row(behavior, "Формат часу", "на циферблаті");
+    fillSelect(clockFormatSelect, CLOCK_FORMAT_OPTIONS);
+    clockFormatSelect.addEventListener("change", () => {
+      clockFormat = clockFormatSelect.value;
+      writePref(CLOCK_FORMAT_KEY, clockFormat);
+      tickClock();
+      sync();
+    });
+    clockRow.appendChild(clockFormatSelect);
+
+    const dateRow = row(behavior, "Дата", "під годинником");
+    setupSwitch(dateToggle, "Показувати", "Приховано", () => {
+      showClockDate = !showClockDate;
+      writePref(CLOCK_DATE_KEY, showClockDate ? "1" : "0");
+      tickClock();
+    });
+    dateRow.appendChild(dateToggle);
+
+    const motionRow = row(behavior, "Анімації", "плавні переходи та pulse мікрофона");
+    setupSwitch(motionToggle, "Повні", "Мінімальні", () => {
+      applyMotion(reducedMotion ? "full" : "reduced");
+      writePref(MOTION_KEY, reducedMotion ? "reduced" : "full");
+    });
+    motionRow.appendChild(motionToggle);
 
     const audio = section("Голос", "локальний Piper, якщо модель доступна");
     const voiceRow = row(audio, "Озвучення", "бот говорить відповіді через браузер");
@@ -2149,6 +2282,15 @@ function openSettings() {
       styleState.textContent = ICON_STYLES[iconStyle];
       tintState.textContent = ICON_TINTS.find((item) => item.value === iconTint)?.label || "власний";
       themeState.textContent = document.documentElement.dataset.theme === "light" ? "Світла" : "Темна";
+      idleHomeSelect.value = String(idleHomeMs);
+      idleSleepSelect.value = String(idleSleepMs);
+      clockFormatSelect.value = clockFormat;
+      dateToggle.textContent = showClockDate ? dateToggle.dataset.onText : dateToggle.dataset.offText;
+      dateToggle.classList.toggle("on", showClockDate);
+      dateToggle.setAttribute("aria-pressed", String(showClockDate));
+      motionToggle.textContent = reducedMotion ? motionToggle.dataset.offText : motionToggle.dataset.onText;
+      motionToggle.classList.toggle("on", !reducedMotion);
+      motionToggle.setAttribute("aria-pressed", String(!reducedMotion));
       brightRangeSettings.value = String(bright);
       brightValue.textContent = bright + "%";
       volumeRangeSettings.value = String(volume);
