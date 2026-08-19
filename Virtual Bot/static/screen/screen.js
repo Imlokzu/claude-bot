@@ -454,6 +454,8 @@ const PIXEL_ICON_ASSETS = {
   server: "services.svg",
   monitor: "panel.svg",
   settings: "settings.svg",
+  memory: "memory.svg",
+  history: "chats.svg",
 };
 const PIXEL_ICON_TINTS = {
   face: "#4ecdc4",
@@ -466,6 +468,8 @@ const PIXEL_ICON_TINTS = {
   server: "#889099",
   monitor: "#5b9bd5",
   settings: "#5b9bd5",
+  memory: "#d7a65b",
+  history: "#5b9bd5",
 };
 let iconStyle = "pixel";
 let iconTint = DEFAULT_ICON_TINT;
@@ -1657,6 +1661,8 @@ const SCREENS = [
   { id: "services", label: "Сервіси", icon: "server", app: true },
   { id: "panel", label: "Панель", icon: "monitor", app: true },
   { id: "settings", label: "Налаштування", icon: "settings", app: true },
+  { id: "memory", label: "Памʼять", icon: "memory", app: true },
+  { id: "chats", label: "Розмови", icon: "history", app: true },
 ];
 
 function appsOpen() {
@@ -1716,6 +1722,8 @@ function showScreen(id) {
   if (id === "services") { closeApps(); openServices(); return; }
   if (id === "settings") { closeApps(); openSettings(); return; }
   if (id === "panel") { closeApps(); openPanel(); return; }
+  if (id === "memory") { closeApps(); openMemory(); return; }
+  if (id === "chats") { closeApps(); openChats(); return; }
   if (id === "quick") { openLayer("quick"); return; }
   const idx = tiles.findIndex((t) => t.dataset.tile === id);
   if (idx === -1) return;
@@ -1877,6 +1885,205 @@ function openServices() {
       }
     }
     refresh();
+  });
+}
+
+async function fetchAppJson(url) {
+  const response = await fetch(url);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = data.detail || data.error || data.message || ("HTTP " + response.status);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+
+function appAccessError(error, subject) {
+  if (error && error.status === 401) return "Потрібен вхід у панелі, щоб читати " + subject + ".";
+  if (error && error.status === 403) return "Немає доступу до " + subject + ".";
+  return "Не вдалося завантажити " + subject + ".";
+}
+
+function appToolbar(parent, refresh) {
+  const toolbar = document.createElement("div");
+  toolbar.className = "app-toolbar";
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "cta settings-test";
+  button.textContent = "Оновити";
+  button.addEventListener("click", refresh);
+  toolbar.appendChild(button);
+  parent.appendChild(toolbar);
+  return { toolbar, button };
+}
+
+function openMemory() {
+  openAppLayer("Памʼять", (box) => {
+    box.classList.add("memory-body");
+    const status = document.createElement("div");
+    status.className = "cam-note app-status";
+    const list = document.createElement("div");
+    list.className = "memory-list";
+    const reader = document.createElement("section");
+    reader.className = "memory-reader hidden";
+    const readerTitle = document.createElement("strong");
+    const readerPath = document.createElement("span");
+    readerPath.className = "memory-path";
+    const content = document.createElement("pre");
+    content.className = "memory-content";
+    reader.appendChild(readerTitle);
+    reader.appendChild(readerPath);
+    reader.appendChild(content);
+    appToolbar(box, loadFiles);
+    box.appendChild(status);
+    box.appendChild(list);
+    box.appendChild(reader);
+
+    async function openFile(path, button) {
+      document.querySelectorAll(".memory-entry").forEach((item) => item.classList.remove("on"));
+      if (button) button.classList.add("on");
+      reader.classList.add("hidden");
+      status.textContent = "Читаю нотатку…";
+      try {
+        const data = await fetchAppJson("/api/memory/file?path=" + encodeURIComponent(path) + "&session_id=" + encodeURIComponent(sessionId));
+        readerTitle.textContent = data.path ? data.path.split("/").pop().replace(/\.md$/i, "") : "Нотатка";
+        readerPath.textContent = data.path || path;
+        content.textContent = data.content || "Нотатка порожня.";
+        reader.classList.remove("hidden");
+        status.textContent = "Нотатку відкрито";
+      } catch (error) {
+        status.textContent = appAccessError(error, "нотатку");
+      }
+      wake();
+    }
+
+    async function loadFiles() {
+      list.textContent = "Завантаження…";
+      try {
+        const data = await fetchAppJson("/api/memory/list?session_id=" + encodeURIComponent(sessionId));
+        const files = Array.isArray(data.files) ? data.files : [];
+        list.innerHTML = "";
+        if (!files.length) {
+          list.textContent = "Нотаток ще немає.";
+          status.textContent = "Памʼять порожня";
+          return;
+        }
+        files.forEach((file) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "memory-entry";
+          const title = document.createElement("strong");
+          title.textContent = file.title || file.path;
+          const path = document.createElement("span");
+          path.className = "memory-path";
+          path.textContent = file.path || "";
+          button.appendChild(title);
+          button.appendChild(path);
+          button.addEventListener("click", () => openFile(file.path, button));
+          list.appendChild(button);
+        });
+        status.textContent = "Нотаток: " + files.length;
+      } catch (error) {
+        list.textContent = appAccessError(error, "памʼять");
+        status.textContent = "Немає доступу";
+      }
+      wake();
+    }
+
+    loadFiles();
+  });
+}
+
+function openChats() {
+  openAppLayer("Розмови", (box) => {
+    box.classList.add("chats-body");
+    const status = document.createElement("div");
+    status.className = "cam-note app-status";
+    const list = document.createElement("div");
+    list.className = "session-browser-list";
+    const reader = document.createElement("section");
+    reader.className = "session-reader hidden";
+    const readerTitle = document.createElement("strong");
+    const messages = document.createElement("div");
+    messages.className = "session-messages";
+    reader.appendChild(readerTitle);
+    reader.appendChild(messages);
+    appToolbar(box, loadSessions);
+    box.appendChild(status);
+    box.appendChild(list);
+    box.appendChild(reader);
+
+    async function openChat(id, title, button) {
+      document.querySelectorAll(".session-entry").forEach((item) => item.classList.remove("on"));
+      if (button) button.classList.add("on");
+      reader.classList.add("hidden");
+      status.textContent = "Читаю розмову…";
+      try {
+        const data = await fetchAppJson("/api/sessions/" + encodeURIComponent(id));
+        readerTitle.textContent = title || data.title || "Розмова";
+        messages.innerHTML = "";
+        const history = Array.isArray(data.messages) ? data.messages : [];
+        if (!history.length) {
+          messages.textContent = "Повідомлень ще немає.";
+        } else {
+          history.slice(-30).forEach((message) => {
+            const item = document.createElement("article");
+            item.className = "app-message " + (message.role === "user" ? "user" : "assistant");
+            const role = document.createElement("span");
+            role.className = "app-message-role";
+            role.textContent = message.role === "user" ? "Ти" : "Бот";
+            const text = document.createElement("div");
+            text.className = "app-message-text";
+            text.textContent = message.content || "";
+            item.appendChild(role);
+            item.appendChild(text);
+            messages.appendChild(item);
+          });
+        }
+        reader.classList.remove("hidden");
+        status.textContent = "Повідомлень: " + history.length;
+      } catch (error) {
+        status.textContent = appAccessError(error, "розмови");
+      }
+      wake();
+    }
+
+    async function loadSessions() {
+      list.textContent = "Завантаження…";
+      try {
+        const data = await fetchAppJson("/api/sessions");
+        const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+        list.innerHTML = "";
+        if (!sessions.length) {
+          list.textContent = "Збережених розмов ще немає.";
+          status.textContent = "Історія порожня";
+          return;
+        }
+        sessions.forEach((session) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "session-entry";
+          const title = document.createElement("strong");
+          title.textContent = session.title || "Без назви";
+          const meta = document.createElement("span");
+          meta.className = "memory-path";
+          meta.textContent = (session.count || 0) + " повідомлень";
+          button.appendChild(title);
+          button.appendChild(meta);
+          button.addEventListener("click", () => openChat(session.id, session.title, button));
+          list.appendChild(button);
+        });
+        status.textContent = "Розмов: " + sessions.length;
+      } catch (error) {
+        list.textContent = appAccessError(error, "історію розмов");
+        status.textContent = "Немає доступу";
+      }
+      wake();
+    }
+
+    loadSessions();
   });
 }
 
