@@ -9,7 +9,7 @@ import { drawGlyphString, makeIcon, paintIcon } from "./pixel-ui.js";
 /* Розбір ключового слова — окремо і без DOM, щоб логіку можна було
    перевіряти напряму, не маючи мікрофона (див. wake.js) */
 import { parseWake } from "./wake.js";
-/* Контурні іконки — лише для шухляди застосунків (див. icons.js) */
+/* Контурні іконки та їхні кольори — у icons.js */
 import { makeSvgIcon, ICON_COLORS } from "./icons.js";
 
 /* ============================================================
@@ -20,7 +20,7 @@ import { makeSvgIcon, ICON_COLORS } from "./icons.js";
 
      циферблат ──свайп ліворуч/праворуч──> карусель тайлів
          │                                   (тайл сам НЕ гортається)
-         ├── свайп ВГОРУ  ──> стрічка подій   (як шторка сповіщень)
+         ├── свайп ВГОРУ  ──> шухляда застосунків
          ├── свайп ВНИЗ   ──> швидкі дії      (як quick settings)
          └── свайп ПРАВОРУЧ ──> назад (dismiss), з тайла 0 — нікуди
 
@@ -419,12 +419,23 @@ setLink(false);
    Вибір глобальний: інакше половина екрана лишалася б в іншому стилі. */
 
 const ICON_KEY = "botScreenIcons";
+const ICON_TINT_KEY = "botScreenIconTint";
+const DEFAULT_ICON_TINT = "#d98263";
+const ICON_TINTS = [
+  { value: "#d98263", label: "Кораловий" },
+  { value: "#7fa8d8", label: "Блакитний" },
+  { value: "#79b07a", label: "Зелений" },
+  { value: "#b48ad8", label: "Фіолетовий" },
+  { value: "#d7a65b", label: "Золотий" },
+  { value: "#5fb0a8", label: "Бірюзовий" },
+];
 const ICON_STYLES = {
-  pixel: "Наші (піксельні)",
-  line: "Звичайні",
+  pixel: "Наші (бот)",
+  line: "Однотонні",
   color: "Кольорові",
 };
 let iconStyle = "pixel";
+let iconTint = DEFAULT_ICON_TINT;
 
 /* Створює іконку в поточному стилі. big — велика сітка для шухляди. */
 function uiIcon(name, opts) {
@@ -434,18 +445,20 @@ function uiIcon(name, opts) {
   }
   const svg = makeSvgIcon(name);
   if (o.big) svg.classList.add("svgicon-big");
-  if (iconStyle === "color") {
-    svg.style.stroke = ICON_COLORS[name] || "";
-    svg.dataset.colored = "1";
-  }
+  svg.style.stroke = iconStyle === "color" ? (ICON_COLORS[name] || iconTint) : iconTint;
+  svg.dataset.colored = iconStyle === "color" ? "1" : "";
   return svg;
 }
 
 /* У шухляді іконки завжди контурні: вибір піксельного стилю стосується
    дрібного керування, але не великих круглих плиток застосунків. */
-function drawerIcon(name) {
+function drawerIcon(name, on) {
+  if (iconStyle === "pixel") {
+    return makeIcon(name, 3, on ? iconColors(true)[0] : iconTint, "", true);
+  }
   const svg = makeSvgIcon(name);
   svg.classList.add("svgicon-big");
+  svg.style.stroke = iconStyle === "color" ? (ICON_COLORS[name] || iconTint) : iconTint;
   return svg;
 }
 
@@ -473,6 +486,17 @@ function setIconStyle(style) {
   iconStyle = style;
   writePref(ICON_KEY, style);
   rebuildIcons();
+}
+
+function setIconTint(color) {
+  if (!ICON_TINTS.some((item) => item.value === color)) return;
+  iconTint = color;
+  writePref(ICON_TINT_KEY, color);
+  rebuildIcons();
+}
+
+function removePref(key) {
+  try { localStorage.removeItem(key); } catch (e) { /* приватний режим */ }
 }
 
 /* Іконки, створені один раз (повзунки, олівець, мікрофон, шапка чату),
@@ -523,7 +547,7 @@ const QUICK_TILES = {
   theme:  { label: "Тема", icon: "contrast", toggle: toggleTheme, isOn: () => document.documentElement.dataset.theme === "light" },
   voice:  { label: "Голос", icon: "speaker", toggle: toggleVoice, isOn: () => voiceOn, enabled: () => ttsAvailable },
   apps:   { label: "Екрани", icon: "grid", toggle: () => { openLayer(null); openApps(); }, isOn: () => false },
-  icons:  { label: "Іконки", icon: "pencil", toggle: openIconSheet, isOn: () => false },
+  icons:  { label: "Налаштування", icon: "settings", toggle: () => { openLayer(null); openSettings(); }, isOn: () => false },
   full:   { label: "На весь", icon: "expand", toggle: toggleFullscreen, isOn: () => !!document.fullscreenElement },
   reload: { label: "Перезапуск", icon: "power", toggle: () => location.reload(), isOn: () => false },
 };
@@ -614,7 +638,7 @@ function toggleFullscreen() {
 
 function iconColors(on) {
   const css = getComputedStyle(document.documentElement);
-  const accent = css.getPropertyValue("--accent").trim() || "#d17a58";
+  const accent = iconTint || css.getPropertyValue("--accent").trim() || "#d17a58";
   const muted = css.getPropertyValue("--muted").trim() || "#8e9498";
   return on ? [accent, ""] : [muted, ""];
 }
@@ -724,6 +748,11 @@ volRange.addEventListener("input", () => {
 (function initPrefs() {
   const theme = readPref(THEME_KEY, null);
   if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+
+  const savedIconStyle = readPref(ICON_KEY, "pixel");
+  if (ICON_STYLES[savedIconStyle]) iconStyle = savedIconStyle;
+  const savedIconTint = readPref(ICON_TINT_KEY, DEFAULT_ICON_TINT);
+  if (ICON_TINTS.some((item) => item.value === savedIconTint)) iconTint = savedIconTint;
 
   applyBright(readPref(BRIGHT_KEY, 100));
   applyVolume(readPref(VOL_KEY, 70));
@@ -1507,7 +1536,7 @@ $("faceMicIco").appendChild(uiIcon("mic", { cell: 2, on: true }));
 openSession(sessionId, "");
 
 
-/* ---------- «Усі екрани»: лаунчер ----------
+/* ---------- Шухляда застосунків ----------
    Ідея з Apple Watch / шухляди застосунків: усе, що вміє екран, в одному
    погляді, без гортання по колу. Відкривається довгим дотиком по будь-якому
    вільному місцю, плиткою «Екрани» у швидких діях — або самим ботом, якщо
@@ -1529,6 +1558,7 @@ const SCREENS = [
   { id: "camera", label: "Камера", icon: "camera", app: true },
   { id: "services", label: "Сервіси", icon: "server", app: true },
   { id: "panel", label: "Панель", icon: "monitor", app: true },
+  { id: "settings", label: "Налаштування", icon: "settings", app: true },
 ];
 
 function appsOpen() {
@@ -1557,8 +1587,9 @@ function renderApps() {
     const circle = document.createElement("span");
     circle.className = "app-icon";
     circle.dataset.icon = scr.icon;
-    circle.style.setProperty("--app-tint", ICON_COLORS[scr.icon] || "#8e9498");
-    circle.appendChild(drawerIcon(scr.icon));
+    const tint = iconStyle === "color" ? (ICON_COLORS[scr.icon] || iconTint) : iconTint;
+    circle.style.setProperty("--app-tint", tint);
+    circle.appendChild(drawerIcon(scr.icon, here));
     btn.appendChild(circle);
 
     const lbl = document.createElement("span");
@@ -1581,7 +1612,8 @@ function showScreen(id) {
   if (id === "apps") { openApps(); return; }
   if (id === "camera") { closeApps(); openCamera(); return; }
   if (id === "services") { closeApps(); openServices(); return; }
-  if (id === "panel") { location.href = "/"; return; }
+  if (id === "settings") { closeApps(); openSettings(); return; }
+  if (id === "panel") { closeApps(); openPanel(); return; }
   if (id === "quick") { openLayer("quick"); return; }
   const idx = tiles.findIndex((t) => t.dataset.tile === id);
   if (idx === -1) return;
@@ -1652,7 +1684,9 @@ function openCamera() {
       if (st.vision) {
         const img = document.createElement("img");
         img.alt = "Потік камери";
-        img.src = "http://127.0.0.1:8000/vision/stream.mjpg";
+        const streamUrl = new URL("/vision/stream.mjpg", window.location.origin);
+        streamUrl.port = "8000";
+        img.src = streamUrl.href;
         img.onerror = () => { note.textContent = "Потік не відкрився."; };
         view.appendChild(img);
         note.textContent = "Живий потік";
@@ -1741,6 +1775,361 @@ function openServices() {
       }
     }
     refresh();
+  });
+}
+
+function openPanel() {
+  openAppLayer("Панель", (box) => {
+    box.classList.add("panel-body");
+    const section = document.createElement("section");
+    section.className = "settings-section";
+    const head = document.createElement("div");
+    head.className = "settings-section-head";
+    const title = document.createElement("strong");
+    title.textContent = "Стан бота";
+    const hint = document.createElement("span");
+    hint.textContent = "оновлюється локально";
+    head.appendChild(title);
+    head.appendChild(hint);
+    section.appendChild(head);
+
+    const rows = {};
+    for (const [id, label] of [["brain", "Мозок"], ["vision", "Зір"], ["display", "Дисплей"], ["link", "Звʼязок"]]) {
+      const row = document.createElement("div");
+      row.className = "svc-row";
+      const name = document.createElement("span");
+      name.className = "svc-name";
+      name.textContent = label;
+      const value = document.createElement("span");
+      value.className = "svc-state";
+      value.textContent = "…";
+      value.setAttribute("role", "status");
+      value.setAttribute("aria-live", "polite");
+      row.appendChild(name);
+      row.appendChild(value);
+      section.appendChild(row);
+      rows[id] = value;
+    }
+    box.appendChild(section);
+
+    const actions = document.createElement("div");
+    actions.className = "panel-actions";
+    const refresh = document.createElement("button");
+    refresh.type = "button";
+    refresh.className = "cta settings-test";
+    refresh.textContent = "Оновити";
+    refresh.addEventListener("click", refreshPanel);
+    const services = document.createElement("button");
+    services.type = "button";
+    services.className = "cta settings-test";
+    services.textContent = "Сервіси";
+    services.addEventListener("click", openServices);
+    const settings = document.createElement("button");
+    settings.type = "button";
+    settings.className = "cta settings-test";
+    settings.textContent = "Налаштування";
+    settings.addEventListener("click", openSettings);
+    actions.appendChild(refresh);
+    actions.appendChild(services);
+    actions.appendChild(settings);
+    box.appendChild(actions);
+
+    async function refreshPanel() {
+      refresh.disabled = true;
+      try {
+        const [statusResponse, servicesResponse] = await Promise.all([
+          fetch("/api/status"),
+          fetch("/api/services"),
+        ]);
+        if (!statusResponse.ok || !servicesResponse.ok) throw new Error("panel status unavailable");
+        const status = await statusResponse.json();
+        const serviceData = await servicesResponse.json();
+        const serviceState = serviceData.services || serviceData || {};
+        const brainOn = !!status.mode && status.mode !== "demo";
+        const linkOn = $("linkDot").classList.contains("on");
+        rows.brain.textContent = BRAIN_LABELS[status.mode] || status.mode || "офлайн";
+        rows.brain.classList.toggle("on", brainOn);
+        rows.link.textContent = linkOn ? "живий" : "нема";
+        rows.link.classList.toggle("on", linkOn);
+        for (const id of ["vision", "display"]) {
+          const raw = serviceState[id];
+          const on = raw === undefined
+            ? !!status[id]
+            : (typeof raw === "object" && raw ? !!(raw.running || raw.alive) : !!raw);
+          rows[id].textContent = on ? "працює" : "зупинено";
+          rows[id].classList.toggle("on", on);
+        }
+      } catch (e) {
+        Object.values(rows).forEach((value) => {
+          value.textContent = "нема звʼязку";
+          value.classList.remove("on");
+        });
+      }
+      refresh.disabled = false;
+    }
+    refreshPanel();
+  });
+}
+
+function resetScreenPrefs() {
+  [THEME_KEY, BRIGHT_KEY, VOL_KEY, VOICE_KEY, ORDER_KEY, ICON_KEY, ICON_TINT_KEY]
+    .forEach(removePref);
+  document.documentElement.dataset.theme = "dark";
+  iconStyle = "pixel";
+  iconTint = DEFAULT_ICON_TINT;
+  bright = 100;
+  volume = 70;
+  voiceOn = false;
+  editing = false;
+  picked = null;
+  quickOrder = DEFAULT_ORDER.slice();
+  applyBright(bright);
+  applyVolume(volume);
+  voiceAudio.pause();
+  rebuildIcons();
+  renderQuickTiles();
+}
+
+function openSettings() {
+  openAppLayer("Налаштування", (box) => {
+    const styleButtons = [];
+    const tintButtons = [];
+    const themeButtons = [];
+    const voiceSelect = document.createElement("select");
+    const voiceState = document.createElement("span");
+    const styleState = document.createElement("span");
+    const tintState = document.createElement("span");
+    const themeState = document.createElement("span");
+    const brightRangeSettings = document.createElement("input");
+    const brightValue = document.createElement("span");
+    const voiceToggle = document.createElement("button");
+    const volumeRangeSettings = document.createElement("input");
+    const volumeValue = document.createElement("span");
+    const testVoice = document.createElement("button");
+    const note = document.createElement("div");
+
+    box.classList.add("settings-body");
+
+    function section(title, hint) {
+      const el = document.createElement("section");
+      el.className = "settings-section";
+      const head = document.createElement("div");
+      head.className = "settings-section-head";
+      const name = document.createElement("strong");
+      name.textContent = title;
+      head.appendChild(name);
+      if (hint) {
+        const small = document.createElement("span");
+        small.textContent = hint;
+        head.appendChild(small);
+      }
+      el.appendChild(head);
+      box.appendChild(el);
+      return el;
+    }
+
+    function row(parent, title, hint) {
+      const el = document.createElement("div");
+      el.className = "settings-row";
+      const copy = document.createElement("div");
+      copy.className = "settings-copy";
+      const name = document.createElement("strong");
+      name.textContent = title;
+      copy.appendChild(name);
+      if (hint) {
+        const small = document.createElement("span");
+        small.textContent = hint;
+        copy.appendChild(small);
+      }
+      el.appendChild(copy);
+      parent.appendChild(el);
+      return el;
+    }
+
+    const appearance = section("Вигляд", "застосовується одразу");
+    const styleRow = row(appearance, "Стиль іконок", "Наші, однотонні або кольорові");
+    const styleGrid = document.createElement("div");
+    styleGrid.className = "settings-choices";
+    for (const [id, label] of Object.entries(ICON_STYLES)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "settings-choice";
+      button.textContent = label;
+      button.addEventListener("click", () => { setIconStyle(id); sync(); });
+      styleButtons.push({ id, button });
+      styleGrid.appendChild(button);
+    }
+    styleRow.appendChild(styleGrid);
+
+    const tintRow = row(appearance, "Колір", "для наших і однотонних іконок");
+    const tintGrid = document.createElement("div");
+    tintGrid.className = "settings-swatches";
+    for (const item of ICON_TINTS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "settings-swatch";
+      button.style.background = item.value;
+      button.title = item.label;
+      button.setAttribute("aria-label", item.label);
+      button.addEventListener("click", () => { setIconTint(item.value); sync(); });
+      tintButtons.push({ value: item.value, button });
+      tintGrid.appendChild(button);
+    }
+    tintRow.appendChild(tintGrid);
+
+    const themeRow = row(appearance, "Тема", "фон екрана і шторок");
+    const themeGrid = document.createElement("div");
+    themeGrid.className = "settings-choices settings-choices-two";
+    for (const [id, label] of [["dark", "Темна"], ["light", "Світла"]]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "settings-choice";
+      button.textContent = label;
+      button.addEventListener("click", () => {
+        document.documentElement.dataset.theme = id;
+        writePref(THEME_KEY, id);
+        repaintPixels();
+        sync();
+      });
+      themeButtons.push({ id, button });
+      themeGrid.appendChild(button);
+    }
+    themeRow.appendChild(themeGrid);
+
+    const display = section("Екран", "ті самі значення, що й у швидких діях");
+    const brightRow = row(display, "Яскравість", "15–100% без зміни системних налаштувань");
+    brightRangeSettings.type = "range";
+    brightRangeSettings.className = "settings-range";
+    brightRangeSettings.min = "15";
+    brightRangeSettings.max = "100";
+    brightRangeSettings.step = "1";
+    brightRangeSettings.addEventListener("input", () => {
+      applyBright(brightRangeSettings.value);
+      writePref(BRIGHT_KEY, bright);
+      sync();
+      wake();
+    });
+    brightRow.appendChild(brightRangeSettings);
+    brightValue.className = "settings-value";
+    brightRow.appendChild(brightValue);
+
+    const audio = section("Голос", "локальний Piper, якщо модель доступна");
+    const voiceRow = row(audio, "Озвучення", "бот говорить відповіді через браузер");
+    voiceToggle.type = "button";
+    voiceToggle.className = "settings-switch";
+    voiceToggle.addEventListener("click", () => { toggleVoice(); sync(); });
+    voiceRow.appendChild(voiceToggle);
+
+    const volumeRow = row(audio, "Гучність", "гучність наступних відповідей");
+    volumeRangeSettings.type = "range";
+    volumeRangeSettings.className = "settings-range";
+    volumeRangeSettings.min = "0";
+    volumeRangeSettings.max = "100";
+    volumeRangeSettings.step = "1";
+    volumeRangeSettings.addEventListener("input", () => {
+      applyVolume(volumeRangeSettings.value);
+      writePref(VOL_KEY, volume);
+      sync();
+      wake();
+    });
+    volumeRow.appendChild(volumeRangeSettings);
+    volumeValue.className = "settings-value";
+    volumeRow.appendChild(volumeValue);
+
+    const voiceChoiceRow = row(audio, "Голос Piper", "зберігається на сервері для наступних озвучок");
+    voiceSelect.className = "settings-select";
+    voiceSelect.addEventListener("change", async () => {
+      try {
+        const response = await fetch("/api/tts/voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ speaker: Number(voiceSelect.value) }),
+        });
+        if (!response.ok) throw new Error("voice " + response.status);
+        voiceState.textContent = "збережено";
+      } catch (e) {
+        voiceState.textContent = "не вдалося зберегти";
+      }
+      sync();
+    });
+    voiceChoiceRow.appendChild(voiceSelect);
+
+    testVoice.type = "button";
+    testVoice.className = "cta settings-test";
+    testVoice.textContent = "Перевірити голос";
+    testVoice.addEventListener("click", async () => {
+      if (!voiceOn || !ttsAvailable) return;
+      testVoice.disabled = true;
+      note.textContent = "Говорю тестову фразу…";
+      await speak("Налаштування голосу працюють.");
+      note.textContent = "Тест завершено.";
+      sync();
+    });
+    audio.appendChild(testVoice);
+
+    const actions = section("Дії", "локальні параметри цього екрана");
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "settings-reset";
+    reset.textContent = "Скинути налаштування екрана";
+    reset.addEventListener("click", () => {
+      if (typeof window.confirm === "function" && !window.confirm("Скинути тему, яскравість, голос і стиль іконок?")) return;
+      resetScreenPrefs();
+      note.textContent = "Параметри повернуто до початкових.";
+      sync();
+    });
+    actions.appendChild(reset);
+
+    note.className = "settings-note";
+    box.appendChild(note);
+
+    function sync() {
+      styleButtons.forEach(({ id, button }) => button.classList.toggle("on", id === iconStyle));
+      tintButtons.forEach(({ value, button }) => button.classList.toggle("on", value === iconTint));
+      themeButtons.forEach(({ id, button }) => button.classList.toggle("on", id === document.documentElement.dataset.theme));
+      styleState.textContent = ICON_STYLES[iconStyle];
+      tintState.textContent = ICON_TINTS.find((item) => item.value === iconTint)?.label || "власний";
+      themeState.textContent = document.documentElement.dataset.theme === "light" ? "Світла" : "Темна";
+      brightRangeSettings.value = String(bright);
+      brightValue.textContent = bright + "%";
+      volumeRangeSettings.value = String(volume);
+      volumeValue.textContent = ttsAvailable ? volume + "%" : "нема";
+      voiceToggle.disabled = !ttsAvailable;
+      voiceToggle.textContent = !ttsAvailable ? "Недоступно" : (voiceOn ? "Увімкнено" : "Вимкнено");
+      voiceToggle.classList.toggle("on", voiceOn && ttsAvailable);
+      volumeRangeSettings.disabled = !ttsAvailable;
+      testVoice.disabled = !voiceOn || !ttsAvailable;
+      voiceSelect.disabled = !ttsAvailable || !voiceSelect.options.length;
+    }
+
+    styleState.className = "settings-inline-value";
+    tintState.className = "settings-inline-value";
+    themeState.className = "settings-inline-value";
+    styleRow.querySelector(".settings-copy").appendChild(styleState);
+    tintRow.querySelector(".settings-copy").appendChild(tintState);
+    themeRow.querySelector(".settings-copy").appendChild(themeState);
+    voiceRow.querySelector(".settings-copy").appendChild(voiceState);
+    sync();
+
+    fetch("/api/tts/status")
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("tts " + response.status)))
+      .then((data) => {
+        ttsAvailable = !!data.enabled;
+        voiceSelect.innerHTML = "";
+        (data.voices || []).forEach((voice) => {
+          const option = document.createElement("option");
+          option.value = String(voice.id);
+          option.textContent = voice.name + (voice.hint ? " — " + voice.hint : "");
+          option.selected = Number(data.selected) === Number(voice.id);
+          voiceSelect.appendChild(option);
+        });
+        sync();
+      })
+      .catch(() => {
+        ttsAvailable = false;
+        voiceState.textContent = "сервіс недоступний";
+        sync();
+      });
   });
 }
 
