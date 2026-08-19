@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="uk" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <!-- viewport-fit + user-scalable=no: це «пристрій», а не сторінка; зум і
+       випадковий подвійний тап на резистивному тачі тільки заважають -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Клод Бот — Екран</title>
+  <link rel="stylesheet" href="/static/screen/screen.css">
+</head>
+<body>
+
+<!-- Сцена рівно 320×240 (2.4" SPI). На справжньому екрані масштаб = 1,
+     на десктопі — вписується в вікно. Все всередині рахує в цих пікселях. -->
+<div class="stage" id="stage">
+
+  <!-- ── Шар 1: карусель тайлів (горизонтальний свайп) ────────────── -->
+  <div class="rail" id="rail">
+
+    <!-- Тайл 0 — «циферблат»: краб + час + стан -->
+    <section class="tile tile-face" data-tile="face" data-emotion="idle">
+      <div class="face-top">
+        <span class="link-dot" id="linkDot" title="Звʼязок із ботом"></span>
+        <canvas class="face-clock" id="faceClockCanvas" width="76" height="20"></canvas>
+      </div>
+      <canvas class="crab" id="crabCanvas" width="300" height="152"></canvas>
+      <div class="face-label" id="faceLabel">Очікування</div>
+
+      <!-- Розмова просто на циферблаті: що кажеш ти і що відповідає бот -->
+      <div class="face-caption hidden" id="faceCaption"></div>
+
+      <!-- Говорити можна прямо звідси, не заходячи в тайл розмови -->
+      <button class="face-mic" id="faceMic" data-mic type="button" aria-label="Говорити">
+        <span class="ico-slot" id="faceMicIco"></span>
+      </button>
+    </section>
+
+    <!-- Тайл 1 — годинник -->
+    <section class="tile tile-clock" data-tile="clock">
+      <canvas class="clock-pixels" id="clockCanvas" width="288" height="96"></canvas>
+      <div class="clock-date" id="clockDate">—</div>
+    </section>
+
+    <!-- Тайл 2 — остання репліка бота -->
+    <section class="tile tile-say" data-tile="say">
+      <div class="tile-head">Бот сказав</div>
+      <div class="say-text" id="sayText">Поки тиша.</div>
+      <div class="tile-foot" id="sayAge"></div>
+    </section>
+
+    <!-- Тайл 3 — стан систем. Одна головна дія — «Оновити» (як у Wear OS) -->
+    <section class="tile tile-state" data-tile="state">
+      <div class="tile-head">Стан</div>
+      <ul class="state-list">
+        <li><span class="k">Мозок</span><span class="v" id="stBrain">—</span></li>
+        <li><span class="k">Зір</span><span class="v" id="stVision">—</span></li>
+        <li><span class="k">Дисплей</span><span class="v" id="stDisplay">—</span></li>
+        <li><span class="k">Звʼязок</span><span class="v" id="stLink">—</span></li>
+      </ul>
+      <div class="tile-foot" id="stAge"></div>
+      <button class="cta" id="stRefresh" type="button">Оновити</button>
+    </section>
+
+    <!-- Тайл 4 — розмова: голосом, без клавіатури (її тут нема куди діти) -->
+    <section class="tile tile-chat" data-tile="chat">
+      <div class="chat-head">
+        <button class="chat-head-btn" id="sessionsBtn" type="button">
+          <span class="ico-slot" id="sessionsIco"></span>
+          <span class="chat-title" id="sessionTitle">Розмова</span>
+        </button>
+        <button class="chat-head-btn icon-only" id="chatNew" type="button" title="Нова розмова">
+          <span class="ico-slot" id="chatNewIco"></span>
+        </button>
+      </div>
+
+      <div class="chat-log" id="chatLog">
+        <div class="chat-empty" id="chatEmpty">Натисни мікрофон і говори.</div>
+      </div>
+
+      <!-- Те, що чуємо просто зараз (проміжний результат розпізнавання) -->
+      <div class="chat-live" id="chatLive"></div>
+
+      <div class="chat-bar">
+        <button class="mic-btn" id="micBtn" data-mic type="button">
+          <span class="ico-slot" id="micIco"></span>
+          <span class="mic-label" id="micLabel">Говорити</span>
+        </button>
+        <button class="mode-chip" id="modeChip" type="button" title="Режим розмови">Поговорити</button>
+      </div>
+
+      <!-- Список розмов поверх тайла -->
+      <div class="sessions hidden" id="sessionsPanel">
+        <div class="sessions-head">
+          <span>Розмови</span>
+          <button class="layer-back" id="sessionsClose" type="button">Назад ✕</button>
+        </div>
+        <div class="sessions-list" id="sessionsList"></div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Крапки-індикатор тайлів -->
+  <div class="dots" id="dots" aria-hidden="true"></div>
+
+  <!-- ── Шторка швидких дій: свайп ВНИЗ, виїжджає згори ── -->
+  <section class="layer layer-quick" id="layerQuick">
+    <div class="layer-head">
+      <span>Швидкі дії</span>
+      <span class="head-btns">
+        <button class="layer-edit" id="quickEdit" type="button" title="Переставити плитки"></button>
+        <button class="layer-back" data-back type="button">Назад ✕</button>
+      </span>
+    </div>
+
+    <!-- Повзунки: обидва керують справжніми речами -->
+    <div class="qs-slider">
+      <span class="qs-slider-ico" id="brightIco"></span>
+      <input type="range" id="brightRange" min="15" max="100" step="5" aria-label="Яскравість">
+      <span class="qs-slider-val" id="brightVal">100%</span>
+    </div>
+    <div class="qs-slider" id="volRow">
+      <span class="qs-slider-ico" id="volIco"></span>
+      <input type="range" id="volRange" min="0" max="100" step="5" aria-label="Гучність">
+      <span class="qs-slider-val" id="volVal">70%</span>
+    </div>
+
+    <div class="qs-grid" id="quickGrid"></div>
+    <div class="qs-hint" id="quickHint">Торкнись двох плиток, щоб поміняти їх місцями</div>
+  </section>
+
+  <!-- Шухляда застосунків: свайп ВГОРУ (там, де раніше була стрічка) -->
+  <section class="layer layer-apps" id="layerApps" aria-labelledby="appsTitle" aria-hidden="true" inert>
+    <div class="apps-handle" aria-hidden="true"></div>
+    <div class="layer-head apps-head">
+      <span id="appsTitle">Застосунки</span>
+      <button class="layer-back" data-apps-close type="button">Назад ✕</button>
+    </div>
+    <div class="apps-grid" id="appsGrid"></div>
+  </section>
+
+  <!-- Застосунок поверх усього (камера, сервіси) -->
+  <section class="layer layer-app" id="layerApp">
+    <div class="layer-head">
+      <span id="appTitle">Застосунок</span>
+      <button class="layer-back" data-app-close type="button">Назад ✕</button>
+    </div>
+    <div class="app-body" id="appBody"></div>
+  </section>
+
+  <!-- Вибір режиму розмови (довгий дотик по мікрофону або чип) -->
+  <div class="mode-sheet hidden" id="modeSheet">
+    <div class="mode-card">
+      <div class="mode-head">
+        <span>Режим розмови</span>
+        <button class="layer-back" data-mode-close type="button">✕</button>
+      </div>
+      <button class="mode-row" data-mode="push" type="button">
+        <span class="mode-name">Поговорити</span>
+        <span class="mode-hint">Тиснеш — кажеш фразу — бот відповідає</span>
+      </button>
+      <button class="mode-row" data-mode="open" type="button">
+        <span class="mode-name">Слухає завжди</span>
+        <span class="mode-hint">Мікрофон відкритий, кожна фраза йде боту</span>
+      </button>
+      <button class="mode-row" data-mode="wake" type="button">
+        <span class="mode-name">Ключове слово</span>
+        <span class="mode-hint">Реагує лише після свого імені</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Вибір стилю іконок -->
+  <div class="mode-sheet hidden" id="iconSheet">
+    <div class="mode-card">
+      <div class="mode-head">
+        <span>Іконки</span>
+        <button class="layer-back" data-icons-close type="button">✕</button>
+      </div>
+      <button class="mode-row" data-icons="pixel" type="button">
+        <span class="mode-name">Наші (піксельні)</span>
+        <span class="mode-hint">Одна мова з крабом і годинником</span>
+      </button>
+      <button class="mode-row" data-icons="line" type="button">
+        <span class="mode-name">Звичайні</span>
+        <span class="mode-hint">Контурні, як у телефоні</span>
+      </button>
+      <button class="mode-row" data-icons="color" type="button">
+        <span class="mode-name">Кольорові</span>
+        <span class="mode-hint">Ті самі, але кожна у своєму відтінку</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Затемнення: яскравість і «сон». Окремий шар з opacity —
+       композитор тягне його безкоштовно, на відміну від filter. -->
+  <div class="dimmer" id="dimmer"></div>
+
+</div>
+
+<script src="/static/audio-level.js"></script>
+<script src="/static/crab.js"></script>
+<script type="module" src="/static/screen/screen.js"></script>
+</body>
+</html>
