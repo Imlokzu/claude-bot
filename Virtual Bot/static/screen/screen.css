@@ -392,6 +392,8 @@ html, body {
   color: var(--muted);
   font-size: 9px;
 }
+.settings-attribution { padding: 0 3px; }
+.settings-attribution a { color: var(--accent); }
 .settings-row {
   display: flex;
   align-items: center;
@@ -509,6 +511,15 @@ html, body {
 }
 
 .svgicon-big { width: 24px; height: 24px; }
+
+.pixel-pack-icon {
+  width: 30px;
+  height: 30px;
+  display: block;
+  image-rendering: pixelated;
+  object-fit: contain;
+  user-select: none;
+}
 
 .app-icon {
   width: 42px;

@@ -413,7 +413,8 @@ setLink(false);
 
 /* ---------- Стиль іконок ----------
    Три набори на вибір, бо смак у цього різний, а екран один:
-     pixel — наш піксельний, одна мова зі спрайтом краба й годинником;
+     pixel — кольорові 16×16 assets із Pxlkit у шухляді та наші glyphs
+             для дрібних кнопок;
      line  — звичайні контурні, як у будь-якому телефоні;
      color — ті самі контурні, але кожна зі своїм відтінком.
    Вибір глобальний: інакше половина екрана лишалася б в іншому стилі. */
@@ -430,9 +431,33 @@ const ICON_TINTS = [
   { value: "#5fb0a8", label: "Бірюзовий" },
 ];
 const ICON_STYLES = {
-  pixel: "Наші (бот)",
+  pixel: "Піксельні",
   line: "Однотонні",
   color: "Кольорові",
+};
+const PIXEL_ICON_ASSETS = {
+  face: "face.svg",
+  clock: "clock.svg",
+  mic: "say.svg",
+  bubble: "chat.svg",
+  gauge: "state.svg",
+  sliders: "quick.svg",
+  camera: "camera.svg",
+  server: "services.svg",
+  monitor: "panel.svg",
+  settings: "settings.svg",
+};
+const PIXEL_ICON_TINTS = {
+  face: "#4ecdc4",
+  clock: "#5b9bd5",
+  mic: "#e74c3c",
+  bubble: "#7ec8e3",
+  gauge: "#3b82f6",
+  sliders: "#5b9bd5",
+  camera: "#00cc6a",
+  server: "#889099",
+  monitor: "#5b9bd5",
+  settings: "#5b9bd5",
 };
 let iconStyle = "pixel";
 let iconTint = DEFAULT_ICON_TINT;
@@ -450,11 +475,36 @@ function uiIcon(name, opts) {
   return svg;
 }
 
-/* У шухляді іконки завжди контурні: вибір піксельного стилю стосується
-   дрібного керування, але не великих круглих плиток застосунків. */
+/* Великі іконки шухляди беруться з локального pixel-паку, коли обрано
+   піксельний стиль. Для двох інших стилів лишається векторний renderer. */
 function drawerIcon(name, on) {
   if (iconStyle === "pixel") {
-    return makeIcon(name, 3, on ? iconColors(true)[0] : iconTint, "", true);
+    const asset = PIXEL_ICON_ASSETS[name];
+    const fallback = () => {
+      const fallbackName = name === "server" ? "gear" : name;
+      const icon = makeIcon(
+        fallbackName,
+        3,
+        on ? iconColors(true)[0] : (PIXEL_ICON_TINTS[name] || iconTint),
+        "",
+        true,
+      );
+      icon.setAttribute("aria-hidden", "true");
+      return icon;
+    };
+    if (!asset) return fallback();
+
+    const image = document.createElement("img");
+    image.className = "pixel-pack-icon";
+    image.alt = "";
+    image.setAttribute("aria-hidden", "true");
+    image.decoding = "async";
+    image.draggable = false;
+    image.src = "/static/screen/assets/pixel-icons/" + asset;
+    image.addEventListener("error", () => {
+      image.replaceWith(fallback());
+    }, { once: true });
+    return image;
   }
   const svg = makeSvgIcon(name);
   svg.classList.add("svgicon-big");
@@ -1587,7 +1637,11 @@ function renderApps() {
     const circle = document.createElement("span");
     circle.className = "app-icon";
     circle.dataset.icon = scr.icon;
-    const tint = iconStyle === "color" ? (ICON_COLORS[scr.icon] || iconTint) : iconTint;
+    const tint = iconStyle === "color"
+      ? (ICON_COLORS[scr.icon] || iconTint)
+      : iconStyle === "pixel"
+        ? (PIXEL_ICON_TINTS[scr.icon] || iconTint)
+        : iconTint;
     circle.style.setProperty("--app-tint", tint);
     circle.appendChild(drawerIcon(scr.icon, here));
     btn.appendChild(circle);
@@ -1947,7 +2001,7 @@ function openSettings() {
     }
 
     const appearance = section("Вигляд", "застосовується одразу");
-    const styleRow = row(appearance, "Стиль іконок", "Наші, однотонні або кольорові");
+    const styleRow = row(appearance, "Стиль іконок", "Піксельні, однотонні або кольорові");
     const styleGrid = document.createElement("div");
     styleGrid.className = "settings-choices";
     for (const [id, label] of Object.entries(ICON_STYLES)) {
@@ -1961,7 +2015,7 @@ function openSettings() {
     }
     styleRow.appendChild(styleGrid);
 
-    const tintRow = row(appearance, "Колір", "для наших і однотонних іконок");
+    const tintRow = row(appearance, "Колір", "для однотонних і дрібних кнопок");
     const tintGrid = document.createElement("div");
     tintGrid.className = "settings-swatches";
     for (const item of ICON_TINTS) {
@@ -2079,6 +2133,11 @@ function openSettings() {
       sync();
     });
     actions.appendChild(reset);
+
+    const attribution = document.createElement("div");
+    attribution.className = "settings-note settings-attribution";
+    attribution.innerHTML = 'Піксельні іконки: <a href="https://pxlkit.xyz" target="_blank" rel="noreferrer">Pxlkit</a>.';
+    box.appendChild(attribution);
 
     note.className = "settings-note";
     box.appendChild(note);
