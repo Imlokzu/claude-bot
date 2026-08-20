@@ -6,6 +6,8 @@
   <title>Клод Бот — Віртуальний</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Crect%20x='2'%20y='3'%20width='12'%20height='10'%20rx='2'%20fill='%239ece6a'/%3E%3Crect%20x='5'%20y='6'%20width='2'%20height='3'%20fill='%230f0f1a'/%3E%3Crect%20x='9'%20y='6'%20width='2'%20height='3'%20fill='%230f0f1a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/theme-overrides.css">
+  <link rel="stylesheet" href="/static/m3.css">
 </head>
 <body>
 
@@ -13,6 +15,8 @@
   <header class="topbar">
     <div class="brand">▞▚ КЛОД БОТ <span class="brand-sub">· ВІРТУАЛЬНИЙ</span><span class="cursor-block">█</span></div>
     <div class="topbar-right">
+      <!-- Кнопки теми тут більше немає: вигляд живе в Налаштуваннях → «Вигляд».
+           Шапка тримає лише стан бота, а не налаштування інтерфейсу. -->
       <span class="activity-chip hidden" id="activityChip" title="Що бот робить зараз">
         <span class="activity-dot"></span><span id="activityText"></span>
       </span>
@@ -26,47 +30,44 @@
   </header>
 
   <!-- Вкладки -->
-  <nav class="dashboard-tabs" id="dashboardTabs">
+  <nav class="dashboard-tabs" id="dashboardTabs" role="tablist" aria-label="Розділи панелі">
     <!-- Іконки — інлайн-SVG (stroke: currentColor), щоб колір і товщина жили
          разом зі станом вкладки, а не залежали від емодзі-шрифту системи. -->
-    <button class="dashboard-tab active" data-tab="chat">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A2.5 2.5 0 0 1 17.5 17H9l-4 3.5V6.5A2.5 2.5 0 0 1 7.5 4h10A2.5 2.5 0 0 1 20 6.5z"/></svg>
-      Чат
+    <button class="dashboard-tab active" data-tab="chat" role="tab" aria-selected="true" aria-controls="panel-chat">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A2.5 2.5 0 0 1 17.5 17H9l-4 3.5V6.5A2.5 2.5 0 0 1 7.5 4h10A2.5 2.5 0 0 1 20 6.5z"/></svg><span class="tab-label">Чат</span>
     </button>
-    <button class="dashboard-tab" data-tab="memory">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5a3 3 0 0 0-5.7-1.3A2.8 2.8 0 0 0 4 9.4a3 3 0 0 0 .6 5A2.9 2.9 0 0 0 9 17.6a3 3 0 0 0 3-2.6zM12 5.5a3 3 0 0 1 5.7-1.3A2.8 2.8 0 0 1 20 9.4a3 3 0 0 1-.6 5A2.9 2.9 0 0 1 15 17.6a3 3 0 0 1-3-2.6zM12 15v5"/></svg>
-      Пам'ять
+    <button class="dashboard-tab" data-tab="memory" role="tab" aria-selected="false" aria-controls="panel-memory">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5a3 3 0 0 0-5.7-1.3A2.8 2.8 0 0 0 4 9.4a3 3 0 0 0 .6 5A2.9 2.9 0 0 0 9 17.6a3 3 0 0 0 3-2.6zM12 5.5a3 3 0 0 1 5.7-1.3A2.8 2.8 0 0 1 20 9.4a3 3 0 0 1-.6 5A2.9 2.9 0 0 1 15 17.6a3 3 0 0 1-3-2.6zM12 15v5"/></svg><span class="tab-label">Пам'ять</span>
     </button>
-    <button class="dashboard-tab" data-tab="workspace">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5z"/></svg>
-      Файли
+    <button class="dashboard-tab" data-tab="workspace" role="tab" aria-selected="false" aria-controls="panel-workspace">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7.5A1.5 1.5 0 0 1 17.5 19h-13A1.5 1.5 0 0 1 3 17.5z"/></svg><span class="tab-label">Файли</span>
     </button>
-    <button class="dashboard-tab" data-tab="browser">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.2 2.2 3.2 5 3.2 8s-1 5.8-3.2 8c-2.2-2.2-3.2-5-3.2-8S9.8 6.2 12 4z"/></svg>
-      Браузер
+    <button class="dashboard-tab" data-tab="browser" role="tab" aria-selected="false" aria-controls="panel-browser">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.2 2.2 3.2 5 3.2 8s-1 5.8-3.2 8c-2.2-2.2-3.2-5-3.2-8S9.8 6.2 12 4z"/></svg><span class="tab-label">Браузер</span>
     </button>
-    <button class="dashboard-tab" data-tab="vision">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></svg>
-      Зір
+    <button class="dashboard-tab" data-tab="vision" role="tab" aria-selected="false" aria-controls="panel-vision">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></svg><span class="tab-label">Зір</span>
     </button>
-    <button class="dashboard-tab" data-tab="services">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0 5 5L14 17a3 3 0 1 1-4-4z"/></svg>
-      Сервіси
+    <button class="dashboard-tab" data-tab="services" role="tab" aria-selected="false" aria-controls="panel-services">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0 5 5L14 17a3 3 0 1 1-4-4z"/></svg><span class="tab-label">Сервіси</span>
     </button>
-    <button class="dashboard-tab" data-tab="logs">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 9h7M7 12.5h10M7 16h6"/></svg>
-      Логи
+    <button class="dashboard-tab" data-tab="logs" role="tab" aria-selected="false" aria-controls="panel-logs">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 9h7M7 12.5h10M7 16h6"/></svg><span class="tab-label">Логи</span>
     </button>
-    <!-- Налаштування — така сама іконка в ряду вкладок, лише без підпису -->
-    <button class="dashboard-tab dashboard-tab-icon" id="setupBtn" title="Налаштування">
-      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M21 12h-2.2M5.2 12H3M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2 5.6 5.6"/></svg>
+    <!-- Налаштування — така сама вкладка, як решта, з підписом. Раніше тут
+         був клас dashboard-tab-icon «щоб без підпису», але правила для нього
+         не існувало: підпис усе одно показувався, а серед підписаних вкладок
+         одна безпідписна шестерня була просто незрозумілою. -->
+    <button class="dashboard-tab" id="setupBtn" data-tab="setup" role="tab"
+            aria-selected="false" aria-controls="panel-setup" title="Налаштування" aria-label="Налаштування">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.2M12 18.8V21M21 12h-2.2M5.2 12H3M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6M18.4 18.4l-1.6-1.6M7.2 7.2 5.6 5.6"/></svg><span class="tab-label">Налаштування</span>
     </button>
   </nav>
 
   <main class="dashboard">
 
     <!-- 1. Чат -->
-    <section class="dashboard-panel active" data-panel="chat">
+    <section class="dashboard-panel active" data-panel="chat" id="panel-chat" role="tabpanel">
       <div class="dashboard-grid chat-grid">
         <section class="panel area-face">
           <h2 class="panel-title">Обличчя</h2>
@@ -91,7 +92,7 @@
     </section>
 
     <!-- 2. Пам'ять (React) -->
-    <section class="dashboard-panel" data-panel="memory">
+    <section class="dashboard-panel" data-panel="memory" id="panel-memory" role="tabpanel">
       <section class="panel area-memory">
         <div id="memory-panel-root"></div>
         <link rel="stylesheet" href="/static/memory-panel/memory-panel.css">
@@ -100,35 +101,35 @@
     </section>
 
     <!-- 3. Файли — робоча тека бота (React, той самий бандл, що й чат) -->
-    <section class="dashboard-panel" data-panel="workspace">
+    <section class="dashboard-panel" data-panel="workspace" id="panel-workspace" role="tabpanel">
       <section class="panel area-workspace">
         <div id="workspace-panel-root"></div>
       </section>
     </section>
 
     <!-- 4. Браузер (React) -->
-    <section class="dashboard-panel" data-panel="browser">
+    <section class="dashboard-panel" data-panel="browser" id="panel-browser" role="tabpanel">
       <section class="panel area-browser">
         <div id="browser-panel-root"></div>
       </section>
     </section>
 
     <!-- 5. Зір -->
-    <section class="dashboard-panel" data-panel="vision">
+    <section class="dashboard-panel" data-panel="vision" id="panel-vision" role="tabpanel">
       <div class="dashboard-grid vision-grid">
         <section class="panel area-vision">
           <h2 class="panel-title">Зір</h2>
           <div class="vision-view" id="visionView">
             <img id="visionImg" alt="Потік камери">
             <div class="vision-overlay" id="visionOverlay">
-              <div class="overlay-icon">▣</div>
+              <div class="overlay-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.8" width="17" height="14.4" rx="2"/><path d="m3.9 16.6 4.4-4.2 3.2 3 3.1-2.8 5 4.6"/><circle cx="8.6" cy="9.4" r="1.4"/></svg></div>
               <div id="visionOverlayText">Потік вимкнено</div>
             </div>
             <div class="vision-badge" id="visionBadge"></div>
           </div>
           <div class="btn-row">
-            <button class="btn" id="streamToggle">▶ Потік</button>
-            <button class="btn" id="snapshotBtn">◉ Снапшот</button>
+            <button class="m3-btn m3-btn-filled" id="streamToggle"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.2 18.6 12 7.5 18.8z"/></svg><span>Потік</span></button>
+            <button class="m3-btn m3-btn-outlined" id="snapshotBtn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 8.6A1.6 1.6 0 0 1 5.1 7h2.4l1.3-2.1h6.4L16.5 7h2.4A1.6 1.6 0 0 1 20.5 8.6v9A1.6 1.6 0 0 1 18.9 19H5.1a1.6 1.6 0 0 1-1.6-1.4z"/><circle cx="12" cy="12.6" r="3.4"/></svg><span>Снапшот</span></button>
           </div>
           <pre class="json-out hidden" id="snapshotOut"></pre>
         </section>
@@ -150,7 +151,7 @@
     </section>
 
     <!-- 4. Сервіси -->
-    <section class="dashboard-panel" data-panel="services">
+    <section class="dashboard-panel" data-panel="services" id="panel-services" role="tabpanel">
       <div class="dashboard-grid services-grid">
         <section class="panel area-services">
           <h2 class="panel-title">Сервіси</h2>
@@ -161,8 +162,8 @@
               <span class="service-state" id="svcState-vision">—</span>
             </div>
             <div class="btn-row">
-              <button class="btn btn-small" data-svc="vision" data-action="start">Старт</button>
-              <button class="btn btn-small btn-danger" data-svc="vision" data-action="stop">Стоп</button>
+              <button class="m3-btn m3-btn-filled" data-svc="vision" data-action="start"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.2 18.6 12 7.5 18.8z"/></svg><span>Старт</span></button>
+              <button class="m3-btn m3-btn-danger" data-svc="vision" data-action="stop"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="1.6"/></svg><span>Стоп</span></button>
             </div>
           </div>
           <div class="service-row">
@@ -172,8 +173,8 @@
               <span class="service-state" id="svcState-display">—</span>
             </div>
             <div class="btn-row">
-              <button class="btn btn-small" data-svc="display" data-action="start">Старт</button>
-              <button class="btn btn-small btn-danger" data-svc="display" data-action="stop">Стоп</button>
+              <button class="m3-btn m3-btn-filled" data-svc="display" data-action="start"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 5.2 18.6 12 7.5 18.8z"/></svg><span>Старт</span></button>
+              <button class="m3-btn m3-btn-danger" data-svc="display" data-action="stop"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="1.6"/></svg><span>Стоп</span></button>
             </div>
           </div>
         </section>
@@ -181,148 +182,171 @@
     </section>
 
     <!-- 5. Логи -->
-    <section class="dashboard-panel" data-panel="logs">
+    <section class="dashboard-panel" data-panel="logs" id="panel-logs" role="tabpanel">
       <section class="panel area-console">
         <div class="panel-head">
           <h2 class="panel-title">Консоль</h2>
           <div class="console-controls">
-            <label class="console-auto"><input type="checkbox" id="consoleAutoscroll" checked> автоскрол</label>
-            <button class="btn btn-small" id="consoleClear">Очистити</button>
+            <label class="m3-switch"><input type="checkbox" id="consoleAutoscroll" checked><span class="m3-switch-track"></span><span>Автоскрол</span></label>
+            <button class="m3-btn m3-btn-text" id="consoleClear">Очистити</button>
           </div>
         </div>
         <div class="console-log" id="consoleLog"></div>
       </section>
     </section>
 
+
+    <!-- 6. Налаштування — окрема сторінка (раніше було модальне вікно) -->
+    <section class="dashboard-panel" data-panel="setup" id="panel-setup" role="tabpanel">
+      <div class="setup-page">
+
+        <aside class="setup-rail">
+          <div class="setup-rail-title">Налаштування</div>
+          <ol class="setup-nav" id="setupNav">
+            <li data-section="profile" class="active" tabindex="0" role="button"><svg class="ico st-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5 19.5a7 7 0 0 1 14 0"/></svg><span class="st-label">Особистість</span></li>
+            <li data-section="style" tabindex="0" role="button"><svg class="ico st-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg><span class="st-label">Стиль спілкування</span></li>
+            <li data-section="look" tabindex="0" role="button"><svg class="ico st-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c-4.7 0-8.5 3.6-8.5 8s3.8 8 8.5 8c1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.1 0-1 .8-1.7 1.8-1.7h2A4.4 4.4 0 0 0 21 9.3c-.6-3.3-4.4-5.8-9-5.8z"/><circle cx="7.8" cy="11.4" r="1.1"/><circle cx="10.4" cy="7.6" r="1.1"/><circle cx="15.2" cy="7.9" r="1.1"/></svg><span class="st-label">Вигляд</span></li>
+            <li data-section="brain" tabindex="0" role="button"><svg class="ico st-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A2.5 2.5 0 0 0 7 7a2.4 2.4 0 0 0-1.6 4.2A2.6 2.6 0 0 0 6.6 16 2.4 2.4 0 0 0 11 17.4V6.7a2.2 2.2 0 0 0-1.5-2.2zM14.5 4.5A2.5 2.5 0 0 1 17 7a2.4 2.4 0 0 1 1.6 4.2A2.6 2.6 0 0 1 17.4 16 2.4 2.4 0 0 1 13 17.4V6.7a2.2 2.2 0 0 1 1.5-2.2z"/><path d="M12 17.6V21"/></svg><span class="st-label">Мозок і ключі</span></li>
+            <li data-section="skills" tabindex="0" role="button"><svg class="ico st-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.4 4.5h2a1.6 1.6 0 1 1 3.2 0h2a.9.9 0 0 1 .9.9v2.7a1.6 1.6 0 1 1 0 3.2v2.7a.9.9 0 0 1-.9.9h-2.7a1.6 1.6 0 1 0-3.2 0H7.9a.9.9 0 0 1-.9-.9v-2.7a1.6 1.6 0 1 1 0-3.2V5.4a.9.9 0 0 1 .9-.9z"/></svg><span class="st-label">Уміння</span></li>
+            <li data-section="services" tabindex="0" role="button"><svg class="ico st-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M17.3 6.7a7.5 7.5 0 1 1-10.6 0"/></svg><span class="st-label">Сервіси тіла</span></li>
+          </ol>
+          <p class="setup-rail-note">Профіль бота (ім'я, мова, характер, довжина) реально
+            йде в промпт і змінює відповіді. «Вигляд» — лише інтерфейс, зберігається
+            у цьому браузері.</p>
+        </aside>
+
+        <section class="setup-main">
+          <div class="setup-body">
+
+            <div class="setup-section" data-section="profile">
+              <h2 class="wz-step-title"><svg class="ico wz-step-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5 19.5a7 7 0 0 1 14 0"/></svg><span>Особистість бота</span></h2>
+              <p class="wizard-lead">Як звати бота, якою мовою й з яким характером він говорить.</p>
+              <label class="wz-field">Ім'я
+                <input type="text" id="wzName" maxlength="60" placeholder="Клод Бот" autocomplete="off">
+              </label>
+              <div class="wz-field">Мова відповідей
+                <div class="wz-cards wz-cards-sm" id="wzLangCards"></div>
+              </div>
+              <div class="wz-field">Характер
+                <div class="wz-cards" id="wzPersonaCards"></div>
+              </div>
+              <label class="wz-field">…або опиши характер своїми словами
+                <textarea id="wzPersonaCustom" maxlength="400" rows="2" placeholder="напр. дотепний, трохи саркастичний, любить котів"></textarea>
+              </label>
+            </div>
+
+            <div class="setup-section hidden" data-section="style">
+              <h2 class="wz-step-title"><svg class="ico wz-step-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9M17 8h3M4 16h3M11 16h9"/><circle cx="15" cy="8" r="2"/><circle cx="9" cy="16" r="2"/></svg><span>Стиль спілкування</span></h2>
+              <p class="wizard-lead">Ці параметри реально йдуть у промпт і змінюють відповіді.</p>
+              <div class="wz-field">Довжина відповідей
+                <div class="m3-segmented wz-seg" id="wzLenSeg"></div>
+              </div>
+              <div class="wz-toggle-row">
+                <label class="m3-switch"><input type="checkbox" id="wzEmoji"><span class="m3-switch-track"></span>
+                  <span>Вживати емодзі у відповідях</span></label>
+              </div>
+              <div class="wz-toggle-row">
+                <label class="m3-switch"><input type="checkbox" id="wzSpont"><span class="m3-switch-track"></span>
+                  <span>Спонтанні емоції у простої</span></label>
+              </div>
+              <label class="wz-field">Стартове привітання (необов'язково)
+                <input type="text" id="wzGreeting" maxlength="300" placeholder="напр. Привіт! Радий тебе бачити" autocomplete="off">
+              </label>
+            </div>
+
+            <div class="setup-section hidden" data-section="look">
+              <h2 class="wz-step-title"><svg class="ico wz-step-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c-4.7 0-8.5 3.6-8.5 8s3.8 8 8.5 8c1 0 1.8-.8 1.8-1.7 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.1 0-1 .8-1.7 1.8-1.7h2A4.4 4.4 0 0 0 21 9.3c-.6-3.3-4.4-5.8-9-5.8z"/><circle cx="7.8" cy="11.4" r="1.1"/><circle cx="10.4" cy="7.6" r="1.1"/><circle cx="15.2" cy="7.9" r="1.1"/></svg><span>Вигляд</span></h2>
+              <p class="wizard-lead">Тема й акцент усього інтерфейсу. Застосовується одразу
+                й зберігається в цьому браузері — на відповіді бота не впливає.</p>
+              <div class="wz-field">Тема
+                <div class="wz-cards wz-cards-sm" id="wzThemeCards"></div>
+              </div>
+              <div class="wz-field">Акцентний колір
+                <div class="accent-swatches" id="wzAccentSwatches" role="group" aria-label="Акцентний колір"></div>
+              </div>
+              <p class="wz-hint">Ці два налаштування — єдині, що не йдуть на сервер:
+                вони живуть у localStorage і діють лише тут.</p>
+            </div>
+
+            <div class="setup-section hidden" data-section="brain">
+              <h2 class="wz-step-title"><svg class="ico wz-step-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 4.5A2.5 2.5 0 0 0 7 7a2.4 2.4 0 0 0-1.6 4.2A2.6 2.6 0 0 0 6.6 16 2.4 2.4 0 0 0 11 17.4V6.7a2.2 2.2 0 0 0-1.5-2.2zM14.5 4.5A2.5 2.5 0 0 1 17 7a2.4 2.4 0 0 1 1.6 4.2A2.6 2.6 0 0 1 17.4 16 2.4 2.4 0 0 1 13 17.4V6.7a2.2 2.2 0 0 1 1.5-2.2z"/><path d="M12 17.6V21"/></svg><span>Мозок і ключі</span></h2>
+              <p class="wizard-lead">Модель, секретні ключі й жива перевірка звʼязку.</p>
+              <label class="wz-field">Модель за замовчуванням
+                <select id="wzModel"></select>
+              </label>
+              <label class="wz-field">Omni API-ключ <span class="wz-keystate" id="wzOmniState"></span>
+                <input type="password" id="wzOmniKey" maxlength="300" placeholder="лишити порожнім — не міняти" autocomplete="off">
+              </label>
+              <label class="wz-field">OpenClaw токен <span class="wz-keystate" id="wzOcState"></span>
+                <input type="password" id="wzOcToken" maxlength="300" placeholder="лишити порожнім — не міняти" autocomplete="off">
+              </label>
+              <div class="wz-testrow">
+                <button class="m3-btn m3-btn-outlined" id="wzTestBtn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13.4 3 6 13.2h4.9L10.6 21 18 10.8h-4.9z"/></svg><span>Перевірити звʼязок</span></button>
+                <span class="wz-test-result" id="wzTestResult"></span>
+              </div>
+              <p class="wz-hint">Ключі зберігаються локально у .env (не у фронтенд). Перевірка робить реальний запит до мозку.</p>
+            </div>
+
+            <div class="setup-section hidden" data-section="skills">
+              <h2 class="wz-step-title"><svg class="ico wz-step-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 8.4 5.4 4.6h13.2l1.2 3.8M4.2 8.4h15.6v9.5a1.6 1.6 0 0 1-1.6 1.5H5.8a1.6 1.6 0 0 1-1.6-1.5z"/><path d="M9.4 11.8a2.6 2.6 0 0 0 5.2 0"/></svg><span>Магазин умінь і MCP</span></h2>
+              <p class="wizard-lead">Шукай скіли в реєстрі OpenClaw або обирай куровані MCP. Встановлення проходить через OpenClaw.</p>
+              <div class="wz-store-search">
+                <input type="search" id="wzStoreQuery" maxlength="160" placeholder="Наприклад: календар, погода, браузер" autocomplete="off">
+                <select id="wzStoreKind" aria-label="Тип розширення">
+                  <option value="all">Усе</option>
+                  <option value="skills">Скіли</option>
+                  <option value="mcp">MCP</option>
+                </select>
+                <button class="btn btn-small" id="wzStoreSearch">Знайти</button>
+              </div>
+              <div class="wz-store-status" id="wzStoreStatus" aria-live="polite"></div>
+              <div class="wz-presets" id="wzPresets"></div>
+              <div class="wz-mcp-list" id="wzMcpList">Завантаження…</div>
+              <p class="wz-hint" id="wzSkillsNote"></p>
+            </div>
+
+            <div class="setup-section hidden" data-section="services">
+              <h2 class="wz-step-title"><svg class="ico wz-step-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M17.3 6.7a7.5 7.5 0 1 1-10.6 0"/></svg><span>Сервіси тіла</span></h2>
+              <p class="wizard-lead">Локальні сервіси. Запусти, що треба (те саме є у вкладці «Сервіси»).</p>
+              <div class="wz-svc" data-svc="vision">
+                <div class="wz-svc-info">
+                  <div class="wz-svc-name"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.6"/></svg><span>Vision (зір)</span></div>
+                  <div class="wz-svc-desc">Камера: детекція обличчя й руху (порт 8000).</div>
+                  <div class="wz-mcp-state" id="wzSvcState-vision"></div>
+                </div>
+                <button class="m3-btn m3-btn-tonal" data-wzsvc="vision">Запустити</button>
+              </div>
+              <div class="wz-svc" data-svc="display">
+                <div class="wz-svc-info">
+                  <div class="wz-svc-name"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.8" y="4.5" width="18.4" height="12.4" rx="2"/><path d="M8.5 20.5h7M12 16.9v3.6"/></svg><span>Display (дисплей)</span></div>
+                  <div class="wz-svc-desc">Обличчя-екран бота (порт 8001).</div>
+                  <div class="wz-mcp-state" id="wzSvcState-display"></div>
+                </div>
+                <button class="m3-btn m3-btn-tonal" data-wzsvc="display">Запустити</button>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Замість «Далі →» майстра — постійна смуга збереження -->
+          <div class="setup-actions">
+            <span class="setup-saved" id="setupSaved"></span>
+            <button class="m3-btn m3-btn-filled" id="setupSave">Зберегти</button>
+          </div>
+        </section>
+
+      </div>
+    </section>
+
   </main>
-
-  <!-- Майстер першого налаштування -->
-  <div class="wizard-overlay hidden" id="wizardOverlay">
-    <div class="wizard">
-      <aside class="wizard-rail">
-        <div class="wizard-brand">▞▚ НАЛАШТУВАННЯ</div>
-        <ol class="wizard-stepper" id="wizardStepper">
-          <li data-step="1"><span class="wz-num">1</span><span class="wz-ico">👤</span><span class="wz-label">Особистість</span></li>
-          <li data-step="2"><span class="wz-num">2</span><span class="wz-ico">🎚️</span><span class="wz-label">Стиль</span></li>
-          <li data-step="3"><span class="wz-num">3</span><span class="wz-ico">🧠</span><span class="wz-label">Мозок і ключі</span></li>
-          <li data-step="4"><span class="wz-num">4</span><span class="wz-ico">🧩</span><span class="wz-label">Уміння</span></li>
-          <li data-step="5"><span class="wz-num">5</span><span class="wz-ico">🔌</span><span class="wz-label">Сервіси</span></li>
-          <li data-step="6"><span class="wz-num">6</span><span class="wz-ico">✅</span><span class="wz-label">Готово</span></li>
-        </ol>
-      </aside>
-
-      <section class="wizard-main">
-        <button class="wizard-close" id="wizardClose" title="Закрити">✕</button>
-        <div class="wizard-body">
-
-          <div class="wizard-step" data-step="1">
-            <h2 class="wz-step-title">👤 Особистість бота</h2>
-            <p class="wizard-lead">Як звати бота, якою мовою й з яким характером він говорить.</p>
-            <label class="wz-field">Ім'я
-              <input type="text" id="wzName" maxlength="60" placeholder="Клод Бот" autocomplete="off">
-            </label>
-            <div class="wz-field">Мова відповідей
-              <div class="wz-cards wz-cards-sm" id="wzLangCards"></div>
-            </div>
-            <div class="wz-field">Характер
-              <div class="wz-cards" id="wzPersonaCards"></div>
-            </div>
-            <label class="wz-field">…або опиши характер своїми словами
-              <textarea id="wzPersonaCustom" maxlength="400" rows="2" placeholder="напр. дотепний, трохи саркастичний, любить котів"></textarea>
-            </label>
-          </div>
-
-          <div class="wizard-step hidden" data-step="2">
-            <h2 class="wz-step-title">🎚️ Стиль спілкування</h2>
-            <p class="wizard-lead">Ці параметри реально йдуть у промпт і змінюють відповіді.</p>
-            <div class="wz-field">Довжина відповідей
-              <div class="wz-seg" id="wzLenSeg"></div>
-            </div>
-            <div class="wz-toggle-row">
-              <label class="wz-toggle"><input type="checkbox" id="wzEmoji"><span class="wz-switch"></span>
-                <span>Вживати емодзі 😊</span></label>
-            </div>
-            <div class="wz-toggle-row">
-              <label class="wz-toggle"><input type="checkbox" id="wzSpont"><span class="wz-switch"></span>
-                <span>Спонтанні емоції у простої 🦀</span></label>
-            </div>
-            <label class="wz-field">Стартове привітання (необов'язково)
-              <input type="text" id="wzGreeting" maxlength="300" placeholder="напр. Привіт! Радий тебе бачити 👋" autocomplete="off">
-            </label>
-          </div>
-
-          <div class="wizard-step hidden" data-step="3">
-            <h2 class="wz-step-title">🧠 Мозок і ключі</h2>
-            <p class="wizard-lead">Модель, секретні ключі й жива перевірка звʼязку.</p>
-            <label class="wz-field">Модель за замовчуванням
-              <select id="wzModel"></select>
-            </label>
-            <label class="wz-field">Omni API-ключ <span class="wz-keystate" id="wzOmniState"></span>
-              <input type="password" id="wzOmniKey" maxlength="300" placeholder="лишити порожнім — не міняти" autocomplete="off">
-            </label>
-            <label class="wz-field">OpenClaw токен <span class="wz-keystate" id="wzOcState"></span>
-              <input type="password" id="wzOcToken" maxlength="300" placeholder="лишити порожнім — не міняти" autocomplete="off">
-            </label>
-            <div class="wz-testrow">
-              <button class="btn btn-small" id="wzTestBtn">⚡ Перевірити звʼязок</button>
-              <span class="wz-test-result" id="wzTestResult"></span>
-            </div>
-            <p class="wz-hint">Ключі зберігаються локально у .env (не у фронтенд). Перевірка робить реальний запит до мозку.</p>
-          </div>
-
-          <div class="wizard-step hidden" data-step="4">
-            <h2 class="wz-step-title">🧩 Уміння (MCP-сервери)</h2>
-            <p class="wizard-lead">Обери пресет або вмикай окремо — додається в OpenClaw.</p>
-            <div class="wz-presets" id="wzPresets"></div>
-            <div class="wz-mcp-list" id="wzMcpList">Завантаження…</div>
-            <p class="wz-hint" id="wzSkillsNote"></p>
-          </div>
-
-          <div class="wizard-step hidden" data-step="5">
-            <h2 class="wz-step-title">🔌 Сервіси тіла</h2>
-            <p class="wizard-lead">Локальні сервіси. Запусти, що треба (можна й пізніше в панелі «Сервіси»).</p>
-            <div class="wz-svc" data-svc="vision">
-              <div class="wz-svc-info">
-                <div class="wz-svc-name">👁 Vision (зір)</div>
-                <div class="wz-svc-desc">Камера: детекція обличчя й руху (порт 8000).</div>
-                <div class="wz-mcp-state" id="wzSvcState-vision"></div>
-              </div>
-              <button class="btn btn-small" data-wzsvc="vision">Запустити</button>
-            </div>
-            <div class="wz-svc" data-svc="display">
-              <div class="wz-svc-info">
-                <div class="wz-svc-name">🖥 Display (дисплей)</div>
-                <div class="wz-svc-desc">Обличчя-екран бота (порт 8001).</div>
-                <div class="wz-mcp-state" id="wzSvcState-display"></div>
-              </div>
-              <button class="btn btn-small" data-wzsvc="display">Запустити</button>
-            </div>
-          </div>
-
-          <div class="wizard-step hidden" data-step="6">
-            <h2 class="wz-step-title">✅ Готово!</h2>
-            <p class="wizard-lead">Підсумок налаштування:</p>
-            <ul class="wz-summary" id="wzSummary"></ul>
-            <p class="wz-hint">Натисни «Готово», щоб зберегти. Усе можна змінити пізніше через ⚙.</p>
-          </div>
-
-        </div>
-        <div class="wizard-nav">
-          <button class="btn" id="wizardBack">← Назад</button>
-          <span class="wizard-progress" id="wizardProgress"></span>
-          <button class="btn btn-accent" id="wizardNext">Далі →</button>
-        </div>
-      </section>
-    </div>
-  </div>
 
   <!-- Голосовий режим -->
   <div class="voice-overlay hidden" id="voiceOverlay">
     <div class="voice-modal">
-      <button class="wizard-close" id="voiceClose" title="Вийти з голосового режиму">✕</button>
-      <div class="voice-title">🎙 Голосовий режим</div>
+      <button class="m3-icon-btn voice-close" id="voiceClose" title="Вийти з голосового режиму" aria-label="Закрити"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8"/></svg></button>
+      <div class="voice-title"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12h2M8 7.5v9M12 4.5v15M16 8.5v7M20.5 12h-2"/></svg><span>Голосовий режим</span></div>
       <button class="voice-orb" id="voiceOrb" title="Натисни і говори">
-        <span class="voice-orb-icon" id="voiceOrbIcon">🎤</span>
+        <span class="voice-orb-icon" id="voiceOrbIcon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="10.5" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M8.8 21h6.4"/></svg></span>
       </button>
       <div class="voice-status" id="voiceStatus">Натисни коло і говори…</div>
       <div class="voice-picker" id="voicePicker" title="Голос краба"></div>
@@ -340,9 +364,23 @@
     </div>
   </div>
 
+
+  <!-- Мобільна навігація (M3 Navigation Bar). Вісім вкладок у нижню смугу не
+       влазять — п'ять головних лишаються тут, решта живе в аркуші «Ще».
+       Кнопки будує app.js із тих самих data-tab, тому розділ ніколи не
+       розʼїдеться з десктопною навігацією. -->
+  <nav class="mobile-nav" id="mobileNav" aria-label="Розділи"></nav>
+
+  <div class="sheet-scrim hidden" id="moreScrim"></div>
+  <div class="more-sheet hidden" id="moreSheet" role="dialog" aria-modal="true" aria-label="Інші розділи">
+    <div class="sheet-handle"></div>
+    <div class="more-sheet-list" id="moreSheetList"></div>
+  </div>
+
   <!-- Неблокуючі сповіщення -->
   <div class="toasts" id="toasts"></div>
 
+  <script src="/static/icons.js"></script>
   <script src="/static/audio-level.js"></script>
   <script src="/static/crab.js"></script>
   <script src="/static/app.js"></script>

@@ -1,19 +1,19 @@
 :root {
-  --bg: #F0EEE6;
-  --bg-panel: #FBFAF7;
-  --bg-inset: #E9E7DD;
-  --bg-card: #F5F3EC;
-  --border: #E4E1D6;
-  --border-bright: #D2CEC0;
-  --text: #2B2A26;
-  --text-muted: #83817A;
-  --green: #C96442;
-  --ok: #5F8B4C;
-  --blue: #5A5750;
-  --cyan: #4E8A88;
-  --yellow: #B4802E;
-  --red: #B4443A;
-  --radius: 10px;
+  --bg: #eee4d2;
+  --bg-panel: #fffaf1;
+  --bg-inset: #e5d5bc;
+  --bg-card: #f7eddd;
+  --border: #dbc9ad;
+  --border-bright: #c8ae8c;
+  --text: #30271f;
+  --text-muted: #887563;
+  --green: #b95f3d;
+  --ok: #718b62;
+  --blue: #756451;
+  --cyan: #4f8580;
+  --yellow: #a9742d;
+  --red: #a84f45;
+  --radius: 24px;
   --font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, sans-serif;
   --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
@@ -34,6 +34,10 @@ html, body, #root {
 .memory-app {
   display: grid;
   grid-template-columns: 280px 1fr;
+  /* Без явних рядків смуга авторизації діставала стільки ж висоти, скільки
+     й вміст (неявні рядки діляться порівну): над панеллю зяяла порожня
+     стрічка ~250px із єдиною позначкою. Смуга бере рівно свою висоту. */
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
   height: 100%;
   min-height: 360px;
@@ -42,6 +46,22 @@ html, body, #root {
   color: var(--text);
   background: var(--bg);
   padding: 14px;
+}
+
+.memory-authbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-height: 0;
+  padding: 0;
+}
+
+/* Розділювальна лінія — лише коли в смузі справді щось є. Порожня рамка
+   над панеллю читалась як «тут щось не завантажилось». */
+.memory-authbar:not(:empty) {
+  padding: 6px 4px;
 }
 
 .memory-sidebar {
@@ -57,34 +77,46 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Вкладки пам'яті — сегментований перемикач Material 3 (як Чат/Код у
+   чаті): один вибір із двох, спільна оболонка, без проміжку між
+   сегментами. Капс прибрано — в українській він читається гірше. */
 .memory-tabs {
   display: flex;
-  gap: 6px;
+  align-items: stretch;
+  height: 40px;
+  gap: 0;
+  border: 1px solid var(--m3-outline, var(--border-bright));
+  border-radius: var(--shape-full, 999px);
+  overflow: hidden;
 }
 
 .memory-tabs button {
   flex: 1;
+  min-width: 0;
   font-family: var(--font);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--m3-on-surface-variant, var(--text-muted));
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--m3-outline, var(--border-bright));
+  border-radius: 0;
+  padding: 0 12px;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  transition: background 200ms ease, color 200ms ease;
 }
+
+.memory-tabs button:last-child { border-right: 0; }
 
 .memory-tabs button:hover {
   border-color: var(--border-bright);
 }
 
 .memory-tabs button.active {
-  border-color: var(--green);
-  color: var(--green);
-  background: rgba(201, 100, 66, 0.08);
+  background: var(--m3-secondary-container, var(--bg-inset));
+  color: var(--m3-on-secondary-container, var(--green));
+  font-weight: 600;
 }
 
 .memory-new {
@@ -525,13 +557,23 @@ html, body, #root {
 
 @media (max-width: 760px) {
   .memory-app {
-    grid-template-columns: 1fr;
-    grid-template-rows: 200px 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    /* Було `200px 1fr` на ТРИ елементи (смуга авторизації, список,
+       вміст): перший рядок віддавав 200px порожній смузі, другий —
+       списку, а вміст падав у неявний третій. Згори зяяло ~460px
+       пустоти, і власне нотатка починалась за половиною екрана.
+       Тепер рядків стільки ж, скільки елементів. */
+    grid-template-rows: auto minmax(120px, 34dvh) minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
   }
 
   .memory-sidebar {
     overflow-y: auto;
   }
+
+  /* Порожня смуга не має лишати по собі відступ */
+  .memory-authbar:empty { display: none; }
 }
 
 ::-webkit-scrollbar {
@@ -546,4 +588,33 @@ html, body, #root {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* Спільна з оболонкою нічна графітова тема. */
+:root[data-theme="dark"] {
+  --bg: #171819;
+  --bg-panel: #222426;
+  --bg-inset: #2c2f31;
+  --bg-card: #292c2e;
+  --border: #3a3e41;
+  --border-bright: #5a6064;
+  --text: #e8e4dc;
+  --text-muted: #9a9da0;
+  --green: #d17a58;
+  --ok: #8ca879;
+  --blue: #b8b1a5;
+  --cyan: #76b5b0;
+  --yellow: #d7a65b;
+  --red: #d87869;
+}
+
+:root[data-theme="dark"] .memory-app,
+:root[data-theme="dark"] .memory-shell,
+:root[data-theme="dark"] .file-list,
+:root[data-theme="dark"] .editor-pane,
+:root[data-theme="dark"] .memory-map,
+:root[data-theme="dark"] .auth-gate-card {
+  background: var(--bg-panel);
+  color: var(--text);
+  border-color: var(--border);
 }

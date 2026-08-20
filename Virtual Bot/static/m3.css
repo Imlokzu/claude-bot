@@ -1,0 +1,1242 @@
+/* ============================================================
+   Клод Бот — шар Material 3 поверх палітри Claude
+   ------------------------------------------------------------
+   Палітра лишається Клодівською (тепла крейда + кораловий акцент),
+   а СТРУКТУРУ дає Material 3: ролі кольорів (surface-container-*,
+   primary-container, outline-variant), шкала форми, елевація,
+   state layers і криві руху.
+
+   Ролі рахуються через color-mix від уже наявних --bg/--text/--green,
+   тому і світла, і темна тема, і всі чотири акценти отримують
+   узгоджений набір автоматично — без дубля палітри на кожну тему.
+   ============================================================ */
+
+:root {
+  /* ---- Ролі поверхонь (M3 surface roles) ---- */
+  --m3-surface: var(--bg-panel);
+  --m3-surface-dim: color-mix(in srgb, var(--bg) 92%, var(--text) 8%);
+  --m3-surface-container-lowest: color-mix(in srgb, var(--bg-panel) 92%, #fff 8%);
+  --m3-surface-container-low: var(--bg-card);
+  --m3-surface-container: color-mix(in srgb, var(--bg-card) 82%, var(--text) 4%);
+  --m3-surface-container-high: var(--bg-inset);
+  --m3-surface-container-highest: color-mix(in srgb, var(--bg-inset) 88%, var(--text) 7%);
+
+  --m3-on-surface: var(--text);
+  --m3-on-surface-variant: var(--text-muted);
+  --m3-outline: var(--border-bright);
+  --m3-outline-variant: var(--border);
+
+  /* ---- Акцент ---- */
+  --m3-primary: var(--green);
+  --m3-on-primary: var(--bg-panel);
+  --m3-primary-container: color-mix(in srgb, var(--green) 16%, var(--bg-panel));
+  --m3-on-primary-container: color-mix(in srgb, var(--green) 78%, var(--text));
+
+  --m3-secondary-container: color-mix(in srgb, var(--green) 22%, var(--bg-card));
+  --m3-on-secondary-container: color-mix(in srgb, var(--green) 82%, var(--text));
+
+  --m3-error: var(--red);
+  --m3-error-container: color-mix(in srgb, var(--red) 15%, var(--bg-panel));
+  --m3-on-error-container: color-mix(in srgb, var(--red) 76%, var(--text));
+
+  --m3-success: var(--ok);
+  --m3-success-container: color-mix(in srgb, var(--ok) 16%, var(--bg-panel));
+
+  /* ---- Шкала форми (M3 shape scale) ---- */
+  --shape-xs: 4px;
+  --shape-sm: 8px;
+  --shape-md: 12px;
+  --shape-lg: 16px;
+  --shape-xl: 28px;
+  --shape-full: 999px;
+
+  /* ---- Елевація: у теплій гамі тінь коричнева, не чорна ---- */
+  --elev-0: none;
+  --elev-1: 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent),
+            0 1px 3px 1px color-mix(in srgb, var(--text) 6%, transparent);
+  --elev-2: 0 1px 2px color-mix(in srgb, var(--text) 11%, transparent),
+            0 2px 6px 2px color-mix(in srgb, var(--text) 7%, transparent);
+  --elev-3: 0 4px 8px 3px color-mix(in srgb, var(--text) 8%, transparent),
+            0 1px 3px color-mix(in srgb, var(--text) 12%, transparent);
+  --elev-4: 0 6px 10px 4px color-mix(in srgb, var(--text) 8%, transparent),
+            0 2px 3px color-mix(in srgb, var(--text) 12%, transparent);
+
+  /* ---- State layers: непрозорості з специфікації M3 ---- */
+  --state-hover: 0.08;
+  --state-focus: 0.10;
+  --state-pressed: 0.10;
+  --state-drag: 0.16;
+
+  /* ---- Рух: криві M3 ---- */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0, 1);
+  --dur-short: 100ms;
+  --dur-medium: 200ms;
+  --dur-long: 350ms;
+
+  /* ---- Мінімальна ціль дотику ---- */
+  --touch: 48px;
+}
+
+/* ============================================================
+   State layer — напівпрозора плівка кольору поверх елемента.
+   У M3 hover/focus/pressed не міняють колір фону, а КЛАДУТЬ шар
+   over it: тому активна й неактивна кнопка реагують однаково
+   й на будь-якому фоні.
+   ============================================================ */
+
+.m3-state {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.m3-state::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short) var(--ease-standard);
+  z-index: -1;
+}
+
+.m3-state:hover:not(:disabled)::after { opacity: var(--state-hover); }
+.m3-state:focus-visible:not(:disabled)::after { opacity: var(--state-focus); }
+.m3-state:active:not(:disabled)::after { opacity: var(--state-pressed); }
+
+/* Кільце фокуса — одне на весь інтерфейс, щоб клавіатурна навігація
+   виглядала однаково в кожній панелі. */
+.m3-focus-ring:focus-visible,
+button:focus-visible,
+a:focus-visible,
+[role="tab"]:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--m3-primary) 55%, transparent);
+  outline-offset: 2px;
+  /* НЕ ставимо тут border-radius. `button:focus-visible` (0,1,1) сильніше за
+     `.m3-btn` (0,1,0), тому `inherit` брав радіус БАТЬКА: пігулка 999px при
+     фокусі з клавіатури ставала гострокутним прямокутником. Обведення й так
+     повторює власний радіус елемента — нічого задавати не потрібно. */
+}
+
+/* ============================================================
+   Сегментований перемикач (M3 segmented button)
+   Один вибір із кількох рівнозначних. Обраний сегмент — заливка
+   secondary-container з галочкою: у M3 саме галочка, а не лише
+   колір, відрізняє обране (працює і для дальтоніків, і в ч/б).
+   ============================================================ */
+
+.m3-segmented {
+  display: inline-flex;
+  align-items: stretch;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--m3-outline);
+  border-radius: var(--shape-full);
+  background: transparent;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.m3-segmented > button {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 62px;
+  padding: 0 16px;
+  border: 0;
+  border-right: 1px solid var(--m3-outline);
+  background: transparent;
+  color: var(--m3-on-surface-variant);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-medium) var(--ease-standard),
+              color var(--dur-medium) var(--ease-standard);
+}
+
+.m3-segmented > button:last-child { border-right: 0; }
+
+.m3-segmented > button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short) var(--ease-standard);
+  z-index: -1;
+}
+
+.m3-segmented > button:hover:not(:disabled)::after { opacity: var(--state-hover); }
+.m3-segmented > button:active:not(:disabled)::after { opacity: var(--state-pressed); }
+
+.m3-segmented > button.active {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+  font-weight: 600;
+}
+
+.m3-segmented > button:disabled {
+  color: color-mix(in srgb, var(--m3-on-surface) 38%, transparent);
+  cursor: not-allowed;
+}
+
+/* Галочка обраного сегмента: виїжджає, розсуваючи підпис. Ширина
+   анімується разом із opacity, інакше текст «стрибав» би стрибком. */
+.m3-segmented .seg-check {
+  width: 0;
+  height: 18px;
+  opacity: 0;
+  overflow: hidden;
+  flex: 0 0 auto;
+  transition: width var(--dur-medium) var(--ease-emphasized),
+              opacity var(--dur-short) var(--ease-standard);
+}
+
+.m3-segmented > button.active .seg-check {
+  width: 18px;
+  opacity: 1;
+}
+
+.m3-segmented .seg-check svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .m3-segmented .seg-check { transition: none; }
+}
+
+/* ============================================================
+   Кнопки M3: filled / tonal / outlined / text / icon
+   ============================================================ */
+
+.m3-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--shape-full);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  text-transform: none;
+  transition: box-shadow var(--dur-medium) var(--ease-standard),
+              background var(--dur-medium) var(--ease-standard);
+}
+
+.m3-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short) var(--ease-standard);
+  z-index: -1;
+}
+
+.m3-btn:hover:not(:disabled)::after { opacity: var(--state-hover); }
+.m3-btn:active:not(:disabled)::after { opacity: var(--state-pressed); }
+
+.m3-btn:disabled {
+  cursor: not-allowed;
+  background: color-mix(in srgb, var(--m3-on-surface) 12%, transparent);
+  color: color-mix(in srgb, var(--m3-on-surface) 38%, transparent);
+  box-shadow: none;
+}
+
+.m3-btn-filled {
+  /* strong, а не primary: на заливці лежить світлий текст, і брендовий
+     тон акценту не добирав до WCAG AA у світлій темі. Див. коментар
+     про --m3-primary-strong у theme-overrides.css. */
+  background: var(--m3-primary-strong, var(--m3-primary));
+  color: var(--m3-on-primary);
+  box-shadow: var(--elev-1);
+}
+.m3-btn-filled:hover:not(:disabled) { box-shadow: var(--elev-2); }
+
+.m3-btn-tonal {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+
+.m3-btn-outlined {
+  background: transparent;
+  color: var(--m3-primary);
+  box-shadow: inset 0 0 0 1px var(--m3-outline);
+}
+.m3-btn-outlined:hover:not(:disabled) {
+  box-shadow: inset 0 0 0 1px var(--m3-primary);
+}
+.m3-btn-outlined:disabled {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--m3-on-surface) 12%, transparent);
+}
+
+.m3-btn-text {
+  background: transparent;
+  color: var(--m3-primary);
+  padding: 0 14px;
+}
+.m3-btn-text:disabled { background: transparent; }
+
+.m3-btn-danger {
+  background: var(--m3-error-container);
+  color: var(--m3-on-error-container);
+}
+
+.m3-btn .ico { width: 18px; height: 18px; }
+
+/* Кругла іконкова кнопка. 40px на вигляд, але ціль дотику доводиться
+   до 48px через ::before — так на телефоні в неї можна влучити,
+   а на десктопі вона не роздувається. */
+.m3-icon-btn {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--shape-full);
+  background: transparent;
+  color: var(--m3-on-surface-variant);
+  cursor: pointer;
+  overflow: hidden;
+  transition: color var(--dur-medium) var(--ease-standard);
+}
+
+.m3-icon-btn::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--touch);
+  height: var(--touch);
+  transform: translate(-50%, -50%);
+}
+
+.m3-icon-btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short) var(--ease-standard);
+  z-index: -1;
+}
+
+.m3-icon-btn:hover:not(:disabled)::after { opacity: var(--state-hover); }
+.m3-icon-btn:active:not(:disabled)::after { opacity: var(--state-pressed); }
+.m3-icon-btn:hover:not(:disabled) { color: var(--m3-on-surface); }
+.m3-icon-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+.m3-icon-btn.on { color: var(--m3-primary); }
+.m3-icon-btn .ico { width: 20px; height: 20px; }
+
+/* ============================================================
+   Перемикач M3 (switch). Замінює нативний checkbox: нативний
+   малюється системним синім і випадає з палітри.
+   ============================================================ */
+
+.m3-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--m3-on-surface);
+  min-height: 32px;
+}
+
+.m3-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.m3-switch-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 32px;
+  border-radius: var(--shape-full);
+  background: var(--m3-surface-container-highest);
+  box-shadow: inset 0 0 0 2px var(--m3-outline);
+  transition: background var(--dur-medium) var(--ease-standard),
+              box-shadow var(--dur-medium) var(--ease-standard);
+}
+
+.m3-switch-track::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--shape-full);
+  background: var(--m3-outline);
+  transform: translateY(-50%);
+  transition: left var(--dur-medium) var(--ease-emphasized),
+              width var(--dur-medium) var(--ease-emphasized),
+              height var(--dur-medium) var(--ease-emphasized),
+              background var(--dur-medium) var(--ease-standard);
+}
+
+.m3-switch input:checked + .m3-switch-track {
+  background: var(--m3-primary-strong, var(--m3-primary));
+  box-shadow: inset 0 0 0 2px var(--m3-primary-strong, var(--m3-primary));
+}
+
+.m3-switch input:checked + .m3-switch-track::after {
+  left: 26px;
+  width: 24px;
+  height: 24px;
+  background: var(--m3-on-primary);
+}
+
+.m3-switch input:focus-visible + .m3-switch-track {
+  outline: 3px solid color-mix(in srgb, var(--m3-primary) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.m3-switch input:disabled + .m3-switch-track { opacity: 0.38; }
+.m3-switch input:disabled ~ * { opacity: 0.38; }
+
+@media (prefers-reduced-motion: reduce) {
+  .m3-switch-track::after { transition: none; }
+}
+
+/* ============================================================
+   Чипи (M3 assist / filter chip)
+   ============================================================ */
+
+.m3-chip {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--m3-outline);
+  border-radius: var(--shape-sm);
+  background: transparent;
+  color: var(--m3-on-surface-variant);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-medium) var(--ease-standard),
+              color var(--dur-medium) var(--ease-standard);
+}
+
+.m3-chip::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short) var(--ease-standard);
+  z-index: -1;
+}
+.m3-chip:hover:not(:disabled)::after { opacity: var(--state-hover); }
+
+.m3-chip.active {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+  box-shadow: none;
+}
+
+.m3-chip .ico { width: 16px; height: 16px; }
+
+/* ============================================================
+   Текстові поля (M3 filled text field)
+   Підкреслення знизу товщає й фарбується акцентом у фокусі —
+   це і є «filled» варіант M3, найближчий до теплої гами Клода.
+   ============================================================ */
+
+.m3-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.m3-field > .m3-label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--m3-on-surface-variant);
+}
+
+.m3-field input[type="text"],
+.m3-field input[type="password"],
+.m3-field input[type="search"],
+.m3-field textarea,
+.m3-field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 14px;
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--m3-on-surface);
+  background: var(--m3-surface-container-high);
+  border: 0;
+  border-bottom: 1px solid var(--m3-outline);
+  border-radius: var(--shape-xs) var(--shape-xs) 0 0;
+  transition: background var(--dur-medium) var(--ease-standard),
+              border-color var(--dur-medium) var(--ease-standard),
+              box-shadow var(--dur-medium) var(--ease-standard);
+}
+
+.m3-field input:hover,
+.m3-field textarea:hover,
+.m3-field select:hover {
+  background: var(--m3-surface-container-highest);
+}
+
+.m3-field input:focus,
+.m3-field textarea:focus,
+.m3-field select:focus {
+  outline: none;
+  border-bottom: 2px solid var(--m3-primary);
+  padding-bottom: 10px;
+}
+
+/* ============================================================
+   Списки (M3 list item)
+   ============================================================ */
+
+.m3-list { display: flex; flex-direction: column; }
+
+.m3-list-item {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--m3-on-surface);
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--shape-md);
+  transition: background var(--dur-medium) var(--ease-standard);
+}
+
+.m3-list-item::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short) var(--ease-standard);
+  z-index: -1;
+}
+.m3-list-item:hover::after { opacity: var(--state-hover); }
+
+.m3-list-item.active {
+  background: var(--m3-secondary-container);
+  color: var(--m3-on-secondary-container);
+}
+
+.m3-list-item .m3-list-head { font-size: 14px; font-weight: 500; }
+.m3-list-item .m3-list-sub {
+  font-size: 12px;
+  color: var(--m3-on-surface-variant);
+  margin-top: 2px;
+}
+.m3-list-item.active .m3-list-sub { color: inherit; opacity: 0.78; }
+
+/* ============================================================
+   Типографіка (шкала M3, гарнітури Клода)
+   Display/headline — серіф Клода; title/body/label — гротеск.
+   ============================================================ */
+
+.t-display {
+  font-family: var(--font-serif);
+  font-size: 30px;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.t-headline {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  line-height: 1.28;
+  font-weight: 600;
+}
+.t-title {
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+}
+.t-body {
+  font-size: 14px;
+  line-height: 1.55;
+  font-weight: 400;
+}
+.t-label {
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* ============================================================
+   Розкладка панелей: висота
+   ------------------------------------------------------------
+   Панелі «Сервіси», «Логи», «Файли», «Пам'ять» раніше тулилися
+   вгорі, а під ними лишалося пів екрана порожнечі. Причина —
+   .dashboard-panel не мала висоти, тож картка бралася за вміст.
+   Тягнемо активну панель на вільну висоту вікна, а внутрішні
+   картки — на всю панель.
+   ============================================================ */
+
+.dashboard {
+  /* 52px шапка + 48px вкладки + відступи */
+  min-height: calc(100dvh - 100px);
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-panel.active {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-panel.active > .panel,
+.dashboard-panel.active > .dashboard-grid,
+.dashboard-panel.active > .setup-page {
+  flex: 1;
+  min-height: 0;
+  /* `.dashboard-grid` має `margin: 0 auto` для центрування. У ФЛЕКС-контейнері
+     (а .dashboard-panel.active тепер саме такий) авто-поля на поперечній осі
+     скасовують stretch і стискають елемент ДО ВМІСТУ. Через це панель
+     «Пам'ять» займала ~55% ширини, а «Сервіси» на телефоні — 253px із 390.
+     Те саме ламало .setup-page: її ширина йшла за вмістом розділу, тому
+     ліва рейка «стрибала» по горизонталі на ~200px при кожному перемиканні.
+     Явна ширина повертає розтягування, зберігаючи центрування за max-width. */
+  width: 100%;
+}
+
+/* ============================================================
+   Чат — застосунок, а не документ
+   ------------------------------------------------------------
+   `.dashboard` мала лише `min-height`, тобто НЕ мала визначеної
+   висоти. Через це весь ланцюг flex-контейнерів рахувався від
+   вмісту: список із двадцяти чатів (958px) розпирав сторінку до
+   1150px при вікні 900px. Наслідок — поле вводу опинялось нижче
+   межі екрана, а після першого повідомлення сторінка з'їжджала
+   і липкі шапка з вкладками накривали саме повідомлення.
+
+   У чаті прокручуватися має РОЗМОВА, а не сторінка. Тому тут
+   висота фіксована, а прокрутка живе всередині: у списку чатів
+   (.session-list-items) і в стрічці (.chat-messages).
+   ============================================================ */
+
+body[data-tab="chat"] .dashboard {
+  /* 52px шапка + 48px вкладки */
+  height: calc(100dvh - 100px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+body[data-tab="chat"] .chat-grid {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Сервіси — єдина панель, якій висота НЕ потрібна: два рядки, і все.
+   Розтягнута на весь екран, вона виглядала б порожньою коробкою. */
+.services-grid {
+  align-content: start;
+}
+
+.services-grid > .panel {
+  flex: 0 0 auto;
+}
+
+/* Пам'ять і файли: React-острів має заповнити картку, інакше сам
+   острів лишається заввишки з вміст, а картка — з екран. */
+.area-memory,
+.area-workspace,
+.area-browser {
+  flex: 1;
+  min-height: 0;
+}
+
+.area-memory > div,
+.area-workspace > div,
+.area-browser > div {
+  height: 100%;
+  min-height: 0;
+}
+
+/* Корені React-панелей — це РЯДКОВІ flex-контейнери (#memory-panel-root
+   та ін. у style.css). Кореневий вузол застосунку всередині них має
+   flex-grow: 0 за замовчуванням, тому брався за вмістом: панель «Пам'ять»
+   малювалась на 764px усередині контейнера на 1370px, а праворуч зяяла
+   порожнеча. Явно віддаємо дитині всю доступну ширину й висоту. */
+#memory-panel-root > *,
+#workspace-panel-root > *,
+#browser-panel-root > * {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  /* Панелі оголошують собі `height: 100%`, але відсоток рахується від
+     батька БЕЗ заданої висоти (там лише `flex: 1`), тож за специфікацією
+     він падає назад на auto — звідси 396px замість 730px. Знімаємо
+     відсоток і віддаємо висоту flex-розкладці: stretch працює тільки
+     тоді, коли власної висоти в елемента немає. */
+  height: auto;
+  align-self: stretch;
+}
+
+.area-console {
+  flex: 1;
+  min-height: 0;
+}
+
+.console-log {
+  flex: 1;
+  min-height: 200px;
+}
+
+/* Зір: кадр займає доступну висоту, але не викидає кнопки за екран —
+   раніше «Потік» і «Снапшот» опинялися нижче видимої області. */
+.vision-grid {
+  align-items: start;
+}
+
+.area-vision .vision-view {
+  flex: 1;
+  min-height: 240px;
+  max-height: calc(100dvh - 300px);
+}
+
+/* ============================================================
+   Мобільна навігація (M3 Navigation Bar)
+   ------------------------------------------------------------
+   На телефоні верхній ряд вкладок нечитабельний і недосяжний
+   великим пальцем. Заміняємо його нижньою смугою: 5 цілей по
+   64px, активний індикатор-пігулка під іконкою.
+   ============================================================ */
+
+.mobile-nav {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+  /* Панель жестів iOS/Android не має перекривати кнопки */
+  padding: 8px 6px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--m3-surface) 96%, transparent);
+  border-top: 1px solid var(--m3-outline-variant);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 -2px 12px color-mix(in srgb, var(--m3-on-surface) 6%, transparent);
+}
+
+.mnav-item {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--m3-on-surface-variant);
+  font-family: var(--font);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Активний індикатор M3: пігулка 64×32 під іконкою. Саме вона,
+   а не колір підпису, відповідає за «ти тут» — колір самотою
+   не проходить перевірку на контраст у світлій темі. */
+.mnav-pill {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 32px;
+  max-width: 100%;
+  border-radius: var(--shape-full);
+  overflow: hidden;
+  transition: background var(--dur-medium) var(--ease-emphasized);
+}
+
+.mnav-pill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity var(--dur-short) var(--ease-standard);
+  z-index: -1;
+}
+
+.mnav-item:active .mnav-pill::after { opacity: var(--state-pressed); }
+
+.mnav-pill .ico { width: 22px; height: 22px; }
+
+.mnav-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mnav-item.active {
+  color: var(--m3-on-secondary-container);
+}
+
+.mnav-item.active .mnav-pill {
+  background: var(--m3-secondary-container);
+}
+
+.mnav-item.active .mnav-label {
+  font-weight: 700;
+}
+
+/* ---- Аркуш «Ще» (M3 bottom sheet) ---- */
+
+.sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: color-mix(in srgb, var(--m3-on-surface) 32%, transparent);
+  animation: scrimIn var(--dur-medium) var(--ease-standard);
+}
+
+@keyframes scrimIn { from { opacity: 0; } }
+
+.more-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 71;
+  padding: 8px 12px calc(20px + env(safe-area-inset-bottom, 0px));
+  background: var(--m3-surface-container-low);
+  border-radius: var(--shape-xl) var(--shape-xl) 0 0;
+  box-shadow: var(--elev-3);
+  animation: sheetIn var(--dur-long) var(--ease-emphasized);
+  max-height: 72dvh;
+  overflow-y: auto;
+}
+
+@keyframes sheetIn { from { transform: translateY(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .more-sheet, .sheet-scrim { animation: none; }
+}
+
+/* Ручка згори — жестова підказка M3, що аркуш тягнеться/закривається */
+.sheet-handle {
+  width: 32px;
+  height: 4px;
+  margin: 4px auto 12px;
+  border-radius: var(--shape-full);
+  background: color-mix(in srgb, var(--m3-on-surface-variant) 40%, transparent);
+}
+
+.more-sheet-list { display: flex; flex-direction: column; gap: 2px; }
+.more-sheet-list .ico { width: 22px; height: 22px; }
+
+body.sheet-open { overflow: hidden; }
+
+/* ============================================================
+   Планшет: 700–1000px
+   ============================================================ */
+
+@media (max-width: 1000px) {
+  .setup-page {
+    grid-template-columns: 1fr;
+  }
+
+  /* Рейка налаштувань лягає горизонтальною стрічкою чипів: вертикальна
+     колонка на планшеті з'їдала третину ширини заради шести пунктів. */
+  .setup-rail {
+    position: static;
+    display: flex;
+    /* Базове правило робить рейку колонкою. Без явного row тут
+       `align-items: center` центрував стрічку по ГОРИЗОНТАЛІ, і список
+       ширший за екран зрізало зліва — до першого розділу («Особистість»)
+       не можна було доскролити, бо scrollLeft не буває відʼємним. */
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 10px 12px;
+  }
+
+  /* Стрічка не має стискатися до ширини контейнера — вона має вилазити
+     за нього й прокручуватись. */
+  .setup-nav { flex: 0 0 auto; }
+
+  .setup-rail::-webkit-scrollbar { display: none; }
+  .setup-rail-title, .setup-rail-note { display: none; }
+
+  .setup-nav {
+    display: flex;
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .setup-nav li {
+    flex: 0 0 auto;
+    /* 44px, не 40: чипи рейки — головна навігація налаштувань на телефоні */
+    min-height: 44px;
+    padding: 0 16px;
+    box-shadow: inset 0 0 0 1px var(--m3-outline);
+  }
+
+  .setup-nav li.active { box-shadow: none; }
+}
+
+/* ============================================================
+   Телефон: ≤ 700px
+   ============================================================ */
+
+@media (max-width: 700px) {
+  /* Верхній ряд вкладок поступається місцем нижній навігації */
+  .dashboard-tabs { display: none; }
+  .mobile-nav { display: flex; }
+
+  .topbar {
+    padding: 10px 14px;
+    min-height: 52px;
+  }
+
+  .brand { font-size: 14px; letter-spacing: 0.08em; }
+  .brand-sub { display: none; }
+
+  .dashboard {
+    padding: 12px 12px 0;
+    /* Місце під нижню смугу: 64px кнопки + власний safe-area */
+    padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    min-height: calc(100dvh - 52px);
+  }
+
+  .dashboard-grid { gap: 12px; }
+
+  .panel {
+    padding: 16px;
+    border-radius: var(--shape-lg);
+  }
+
+  .panel-title { font-size: 18px; }
+
+  /* Обличчя бота на телефоні — смуга згори, а не колонка збоку:
+     у вертикальному екрані другій колонці нема де стояти. */
+  .chat-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "face" "chat";
+    grid-template-rows: auto minmax(0, 1fr);
+    height: calc(100dvh - 150px);
+  }
+
+  .chat-grid .area-face {
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+  }
+
+  .chat-grid .face-screen {
+    min-height: 72px;
+    height: 72px;
+    width: 120px;
+    flex: 0 0 auto;
+  }
+
+  .chat-grid .face-test {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .vision-grid,
+  .services-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "vision" "status";
+  }
+
+  .area-vision .vision-view { max-height: 46dvh; }
+
+  /* Кнопки тягнуться на всю доступну ширину, але лишаються в РЯДКУ:
+     стовпчик із двох кнопок «Старт/Стоп» виглядав як два різні блоки,
+     хоча це одна пара дій над одним сервісом. */
+  .btn-row {
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .btn-row > .btn,
+  .btn-row > .m3-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: var(--touch);
+  }
+
+  /* Рядок сервісу на телефоні: назва зверху, дії окремим рядком під нею.
+     Поруч вони тиснули підпис «зупинено» в два рядки. */
+  .service-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 16px;
+  }
+
+  .service-info { justify-content: flex-start; }
+
+  .m3-btn { min-height: 44px; }
+
+  /* Картки характеру — в одну колонку: у дві на 360px підпис
+     «уважний і розважливий» ламався на три рядки. */
+  .wz-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* А от картки мов підпису не мають — там дві колонки читаються нормально
+     і список із пʼяти мов не розтягується на пів екрана прокрутки. */
+  .wz-cards-sm {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .setup-actions {
+    position: sticky;
+    bottom: 0;
+    background: var(--m3-surface);
+    border-top: 1px solid var(--m3-outline-variant);
+    padding: 12px;
+    margin: 0 -16px -16px;
+  }
+
+  .setup-actions .m3-btn { flex: 1; }
+
+  .m3-segmented { height: 44px; }
+
+  .console-log { font-size: 11px; }
+
+  /* Довгий шлях робочої теки на 360px розпирав панель убік */
+  .area-workspace, .area-browser { overflow-x: hidden; }
+}
+
+/* Вузькі телефони (≤400px): підписи в нижній смузі стають тіснішими */
+@media (max-width: 400px) {
+  .mnav-label { font-size: 10px; }
+  .mnav-pill { width: 56px; }
+}
+
+/* ============================================================
+   Доступність
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Режим високого контрасту: межі мають лишатися видимими, коли
+   система просить максимальний контраст. */
+@media (prefers-contrast: more) {
+  :root {
+    --m3-outline: var(--text);
+    --m3-outline-variant: color-mix(in srgb, var(--text) 60%, transparent);
+  }
+}
+
+
+/* ============================================================
+   Цілі дотику на телефоні
+   ------------------------------------------------------------
+   Кнопки, що прийшли з antd і власних React-панелей, малюються
+   у 23–34px заввишки. Пальцем у них не влучити: рекомендований
+   мінімум — 44px (Apple HIG) / 48dp (Material). Доводимо саме
+   ті місця, куди справді тикають.
+   ============================================================ */
+
+@media (max-width: 700px) {
+  /* Вкладки «Нотатки / Карта памʼяті» в панелі памʼяті */
+  .memory-tabs button,
+  .mp-tabs button {
+    min-height: 44px;
+    padding-inline: 16px;
+  }
+
+  /* Рядки файлів і кнопки панелі «Файли» */
+  .ws-row {
+    min-height: 44px;
+    padding-block: 10px;
+  }
+
+  /* Кнопки шапки «Файлів» — antd size="small" (24px). Пальцем не влучити. */
+  .ws-actions .ant-btn,
+  .chat-panel .ant-btn:not(.ant-btn-icon-only) {
+    min-height: 40px;
+    padding-inline: 14px;
+  }
+
+  /* Кругла кнопка відправки й мікрофон у смузі вводу */
+  .chat-panel .chat-input-area .ant-sender-actions button,
+  .chat-panel .chat-input-area .ant-sender-prefix button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}
+
+
+/* ============================================================
+   Телефон: геть шари
+   ------------------------------------------------------------
+   Головна вада мобільної версії була не в кольорах, а в тому,
+   що кожен екран був карткою всередині падінга всередині ще
+   однієї картки. На 390px ці рамки коштували ~40px ширини й
+   читались як «інтерфейс поверх інтерфейсу».
+
+   Правило просте: на телефоні вміст лежить ПРЯМО на полотні.
+   Картка лишається тільки там, де вона щось РОЗДІЛЯЄ (рядок
+   сервісу, картка вибору), а не там, де просто обгортає екран.
+   ============================================================ */
+
+@media (max-width: 700px) {
+  /* Панель розділу більше не картка: ні рамки, ні тіні, ні радіуса */
+  .dashboard-panel.active > .panel,
+  .dashboard-panel.active > .dashboard-grid > .panel {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+
+  /* Дашборд без власних полів — поля дає сам вміст */
+  .dashboard {
+    padding: 0 0 calc(84px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .dashboard-grid { gap: 0; }
+
+  /* Заголовок розділу стоїть у потоці, а не в шапці картки */
+  .dashboard-panel.active > .panel > .panel-title,
+  .dashboard-panel.active > .dashboard-grid > .panel > .panel-title {
+    padding: 14px 16px 4px;
+  }
+
+  .dashboard-panel.active .panel-head { padding: 12px 16px 4px; }
+
+  /* Сторінка налаштувань: рейка й вміст — теж без коробок */
+  .setup-page {
+    gap: 0;
+    min-height: 0;
+  }
+
+  .setup-rail,
+  .setup-main {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .setup-body { padding: 16px; }
+
+  /* Списки й рядки — на всю ширину, без відступів по боках */
+  .status-list,
+  .service-row { border-radius: 0; }
+
+  .services-grid { grid-template-columns: minmax(0, 1fr); }
+  .area-services { gap: 0; }
+
+  .console-log {
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+
+  /* ---- Чат: повний екран, без нижньої смуги ----------------------------
+     Нижня навігація в чаті сиділа просто над полем вводу: два ряди
+     керування один над одним, і половина екрана — не розмова.
+     У чаті смуги немає; решта розділів — у бічній шухлядці (☰). */
+  /* .chat-nav-ok ставить app.js, коли шапка React-панелі чату справді
+     з'явилась у DOM. Поки її немає (бандл не завантажився / упав) — смуга
+     лишається на місці, інакше з чату не було б виходу взагалі. */
+  body[data-tab="chat"].chat-nav-ok .mobile-nav { display: none; }
+
+  body[data-tab="chat"].chat-nav-ok .dashboard { padding-bottom: 0; }
+
+  /* Обличчя краба — окрема картка згори, що з'їдала 150px під декорацію.
+     На телефоні розмова важливіша; емоцію видно на ширшому екрані. */
+  body[data-tab="chat"] .chat-grid .area-face { display: none; }
+
+  body[data-tab="chat"] .chat-grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "chat";
+    grid-template-rows: minmax(0, 1fr);
+    /* Рівно стільки, скільки лишилось під шапкою — без нижньої смуги */
+    height: calc(100dvh - 52px);
+  }
+}

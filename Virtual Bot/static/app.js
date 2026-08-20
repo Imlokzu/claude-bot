@@ -12,28 +12,330 @@ const STATUS_POLL_MS = 5000;
 
 const $ = (id) => document.getElementById(id);
 
+/* ---------- Вигляд: тема + акцент ----------
+   Керується ЛИШЕ зі сторінки Налаштування → «Вигляд» (кнопки в шапці немає).
+   Обидва значення локальні (localStorage) і на сервер не йдуть: це оформлення
+   дашборда, а не профіль бота. React-панелі підхоплюють їх самі, бо читають
+   ті самі CSS-змінні з document.documentElement. */
+
+const Look = (function initLook() {
+  const THEME_KEY = "claudeBotTheme";   // "light" | "dark" | "system"
+  const ACCENT_KEY = "claudeBotAccent"; // id з ACCENTS
+  const THEMES = [
+    { id: "light", label: "Світла пустеля", icon: "theme-light" },
+    { id: "dark", label: "Темний графіт", icon: "theme-dark" },
+    { id: "system", label: "Як у системі", icon: "theme-system" },
+  ];
+  // Кольори свотчів — світлі варіанти з theme-overrides.css (там же живуть
+  // темні відповідники: акцент має два тони, інакше в темряві він випікається)
+  const ACCENTS = [
+    { id: "terracotta", label: "Теракота", color: "#b95f3d" },
+    { id: "sage", label: "Шавлія", color: "#6f8b5f" },
+    { id: "teal", label: "Океан", color: "#3f7f7a" },
+    { id: "amber", label: "Бурштин", color: "#a9742d" },
+  ];
+  const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+  function read(key, fallback, allowed) {
+    let v = null;
+    try { v = localStorage.getItem(key); } catch (e) { v = null; }
+    return allowed.includes(v) ? v : fallback;
+  }
+
+  let theme = read(THEME_KEY, "system", ["light", "dark", "system"]);
+  let accent = read(ACCENT_KEY, "terracotta", ACCENTS.map((a) => a.id));
+
+  function applyTheme() {
+    const dark = theme === "dark" || (theme === "system" && !!(mq && mq.matches));
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+  }
+  function applyAccent() {
+    document.documentElement.dataset.accent = accent;
+  }
+
+  // Системна тема може змінитися на льоту — реагуємо, лише коли обрано "system"
+  if (mq) {
+    const onChange = () => { if (theme === "system") applyTheme(); };
+    if (mq.addEventListener) mq.addEventListener("change", onChange);
+    else if (mq.addListener) mq.addListener(onChange);
+  }
+
+  applyTheme();
+  applyAccent();
+
+  return {
+    THEMES: THEMES,
+    ACCENTS: ACCENTS,
+    getTheme: () => theme,
+    getAccent: () => accent,
+    setTheme(id) {
+      if (!THEMES.some((t) => t.id === id)) return;
+      theme = id;
+      try { localStorage.setItem(THEME_KEY, id); } catch (e) {}
+      applyTheme();
+    },
+    setAccent(id) {
+      if (!ACCENTS.some((a) => a.id === id)) return;
+      accent = id;
+      try { localStorage.setItem(ACCENT_KEY, id); } catch (e) {}
+      applyAccent();
+    },
+  };
+})();
+
 /* ---------- Вкладки дашборда ---------- */
 
 (function initTabs() {
-  const tabs = document.querySelectorAll(".dashboard-tab");
+  const tabs = Array.from(document.querySelectorAll(".dashboard-tab"));
   const panels = document.querySelectorAll(".dashboard-panel");
   if (!tabs.length || !panels.length) return;
 
+  /* Мобільна навігація: у нижню смугу M3 влазить 5 пунктів, тому головні
+     розділи лишаються там, а решта переїжджає в аркуш «Ще». Пункти
+     будуються з тих самих .dashboard-tab, тож список розділів існує в
+     одному місці й дві навігації не можуть розійтися. */
+  const PRIMARY = ["chat", "memory", "workspace", "vision"];
+  const mobileNav = $("mobileNav");
+  const moreSheet = $("moreSheet");
+  const moreScrim = $("moreScrim");
+  const moreList = $("moreSheetList");
+
+  const tabInfo = (tab) => ({
+    id: tab.dataset.tab,
+    label: (tab.querySelector(".tab-label") || {}).textContent || tab.title || tab.dataset.tab,
+    svg: tab.querySelector("svg"),
+  });
+
+  // Куди повернути фокус після закриття аркуша. Без цього фокус лишався на
+  // схованому елементі й падав на <body>: наступний Tab починав обхід
+  // сторінки з початку.
+  let sheetOpener = null;
+
+  function closeSheet() {
+    if (!moreSheet || moreSheet.classList.contains("hidden")) return;
+    moreSheet.classList.add("hidden");
+    moreScrim.classList.add("hidden");
+    document.body.classList.remove("sheet-open");
+    if (sheetOpener && document.contains(sheetOpener)) sheetOpener.focus();
+    sheetOpener = null;
+  }
+
+  function openSheet() {
+    if (!moreSheet) return;
+    sheetOpener = document.activeElement;
+    moreSheet.classList.remove("hidden");
+    moreScrim.classList.remove("hidden");
+    document.body.classList.add("sheet-open");
+    const first = moreList.querySelector("button");
+    if (first) first.focus();
+  }
+
+  /* Фокус-трапа: у діалозі з aria-modal Tab не має вивозити на сторінку
+     під ним — інакше скрін-рідер зачитує «схований» вміст як доступний. */
+  moreSheet?.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const items = moreSheet.querySelectorAll("button");
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+
   function setTab(name) {
-    tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === name));
+    tabs.forEach((tab) => {
+      const active = tab.dataset.tab === name;
+      tab.classList.toggle("active", active);
+      if (tab.dataset.tab) tab.setAttribute("aria-selected", String(active));
+    });
     panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === name));
+    // Активний розділ на <body> — щоб CSS міг відрізнити чат від решти
+    // (на телефоні чат іде на весь екран і без нижньої смуги).
+    document.body.dataset.tab = name;
+    // Стрічка розділів налаштувань прокручується лише коли вона видима
+    if (name === "setup") {
+      requestAnimationFrame(() => {
+        document.querySelector("#setupNav li.active")
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      });
+    }
+    // Прокрутка живе на вкладці: перехід у новий розділ має починатися згори,
+    // інакше довгий чат «переносить» свій скрол у коротку панель сервісів.
+    window.scrollTo({ top: 0, behavior: "instant" in window ? "instant" : "auto" });
+    syncMobile(name);
+    closeSheet();
     try { localStorage.setItem("dashboardTab", name); } catch (e) {}
   }
 
+  /* Підсвітка мобільної смуги. «Ще» лишається активним, поки відкритий
+     будь-який зі схованих у ньому розділів — інакше на телефоні зникає
+     будь-яка підказка, де ти зараз. */
+  function syncMobile(name) {
+    if (!mobileNav) return;
+    const inMore = !PRIMARY.includes(name);
+    mobileNav.querySelectorAll(".mnav-item").forEach((btn) => {
+      const on = btn.dataset.tab === name || (btn.dataset.tab === "__more" && inMore);
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-current", on ? "page" : "false");
+    });
+    if (moreList) {
+      moreList.querySelectorAll(".m3-list-item").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === name);
+      });
+    }
+  }
+
+  function buildMobileNav() {
+    if (!mobileNav) return;
+    mobileNav.innerHTML = "";
+    const byId = new Map(tabs.filter((t) => t.dataset.tab).map((t) => [t.dataset.tab, t]));
+
+    PRIMARY.forEach((id) => {
+      const src = byId.get(id);
+      if (!src) return;
+      const info = tabInfo(src);
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "mnav-item";
+      btn.dataset.tab = id;
+      // Активний індикатор M3 — пігулка ПІД іконкою, а не заливка всього
+      // пункту: підпис лишається читабельним на будь-якому акценті.
+      const pill = document.createElement("span");
+      pill.className = "mnav-pill";
+      if (info.svg) pill.appendChild(info.svg.cloneNode(true));
+      const lbl = document.createElement("span");
+      lbl.className = "mnav-label";
+      lbl.textContent = info.label;
+      btn.append(pill, lbl);
+      btn.addEventListener("click", () => setTab(id));
+      mobileNav.appendChild(btn);
+    });
+
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "mnav-item";
+    more.dataset.tab = "__more";
+    more.setAttribute("aria-haspopup", "dialog");
+    const morePill = document.createElement("span");
+    morePill.className = "mnav-pill";
+    morePill.appendChild(window.Icons.el("tune"));
+    const moreLbl = document.createElement("span");
+    moreLbl.className = "mnav-label";
+    moreLbl.textContent = "Ще";
+    more.append(morePill, moreLbl);
+    more.addEventListener("click", () => {
+      if (moreSheet && !moreSheet.classList.contains("hidden")) closeSheet();
+      else openSheet();
+    });
+    mobileNav.appendChild(more);
+
+    if (!moreList) return;
+    moreList.innerHTML = "";
+    tabs
+      .filter((t) => t.dataset.tab && !PRIMARY.includes(t.dataset.tab))
+      .forEach((src) => {
+        const info = tabInfo(src);
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "m3-list-item";
+        item.dataset.tab = info.id;
+        if (info.svg) item.appendChild(info.svg.cloneNode(true));
+        const txt = document.createElement("span");
+        txt.className = "m3-list-head";
+        txt.textContent = info.label;
+        item.appendChild(txt);
+        item.addEventListener("click", () => setTab(info.id));
+        moreList.appendChild(item);
+      });
+  }
+
   tabs.forEach((tab) => {
-    tab.addEventListener("click", () => setTab(tab.dataset.tab));
+    if (tab.dataset.tab) tab.addEventListener("click", () => setTab(tab.dataset.tab));
   });
 
+  // Стрілками — як у tablist за ARIA APG: без цього з клавіатури розділи
+  // перемикаються лише табом через кожну кнопку.
+  document.getElementById("dashboardTabs")?.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const list = tabs.filter((t) => t.dataset.tab);
+    const cur = list.findIndex((t) => t.classList.contains("active"));
+    if (cur < 0) return;
+    const next = (cur + (e.key === "ArrowRight" ? 1 : -1) + list.length) % list.length;
+    e.preventDefault();
+    setTab(list[next].dataset.tab);
+    list[next].focus();
+  });
+
+  moreScrim?.addEventListener("click", closeSheet);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+
+  buildMobileNav();
+
+  /* Нижню смугу в чаті ховає CSS через body.chat-nav-ok. Ставимо цей клас
+     лише коли React-панель чату СПРАВДІ змонтувалась: інакше при збої
+     бандла на телефоні не лишилось би ні верхніх вкладок, ні нижньої
+     смуги, ні шухляди — тобто жодного способу вийти з чату. */
+  (function watchChatMount() {
+    const root = document.getElementById("chat-panel-root");
+    if (!root) return;
+    const ok = () => {
+      if (!root.querySelector(".chat-panel-header")) return false;
+      document.body.classList.add("chat-nav-ok");
+      return true;
+    };
+    if (ok()) return;
+    const obs = new MutationObserver(() => { if (ok()) obs.disconnect(); });
+    obs.observe(root, { childList: true, subtree: true });
+    // Запобіжник: якщо за 10 с шапка чату не з'явилась — бандл не піднявся,
+    // лишаємо нижню смугу видимою й припиняємо спостереження.
+    setTimeout(() => obs.disconnect(), 10000);
+  })();
+
+  /* Місток для React-панелей. На телефоні чат займає весь екран без нижньої
+     смуги, тож єдиний шлях у решту розділів — бічна шухляда самого чату.
+     Вона живе в React, який про вкладки дашборда нічого не знає, тому
+     віддаємо йому мінімальний API: список розділів і перехід. */
+  window.dashboardNav = {
+    sections: tabs
+      .filter((t) => t.dataset.tab)
+      .map((t) => {
+        const info = tabInfo(t);
+        return { id: info.id, label: info.label, svg: info.svg ? info.svg.outerHTML : "" };
+      }),
+    current: () => document.body.dataset.tab || "chat",
+    go: (id) => setTab(id),
+  };
+
   const saved = localStorage.getItem("dashboardTab");
-  if (saved && document.querySelector(`.dashboard-tab[data-tab="${saved}"]`)) {
-    setTab(saved);
-  }
+  setTab(saved && document.querySelector(`.dashboard-tab[data-tab="${saved}"]`) ? saved : "chat");
 })();
+
+/* Перемалювати вміст кнопки як «іконка + підпис».
+   Пряме присвоєння textContent знищує вкладений <svg>, тому кнопка, що
+   міняє стан (напр. «Потік» ⇄ «Зупинити»), назавжди губила іконку. */
+function setBtnLabel(btn, iconName, text) {
+  if (!btn) return;
+  const span = document.createElement("span");
+  span.textContent = text;
+  btn.replaceChildren(window.Icons.el(iconName), span);
+}
+
+/* Стан «онлайн/офлайн» як крапка + слово. Раніше крапку малювали символами
+   ● / ○ прямо в тексті: скрін-рідер читав їх як «чорне коло», у різних
+   шрифтах вони різного розміру, і колір ішов від тексту, а не від стану. */
+function setDotState(el, on, onText, offText) {
+  if (!el) return;
+  const dot = document.createElement("span");
+  dot.className = "dot " + (on ? "dot-on" : "dot-off");
+  const label = document.createElement("span");
+  label.textContent = on ? onText : offText;
+  el.replaceChildren(dot, label);
+}
 
 /* ---------- Сповіщення (неблокуючі toasts) ---------- */
 
@@ -320,7 +622,7 @@ async function speakText(text, emotion) {
   }
 }
 
-/* Кнопка «🔊» — вмикає/вимикає озвучку відповідей */
+/* Кнопка озвучки — вмикає/вимикає голос відповідей */
 const voiceToggle = $("voiceToggle");
 if (voiceToggle) {
   // Кнопку НЕ вимикаємо за браком браузерного TTS — живий голос MiMo працює через <audio>
@@ -328,14 +630,14 @@ if (voiceToggle) {
     voiceOn = !voiceOn;
     voiceToggle.classList.toggle("on", voiceOn);
     voiceToggle.setAttribute("aria-pressed", String(voiceOn));
-    voiceToggle.textContent = voiceOn ? "🔊" : "🔇";
+    voiceToggle.replaceChildren(window.Icons.el(voiceOn ? "volume-on" : "volume-off", "ico"));
     if (!voiceOn) stopSpeaking();
     const how = mimoTts ? "живим голосом ШІ" : "браузерним голосом";
     toast(voiceOn ? "Голос увімкнено — краб озвучуватиме " + how : "Голос вимкнено", "info", 2500);
   });
 }
 
-/* Кнопка «🎤» — слухати мікрофон і надиктувати повідомлення (uk-UA) */
+/* Кнопка мікрофона — слухати й надиктувати повідомлення (uk-UA) */
 const micBtn = $("micBtn");
 let recognition = null;
 if (micBtn) {
@@ -538,7 +840,9 @@ function startStream() {
   // МJPEG напряму з сервісу Vision (порт 8000), НЕ через бекенд 8100
   visionImg.src = VISION_STREAM_URL + "?t=" + Date.now();
   visionOverlay.classList.add("hidden");
-  streamToggle.textContent = "⏹ Зупинити";
+  // Не textContent: він зніс би вкладений <svg class="ico"> і повернув
+  // символ-псевдоіконку. Перемальовуємо іконку + підпис.
+  setBtnLabel(streamToggle, "stop", "Зупинити");
 }
 
 function stopStream(reason) {
@@ -547,7 +851,7 @@ function stopStream(reason) {
   visionImg.classList.add("stream-off");
   visionOverlay.classList.remove("hidden");
   visionOverlayText.textContent = reason || "Потік вимкнено";
-  streamToggle.textContent = "▶ Потік";
+  setBtnLabel(streamToggle, "play", "Потік");
 }
 
 visionImg.addEventListener("error", () => {
@@ -605,7 +909,7 @@ function setStatusVal(id, on) {
     el.textContent = "—";
     el.className = "status-val";
   } else {
-    el.textContent = on ? "● онлайн" : "○ офлайн";
+    setDotState(el, on, "онлайн", "офлайн");
     el.className = "status-val " + (on ? "on" : "off");
   }
 }
@@ -689,6 +993,19 @@ function renderService(name, running) {
     "dot " + (running === null ? "dot-unknown" : running ? "dot-on" : "dot-off");
   state.textContent =
     running === null ? "—" : running ? "запущено" : "зупинено";
+
+  /* Дія, яка нічого не зробить, має бути вимкнена: «Стоп» під зупиненим
+     сервісом виглядав робочим, і натиснути його означало отримати помилку
+     замість результату. Поки стан невідомий (running === null) — лишаємо
+     обидві доступними, щоб не заблокувати керування через збій опитування. */
+  document.querySelectorAll(`[data-svc="${name}"][data-action]`).forEach((btn) => {
+    const wanted = btn.dataset.action === "start";
+    const useless = running !== null && running === wanted;
+    btn.disabled = useless;
+    btn.title = useless
+      ? (running ? "Сервіс уже запущено" : "Сервіс уже зупинено")
+      : (wanted ? "Запустити сервіс" : "Зупинити сервіс");
+  });
 }
 
 async function refreshServices() {
@@ -720,7 +1037,9 @@ document.querySelectorAll("[data-svc]").forEach((btn) => {
     } catch (err) {
       toast(`Сервіс ${name} (${action}): ` + err.message);
     } finally {
-      btn.disabled = false;
+      // Навмисно НЕ вмикаємо кнопку тут: правильний стан виставить
+      // renderService() за наступним опитуванням — інакше «Стоп» блимнув би
+      // доступним під сервісом, який уже зупинився.
       // Даємо сервісу секунду на старт/зупинку, тоді оновлюємо стани
       setTimeout(() => {
         refreshServices();
@@ -895,7 +1214,10 @@ $("consoleClear")?.addEventListener("click", () => {
     vState = s;
     orb.classList.remove("listening", "thinking", "speaking");
     if (s !== "idle") orb.classList.add(s);
-    orbIcon.textContent = s === "listening" ? "🎤" : s === "thinking" ? "💭" : s === "speaking" ? "🔊" : "🎤";
+    // Іконка стану орба: слухає / думає / говорить. Малюємо SVG, а не
+    // емодзі — інакше в темній темі орб світиться чужим кольором.
+    const orbIco = s === "thinking" ? "thinking" : s === "speaking" ? "volume-on" : "mic";
+    orbIcon.replaceChildren(window.Icons.el(orbIco, "ico"));
     if (text != null) statusEl.textContent = text;
     // ведемо й обличчя краба (на випадок, якщо колись зробимо напівпрозорий оверлей)
     if (s === "listening") crab.setEmotion("listening");
@@ -1035,7 +1357,7 @@ $("consoleClear")?.addEventListener("click", () => {
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      setState("idle", "Немає дозволу на мікрофон. Натисни 🔒 біля адреси → Мікрофон → Дозволити.");
+      setState("idle", "Немає дозволу на мікрофон. Натисни замок біля адреси → Мікрофон → Дозволити.");
       return;
     }
     // аналізатор гучності
@@ -1067,7 +1389,7 @@ $("consoleClear")?.addEventListener("click", () => {
       // ЗАВЖДИ шлемо на Whisper (не покладаємось на поріг гучності — хай ШІ вирішує).
       // Відхиляємо лише зовсім порожній запис (мік реально не дав аудіо).
       if (blob.size < 400) {
-        setState("idle", "Запис порожній. Перевір: Chrome → 🔒 → Мікрофон, і що вибрано вбудований мік.");
+        setState("idle", "Запис порожній. Перевір: Chrome → замок біля адреси → Мікрофон, і що вибрано вбудований мік.");
         return;
       }
       transcribeAndSend(blob);
@@ -1224,59 +1546,135 @@ function setEventsDot(ok) {
   };
 })();
 
-/* ---------- Майстер налаштування ---------- */
+/* ---------- Налаштування (окрема сторінка, не поп-ап) ---------- */
 
-const wizardOverlay = $("wizardOverlay");
-const WIZARD_STEPS = 6;
-let wizardStep = 1;
+const SETUP_SECTIONS = ["profile", "style", "look", "brain", "skills", "services"];
+let setupSection = "profile";
 let wizardMcpLoaded = false;
 let wizardData = null;
 // Обраний стан (картки/сегменти/тумблери)
 const wzSel = { language: "uk", persona: "friendly" };
 
-function openWizard() {
-  wizardOverlay.classList.remove("hidden");
-  showWizardStep(1);
+/* Відкрити сторінку налаштувань (використовується при першому запуску) */
+function openSetup(section) {
+  const tab = document.querySelector('.dashboard-tab[data-tab="setup"]');
+  if (tab) tab.click();
+  if (section) showSetupSection(section);
 }
-function closeWizard() {
-  wizardOverlay.classList.add("hidden");
-}
-function showWizardStep(n) {
-  wizardStep = Math.max(1, Math.min(WIZARD_STEPS, n));
-  document.querySelectorAll(".wizard-step").forEach((el) => {
-    el.classList.toggle("hidden", Number(el.dataset.step) !== wizardStep);
+
+function showSetupSection(name, silent) {
+  if (!SETUP_SECTIONS.includes(name)) name = "profile";
+  setupSection = name;
+  document.querySelectorAll(".setup-section").forEach((el) => {
+    el.classList.toggle("hidden", el.dataset.section !== name);
   });
-  // Рейка-степер: активний / пройдені
-  document.querySelectorAll("#wizardStepper li").forEach((li) => {
-    const s = Number(li.dataset.step);
-    li.classList.toggle("active", s === wizardStep);
-    li.classList.toggle("done", s < wizardStep);
+  document.querySelectorAll("#setupNav li").forEach((li) => {
+    const active = li.dataset.section === name;
+    li.classList.toggle("active", active);
+    li.setAttribute("aria-current", active ? "true" : "false");
+    /* На вузькому екрані рейка — горизонтальна стрічка з прокруткою, і
+       активний розділ легко опиняється за краєм: видно вміст «Особистості»,
+       а підсвічений чип десь ліворуч поза екраном. Підтягуємо його у вид. */
+    if (active) li.scrollIntoView({ block: "nearest", inline: "nearest" });
   });
-  $("wizardProgress").textContent = "Крок " + wizardStep + " / " + WIZARD_STEPS;
-  $("wizardBack").style.visibility = wizardStep === 1 ? "hidden" : "visible";
-  $("wizardNext").textContent = wizardStep === WIZARD_STEPS ? "Готово ✓" : "Далі →";
-  if (wizardStep === 4) loadWizardMcp();
-  if (wizardStep === 5) refreshWizardServices();
-  if (wizardStep === 6) buildWizardSummary();
+  try { localStorage.setItem("setupSection", name); } catch (e) {}
+  // Важкі розділи вантажимо лише коли їх реально відкрили. silent=true —
+  // це відновлення стану на старті при закритій вкладці: DOM ставимо, але
+  // мережу не чіпаємо (інакше кожне завантаження сторінки било б у
+  // /api/setup/suggestions, навіть якщо користувач іде в чат).
+  if (silent) return;
+  // Панель могла бути схована в момент відновлення стану — тоді
+  // scrollIntoView вище нічого не зробив. Повторюємо, коли розділ уже
+  // справді на екрані, інакше на телефоні активний чип лишається
+  // за лівим краєм стрічки.
+  requestAnimationFrame(() => {
+    document.querySelector("#setupNav li.active")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
+  if (name === "look") renderLookSection();
+  if (name === "skills") loadWizardMcp();
+  if (name === "services") refreshWizardServices();
 }
-// Клік по кроку в рейці — перехід
-document.querySelectorAll("#wizardStepper li").forEach((li) => {
-  li.addEventListener("click", () => showWizardStep(Number(li.dataset.step)));
+
+document.querySelectorAll("#setupNav li").forEach((li) => {
+  li.addEventListener("click", () => showSetupSection(li.dataset.section));
+  // <li> не має клавіатурної семантики кнопки: без цього розділи
+  // налаштувань неможливо перемкнути без миші.
+  li.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      showSetupSection(li.dataset.section);
+    }
+  });
 });
+
+// Останній відкритий розділ переживає перезавантаження
+(function restoreSetupSection() {
+  let saved = null;
+  try { saved = localStorage.getItem("setupSection"); } catch (e) {}
+  if (saved && SETUP_SECTIONS.includes(saved)) showSetupSection(saved, true);
+})();
+
+/* Розділ «Вигляд»: тема і акцент. Обидва застосовуються миттєво — тому тут
+   немає збереження: воно вже сталося (localStorage), кнопка «Зберегти»
+   стосується профілю бота. */
+function renderLookSection() {
+  const themeBox = $("wzThemeCards");
+  const accentBox = $("wzAccentSwatches");
+  if (themeBox) {
+    renderCards(
+      themeBox,
+      Look.THEMES.map((t) => ({ id: t.id, label: t.label, icon: t.icon })),
+      Look.getTheme(),
+      (id) => Look.setTheme(id)
+    );
+  }
+  if (accentBox) {
+    accentBox.innerHTML = "";
+    for (const a of Look.ACCENTS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "accent-swatch" + (a.id === Look.getAccent() ? " sel" : "");
+      b.dataset.accent = a.id;
+      b.title = a.label;
+      b.setAttribute("aria-label", a.label);
+      b.setAttribute("aria-pressed", String(a.id === Look.getAccent()));
+      const dot = document.createElement("span");
+      dot.className = "accent-dot";
+      dot.style.background = a.color;
+      const lbl = document.createElement("span");
+      lbl.className = "accent-label";
+      lbl.textContent = a.label;
+      b.appendChild(dot);
+      b.appendChild(lbl);
+      b.addEventListener("click", () => {
+        Look.setAccent(a.id);
+        accentBox.querySelectorAll(".accent-swatch").forEach((x) => {
+          const on = x.dataset.accent === a.id;
+          x.classList.toggle("sel", on);
+          x.setAttribute("aria-pressed", String(on));
+        });
+      });
+      accentBox.appendChild(b);
+    }
+  }
+}
 
 /* Рендер карток/сегментів/тумблерів вибору */
 function renderCards(container, items, selectedId, onPick, opts) {
   opts = opts || {};
   container.innerHTML = "";
   for (const it of items) {
-    const card = document.createElement("div");
+    const card = document.createElement("button");
+    card.type = "button";
     card.className = "wz-card" + (it.id === selectedId ? " sel" : "");
     card.dataset.id = it.id;
-    if (it.icon) {
-      const ico = document.createElement("span");
-      ico.className = "wz-card-ico";
-      ico.textContent = it.icon;
-      card.appendChild(ico);
+    card.setAttribute("aria-pressed", String(it.id === selectedId));
+    // Бекенд віддає ІМʼЯ іконки (напр. "mood-friendly"), а не символ:
+    // малюнок живе у фронтенді, тому один і той самий профіль виглядає
+    // однаково в будь-якій темі й на будь-якій ОС.
+    if (it.icon && window.Icons && window.Icons.paths[it.icon]) {
+      card.appendChild(window.Icons.el(it.icon, "ico wz-card-ico"));
     }
     const body = document.createElement("div");
     body.className = "wz-card-body";
@@ -1292,8 +1690,12 @@ function renderCards(container, items, selectedId, onPick, opts) {
     }
     card.appendChild(body);
     card.addEventListener("click", () => {
-      container.querySelectorAll(".wz-card").forEach((c) => c.classList.remove("sel"));
+      container.querySelectorAll(".wz-card").forEach((c) => {
+        c.classList.remove("sel");
+        c.setAttribute("aria-pressed", "false");
+      });
       card.classList.add("sel");
+      card.setAttribute("aria-pressed", "true");
       onPick(it.id);
     });
     container.appendChild(card);
@@ -1302,14 +1704,36 @@ function renderCards(container, items, selectedId, onPick, opts) {
 
 function renderSegmented(container, items, selectedId, onPick) {
   container.innerHTML = "";
+  // Група вибору має бути ГРУПОЮ і для скрін-рідера: без role/aria-label
+  // читалося три окремі кнопки без назви набору й без ознаки обраної.
+  container.setAttribute("role", "group");
+  if (!container.getAttribute("aria-label")) {
+    container.setAttribute("aria-label", "Довжина відповідей");
+  }
   for (const it of items) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = it.id === selectedId ? "sel" : "";
-    b.textContent = it.label;
+    /* Клас саме "active": обраний сегмент підсвічує спільний .m3-segmented
+       (m3.css). Історичний "sel" лишився б без жодного правила — вибір
+       перестав би бути видимим. */
+    b.className = it.id === selectedId ? "active" : "";
+    b.setAttribute("aria-pressed", String(it.id === selectedId));
+    // Галочка — та сама, що в перемикачі Чат/Код: у M3 обране позначає не
+    // лише колір (це не працює в ч/б і для дальтоніків), а й символ.
+    const check = document.createElement("span");
+    check.className = "seg-check";
+    check.setAttribute("aria-hidden", "true");
+    check.appendChild(window.Icons.el("check", ""));
+    const label = document.createElement("span");
+    label.textContent = it.label;
+    b.append(check, label);
     b.addEventListener("click", () => {
-      container.querySelectorAll("button").forEach((x) => x.classList.remove("sel"));
-      b.classList.add("sel");
+      container.querySelectorAll("button").forEach((x) => {
+        x.classList.remove("active");
+        x.setAttribute("aria-pressed", "false");
+      });
+      b.setAttribute("aria-pressed", "true");
+      b.classList.add("active");
       onPick(it.id);
     });
     container.appendChild(b);
@@ -1328,7 +1752,7 @@ function fillSelect(sel, items, value) {
 }
 
 function setKeyState(el, on) {
-  el.textContent = on ? "● задано" : "○ не задано";
+  setDotState(el, on, "задано", "не задано");
   el.className = "wz-keystate " + (on ? "ok" : "no");
 }
 
@@ -1353,9 +1777,9 @@ async function initSetup(autoOpenIfNew = true) {
     const ks = r.keys_set || {};
     setKeyState($("wzOmniState"), !!ks.omni);
     setKeyState($("wzOcState"), !!ks.openclaw);
-    if (autoOpenIfNew && !r.configured) openWizard();
+    if (autoOpenIfNew && !r.configured) openSetup("profile");
   } catch (err) {
-    /* бекенд ще не готовий — майстер можна відкрити кнопкою ⚙ */
+    /* бекенд ще не готовий — налаштування відкриються вкладкою */
   }
 }
 
@@ -1374,10 +1798,12 @@ $("wzTestBtn")?.addEventListener("click", async () => {
     let mode = "?";
     try { mode = (await api("/api/status")).mode; } catch (e) {}
     res.className = "wz-test-result ok";
-    res.textContent = "✓ мозок відповів (" + mode + "): " + (chat.reply || "").slice(0, 60);
+    res.textContent = "Мозок відповів (" + mode + "): " + (chat.reply || "").slice(0, 60);
+    res.className = "wz-test-result ok";
   } catch (err) {
     res.className = "wz-test-result err";
-    res.textContent = "✗ " + err.message;
+    res.textContent = err.message;
+    res.className = "wz-test-result err";
   } finally {
     $("wzTestBtn").disabled = false;
   }
@@ -1406,7 +1832,8 @@ async function refreshWizardServices() {
       const st = $("wzSvcState-" + name);
       const running = parseServiceState(src[name]);
       if (st) {
-        st.textContent = running === null ? "" : running ? "● запущено" : "○ зупинено";
+        if (running === null) st.replaceChildren();
+        else setDotState(st, running, "запущено", "зупинено");
         st.className = "wz-mcp-state " + (running ? "ok" : "");
       }
     }
@@ -1422,115 +1849,172 @@ document.querySelectorAll("[data-wzsvc]").forEach((btn) => {
       await api("/api/services/" + name + "/start", { method: "POST" });
       setTimeout(refreshWizardServices, 1200);
     } catch (err) {
-      if (st) { st.textContent = "✗ " + err.message; st.className = "wz-mcp-state err"; }
+      if (st) { st.textContent = err.message; st.className = "wz-mcp-state err"; }
     } finally {
       btn.disabled = false;
     }
   });
 });
 
-/* Крок 5: підсумок */
-function labelOf(list, id) {
-  const it = (list || []).find((x) => x.id === id);
-  return it ? it.label : id;
+const wzMcpEls = {}; // id -> {btn, state} для пресетів
+let wzStoreBusy = false;
+
+function storeBadge(text, className) {
+  const badge = document.createElement("span");
+  badge.className = "wz-badge" + (className ? " " + className : "");
+  badge.textContent = text;
+  return badge;
 }
-function buildWizardSummary() {
-  const ul = $("wzSummary");
-  ul.innerHTML = "";
-  const d = wizardData || {};
-  const custom = $("wzPersonaCustom").value.trim();
-  const modelLabel = ($("wzModel").selectedOptions[0] || {}).textContent || "";
-  const rows = [
-    ["Ім'я", $("wzName").value.trim() || "Клод Бот"],
-    ["Мова", labelOf(d.languages, wzSel.language)],
-    ["Характер", custom || labelOf(d.personas, wzSel.persona)],
-    ["Довжина", labelOf(d.reply_lengths, wzSel.reply_length)],
-    ["Емодзі", $("wzEmoji").checked ? "так" : "ні"],
-    ["Спонтанні емоції", $("wzSpont").checked ? "так" : "ні"],
-    ["Модель", modelLabel],
-    ["Omni-ключ", $("wzOmniState").textContent],
-    ["OpenClaw токен", $("wzOcState").textContent],
-  ];
-  for (const [k, v] of rows) {
-    const li = document.createElement("li");
-    const ks = document.createElement("span"); ks.className = "k"; ks.textContent = k;
-    const vs = document.createElement("span"); vs.className = "v"; vs.textContent = v;
-    li.appendChild(ks); li.appendChild(vs);
-    ul.appendChild(li);
+
+function renderStoreSkill(item, list) {
+  const row = document.createElement("div");
+  row.className = "wz-mcp wz-store-item";
+  const info = document.createElement("div");
+  info.className = "wz-mcp-info";
+  const name = document.createElement("div");
+  name.className = "wz-mcp-name";
+  name.textContent = item.name || item.slug;
+  name.appendChild(storeBadge("скіл", "skill"));
+  if (item.version) name.appendChild(storeBadge("v" + item.version));
+  const desc = document.createElement("div");
+  desc.className = "wz-mcp-desc";
+  desc.textContent = item.description || "Опис відсутній у реєстрі.";
+  const note = document.createElement("div");
+  note.className = "wz-mcp-note";
+  note.textContent = item.slug + (item.source ? " · " + item.source : "");
+  const state = document.createElement("div");
+  state.className = "wz-mcp-state";
+  info.appendChild(name);
+  info.appendChild(desc);
+  info.appendChild(note);
+  info.appendChild(state);
+  const btn = document.createElement("button");
+  btn.className = "btn btn-small";
+  if (item.installed) {
+    btn.disabled = true;
+    btn.textContent = item.bundled ? "Вбудований" : "Встановлено";
+    state.className = "wz-mcp-state ok";
+    state.textContent = item.bundled ? "доступний у OpenClaw" : "встановлено в OpenClaw";
+    state.className = "wz-mcp-state ok";
+  } else {
+    btn.textContent = "Встановити";
+    btn.addEventListener("click", () => installSkill(item, btn, state));
+  }
+  row.appendChild(info);
+  row.appendChild(btn);
+  list.appendChild(row);
+}
+
+function renderStoreMcp(item, list) {
+  const row = document.createElement("div");
+  row.className = "wz-mcp wz-store-item" + (item.recommended ? " recommended" : "");
+  const info = document.createElement("div");
+  info.className = "wz-mcp-info";
+  const name = document.createElement("div");
+  name.className = "wz-mcp-name";
+  name.textContent = item.name;
+  name.appendChild(storeBadge("MCP", "mcp"));
+  if (item.recommended) name.appendChild(storeBadge("маст-хев", "rec"));
+  if (item.needs_key) name.appendChild(storeBadge("потрібен ключ"));
+  const desc = document.createElement("div");
+  desc.className = "wz-mcp-desc";
+  desc.textContent = item.description || "Опис відсутній.";
+  const note = document.createElement("div");
+  note.className = "wz-mcp-note";
+  note.textContent = item.note || item.category || "";
+  const state = document.createElement("div");
+  state.className = "wz-mcp-state";
+  info.appendChild(name);
+  info.appendChild(desc);
+  info.appendChild(note);
+  const keyInputs = {};
+  for (const envKey of item.env || []) {
+    const inp = document.createElement("input");
+    inp.type = "password";
+    inp.className = "wz-mcp-key";
+    inp.placeholder = envKey + " (ключ)";
+    inp.autocomplete = "off";
+    info.appendChild(inp);
+    keyInputs[envKey] = inp;
+  }
+  info.appendChild(state);
+  const btn = document.createElement("button");
+  btn.className = "btn btn-small";
+  if (item.installed) {
+    btn.disabled = true;
+    btn.textContent = "Встановлено";
+    state.className = "wz-mcp-state ok";
+    state.textContent = "додано в OpenClaw";
+    state.className = "wz-mcp-state ok";
+  } else {
+    btn.textContent = "Встановити";
+    btn.addEventListener("click", () => enableMcp(item.id, btn, state, keyInputs));
+  }
+  row.appendChild(info);
+  row.appendChild(btn);
+  list.appendChild(row);
+  wzMcpEls[item.id] = { btn: btn, state: state, keyInputs: keyInputs };
+}
+
+function renderStoreResults(data) {
+  const list = $("wzMcpList");
+  if (!list) return;
+  list.innerHTML = "";
+  const skills = data.skills || [];
+  const mcp = (data.mcp || []).slice().sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0));
+  if (!skills.length && !mcp.length) {
+    list.textContent = data.query ? "Нічого не знайдено." : "Введи запит для пошуку скілів або MCP.";
+    return;
+  }
+  skills.forEach((item) => renderStoreSkill(item, list));
+  mcp.forEach((item) => renderStoreMcp(item, list));
+}
+
+async function searchWizardStore(silent) {
+  if (wzStoreBusy) return;
+  const list = $("wzMcpList");
+  const status = $("wzStoreStatus");
+  const button = $("wzStoreSearch");
+  const query = $("wzStoreQuery")?.value.trim() || "";
+  const kind = $("wzStoreKind")?.value || "all";
+  wzStoreBusy = true;
+  if (button) button.disabled = true;
+  if (!silent && status) {
+    status.className = "wz-store-status pending";
+    status.textContent = "шукаю через OpenClaw…";
+  }
+  try {
+    const r = await api("/api/store?kind=" + encodeURIComponent(kind) + "&query=" + encodeURIComponent(query) + "&limit=40");
+    renderStoreResults(r);
+    const errors = Object.entries(r.errors || {}).map(([key, value]) => key + ": " + value);
+    if (status) {
+      status.className = errors.length ? "wz-store-status err" : "wz-store-status";
+      status.textContent = errors.length ? errors.join(" · ") : (query ? "Результати пошуку" : "Каталог OpenClaw готовий");
+    }
+  } catch (err) {
+    if (list) list.textContent = "Не вдалося відкрити магазин: " + err.message;
+    if (status) {
+      status.className = "wz-store-status err";
+      status.textContent = "Помилка магазину";
+    }
+  } finally {
+    wzStoreBusy = false;
+    if (button) button.disabled = false;
   }
 }
 
-const wzMcpEls = {}; // id -> {btn, state} для пресетів
-
 async function loadWizardMcp() {
   if (wizardMcpLoaded) return;
-  const list = $("wzMcpList");
   const presetsBox = $("wzPresets");
   try {
     const r = await api("/api/setup/suggestions");
-    // Рекомендовані — вгорі
-    const mcp = (r.mcp || []).slice().sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0));
-    list.innerHTML = "";
-    for (const m of mcp) {
-      const row = document.createElement("div");
-      row.className = "wz-mcp" + (m.recommended ? " recommended" : "");
-      const info = document.createElement("div");
-      info.className = "wz-mcp-info";
-      const name = document.createElement("div");
-      name.className = "wz-mcp-name";
-      name.textContent = m.name;
-      if (m.recommended) {
-        const rb = document.createElement("span");
-        rb.className = "wz-badge rec";
-        rb.textContent = "маст-хев";
-        name.appendChild(rb);
-      }
-      if (m.needs_key) {
-        const b = document.createElement("span");
-        b.className = "wz-badge";
-        b.textContent = "потрібен ключ";
-        name.appendChild(b);
-      }
-      const desc = document.createElement("div");
-      desc.className = "wz-mcp-desc";
-      desc.textContent = m.desc;
-      const note = document.createElement("div");
-      note.className = "wz-mcp-note";
-      note.textContent = m.note;
-      const state = document.createElement("div");
-      state.className = "wz-mcp-state";
-      info.appendChild(name);
-      info.appendChild(desc);
-      info.appendChild(note);
-      // Поля для ключів (якщо треба) — реально передаються при вмиканні
-      const keyInputs = {};
-      for (const envKey of m.env || []) {
-        const inp = document.createElement("input");
-        inp.type = "password";
-        inp.className = "wz-mcp-key";
-        inp.placeholder = envKey + " (ключ)";
-        inp.autocomplete = "off";
-        info.appendChild(inp);
-        keyInputs[envKey] = inp;
-      }
-      info.appendChild(state);
-      const btn = document.createElement("button");
-      btn.className = "btn btn-small";
-      btn.textContent = "Увімкнути";
-      btn.addEventListener("click", () => enableMcp(m.id, btn, state));
-      row.appendChild(info);
-      row.appendChild(btn);
-      list.appendChild(row);
-      wzMcpEls[m.id] = { btn: btn, state: state, keyInputs: keyInputs };
-    }
-    // Пресети — набори в один клік
     presetsBox.innerHTML = "";
     for (const p of r.presets || []) {
       const pb = document.createElement("button");
       pb.className = "wz-preset";
       const pn = document.createElement("div");
       pn.className = "wz-preset-name";
-      pn.textContent = "⚡ " + p.name;
+      pn.textContent = p.name;
       const pd = document.createElement("div");
       pd.className = "wz-preset-desc";
       pd.textContent = p.desc;
@@ -1542,9 +2026,15 @@ async function loadWizardMcp() {
     $("wzSkillsNote").textContent = r.skills_note || "";
     wizardMcpLoaded = true;
   } catch (err) {
-    list.textContent = "Не вдалося завантажити пропозиції.";
+    $("wzSkillsNote").textContent = "Не вдалося завантажити пресети: " + err.message;
   }
+  await searchWizardStore(true);
 }
+
+$("wzStoreSearch")?.addEventListener("click", () => searchWizardStore(false));
+$("wzStoreQuery")?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") searchWizardStore(false);
+});
 
 async function enablePreset(preset, pbtn) {
   pbtn.disabled = true;
@@ -1557,7 +2047,8 @@ async function enablePreset(preset, pbtn) {
       await enableMcp(id, el.btn, el.state);
     }
   }
-  pbtn.querySelector(".wz-preset-name").textContent = "✓ " + preset.name;
+  pbtn.querySelector(".wz-preset-name").textContent = preset.name;
+  pbtn.classList.add("done");
   toast("Пресет «" + preset.name + "» застосовано", "ok", 3000);
 }
 
@@ -1578,21 +2069,24 @@ async function enableMcp(id, btn, state) {
     const r = await postJSON("/api/setup/mcp/enable", { id: id, env: env });
     if (r.ok) {
       state.className = "wz-mcp-state ok";
-      state.textContent = "✓ додано в OpenClaw";
+      state.textContent = "додано в OpenClaw";
+      state.className = "wz-mcp-state ok";
       btn.textContent = "Готово";
     } else {
       state.className = "wz-mcp-state err";
-      state.textContent = "✗ " + (r.output || "не вдалося").slice(0, 180);
+      state.textContent = (r.output || "не вдалося").slice(0, 180);
+    state.className = "wz-mcp-state err";
       btn.disabled = false;
     }
   } catch (err) {
     state.className = "wz-mcp-state err";
-    state.textContent = "✗ " + err.message;
+    state.textContent = err.message;
+    state.className = "wz-mcp-state err";
     btn.disabled = false;
   }
 }
 
-async function saveWizard() {
+async function saveSetup() {
   const body = {
     name: $("wzName").value.trim(),
     language: wzSel.language,
@@ -1610,28 +2104,39 @@ async function saveWizard() {
     if (model) {
       try { await postJSON("/api/model", { model: model }); } catch (e) { /* модель — не критично */ }
     }
-    toast("Налаштування збережено ✓", "ok", 3000);
-    closeWizard();
+    toast("Налаштування збережено", "ok", 3000);
+    setSetupSaved("Збережено");
     refreshStatus();
     initModelPicker();
   } catch (err) {
+    setSetupSaved("");
     toast("Збереження: " + err.message);
   }
 }
 
-$("setupBtn")?.addEventListener("click", openWizard);
-$("wizardClose")?.addEventListener("click", closeWizard);
-$("wizardBack")?.addEventListener("click", () => showWizardStep(wizardStep - 1));
-$("wizardNext")?.addEventListener("click", () => {
-  if (wizardStep < WIZARD_STEPS) showWizardStep(wizardStep + 1);
-  else saveWizard();
-});
+/* Тихий підпис біля кнопки «Зберегти» (зникає сам, щоб не висів вічно) */
+let setupSavedTimer = 0;
+function setSetupSaved(text) {
+  const el = $("setupSaved");
+  if (!el) return;
+  el.textContent = text;
+  clearTimeout(setupSavedTimer);
+  if (text) setupSavedTimer = setTimeout(() => { el.textContent = ""; }, 4000);
+}
+
+// Вкладку «Налаштування» перемикає загальний обробник вкладок (data-tab);
+// тут лише догружаємо вміст поточного розділу (після silent-відновлення)
+// і зберігаємо профіль.
+$("setupBtn")?.addEventListener("click", () => showSetupSection(setupSection));
+$("setupSave")?.addEventListener("click", saveSetup);
 
 /* ---------- Старт ---------- */
 
 refreshStatus();
 refreshServices();
-refreshMemoryList();
+// refreshMemoryList() тут більше немає: функції не існує з того часу, як
+// пам'ять переїхала в React-панель, і виклик кидав ReferenceError — а разом
+// з ним ГЛУШИВ увесь решту старту (initSetup, initConsole, обидва setInterval).
 initModelPicker();
 initConsole();
 initSetup();

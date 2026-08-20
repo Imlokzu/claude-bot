@@ -1,19 +1,19 @@
 :root {
-  --bg: #F0EEE6;
-  --bg-panel: #FBFAF7;
-  --bg-inset: #E9E7DD;
-  --bg-card: #F5F3EC;
-  --border: #E4E1D6;
-  --border-bright: #D2CEC0;
-  --text: #2B2A26;
-  --text-muted: #83817A;
-  --green: #C96442;
-  --ok: #5F8B4C;
-  --blue: #5A5750;
-  --cyan: #4E8A88;
-  --yellow: #B4802E;
-  --red: #B4443A;
-  --radius: 18px;
+  --bg: #eee4d2;
+  --bg-panel: #fffaf1;
+  --bg-inset: #e5d5bc;
+  --bg-card: #f7eddd;
+  --border: #dbc9ad;
+  --border-bright: #c8ae8c;
+  --text: #30271f;
+  --text-muted: #887563;
+  --green: #b95f3d;
+  --ok: #718b62;
+  --blue: #756451;
+  --cyan: #4f8580;
+  --yellow: #a9742d;
+  --red: #a84f45;
+  --radius: 24px;
   /* Системний гротеск: на macOS це SF Pro — легко читається, без «мультяшності» */
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", ui-sans-serif,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -130,6 +130,11 @@ body {
 .chat-messages {
   flex: 1;
   min-height: 0;
+  /* Легасі .chat-messages у /static/style.css (стара ванільна панель) обрізає
+     цей же клас через max-height: 56vh — властивість «протікає» сюди, бо
+     наш rule її не перевизначав. Явно скидаємо, інакше стрічка не тягнеться
+     на всю висоту картки, і поле вводу лишається «підвішеним» над порожнечею. */
+  max-height: none;
   padding: 16px 16px 8px;
   overflow-y: auto;
 }
@@ -897,6 +902,271 @@ body {
   gap: 6px;
 }
 
+/* ---------- Живий голосовий режим ---------- */
+
+.voice-mode-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(37, 30, 25, 0.48);
+  backdrop-filter: blur(18px) saturate(0.9);
+  animation: voice-backdrop-in 180ms ease-out;
+}
+
+.voice-mode-shell {
+  width: min(720px, 100%);
+  max-height: min(860px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-bright) 80%, white 20%);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 50% -12%, color-mix(in srgb, var(--green) 22%, transparent), transparent 38%),
+    linear-gradient(145deg, color-mix(in srgb, var(--bg-panel) 94%, white 6%), var(--bg-card));
+  box-shadow: 0 32px 90px rgba(43, 34, 28, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+.voice-mode-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 28px 8px;
+}
+
+.voice-mode-header h2 {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: clamp(22px, 3vw, 30px);
+  letter-spacing: -0.04em;
+}
+
+.voice-mode-kicker {
+  color: var(--green);
+  font: 700 10px/1 var(--font-mono);
+  letter-spacing: 0.16em;
+}
+
+.voice-orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 220px;
+  height: 220px;
+  margin: 20px auto 8px;
+}
+
+.voice-orb-button {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  border: 1px solid color-mix(in srgb, var(--green) 70%, white 30%);
+  border-radius: 50%;
+  color: #fffaf1;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--green) 88%, #7a3725 12%), #8f442e);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--green) 35%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  font-size: 30px;
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.voice-orb-button:hover {
+  transform: scale(1.04);
+  box-shadow: 0 18px 42px color-mix(in srgb, var(--green) 44%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.voice-orb-button:active {
+  transform: scale(0.96);
+}
+
+.voice-orb-ring {
+  position: absolute;
+  border: 1px solid color-mix(in srgb, var(--green) 35%, transparent);
+  border-radius: 50%;
+  opacity: 0.7;
+}
+
+.voice-orb-ring-one {
+  width: 160px;
+  height: 160px;
+}
+
+.voice-orb-ring-two {
+  width: 214px;
+  height: 214px;
+  opacity: 0.38;
+}
+
+.voice-orb-listening .voice-orb-ring-one,
+.voice-orb-speaking .voice-orb-ring-one {
+  animation: voice-ring-pulse 1.35s ease-in-out infinite;
+}
+
+.voice-orb-listening .voice-orb-ring-two,
+.voice-orb-speaking .voice-orb-ring-two {
+  animation: voice-ring-pulse 1.35s 180ms ease-in-out infinite;
+}
+
+.voice-orb-thinking .voice-orb-button,
+.voice-orb-transcribing .voice-orb-button {
+  animation: voice-button-breathe 1.2s ease-in-out infinite;
+}
+
+.voice-mode-phase {
+  padding: 0 24px;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.voice-mode-status {
+  min-height: 22px;
+  padding: 5px 24px 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.voice-mode-warning,
+.voice-mode-error,
+.voice-mode-interim {
+  width: min(560px, calc(100% - 48px));
+  margin: 10px auto 0;
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.voice-mode-warning {
+  color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+}
+
+.voice-mode-error {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 12%, transparent);
+}
+
+.voice-mode-interim {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 10%, transparent);
+}
+
+.voice-mode-conversation {
+  min-height: 94px;
+  max-height: 230px;
+  margin: 18px 24px 0;
+  padding: 14px;
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-panel) 52%, transparent);
+}
+
+.voice-mode-empty {
+  display: grid;
+  min-height: 66px;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.voice-turn {
+  margin-bottom: 12px;
+}
+
+.voice-turn:last-child {
+  margin-bottom: 0;
+}
+
+.voice-turn span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--green);
+  font: 700 10px/1 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.voice-turn-user span {
+  color: var(--blue);
+}
+
+.voice-turn p {
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.voice-mode-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 24px 24px;
+}
+
+.voice-mode-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.voice-mode-options label,
+.voice-rate-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.voice-mode-main-button {
+  min-width: 132px;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--green) 25%, transparent);
+}
+
+@keyframes voice-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes voice-ring-pulse {
+  0%, 100% { transform: scale(0.94); opacity: 0.34; }
+  50% { transform: scale(1.06); opacity: 0.82; }
+}
+
+@keyframes voice-button-breathe {
+  0%, 100% { transform: scale(0.98); }
+  50% { transform: scale(1.04); }
+}
+
+@media (max-width: 620px) {
+  .voice-mode-backdrop { padding: 10px; }
+  .voice-mode-shell { max-height: calc(100vh - 20px); border-radius: 24px; }
+  .voice-mode-header { padding: 20px 20px 4px; }
+  .voice-orb { margin-top: 8px; transform: scale(0.84); }
+  .voice-mode-conversation { margin-inline: 14px; }
+  .voice-mode-footer { align-items: stretch; flex-direction: column; padding: 14px 16px 18px; }
+  .voice-mode-main-button { width: 100%; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .blur-typing-ghost,
   .blur-typing-char,
@@ -1252,6 +1522,36 @@ body {
   color: #C96442;
 }
 
+/* Кнопка «перемістити в проєкт» — та сама поведінка, що й у зірки закріплення */
+.session-row-move {
+  flex: 0 0 26px;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  font-size: 12px;
+  transition: color 0.15s ease, background 0.15s ease, opacity 0.15s ease;
+}
+
+.session-row:hover .session-row-move,
+.session-row-move:focus-visible {
+  opacity: 1;
+}
+
+.session-row-move:hover {
+  background: rgba(201, 100, 66, 0.1);
+  color: var(--text);
+}
+
+.session-row-project {
+  color: var(--green);
+}
+
 .session-row:hover {
   background: var(--bg-card);
 }
@@ -1283,6 +1583,211 @@ body {
   padding: 12px 10px;
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* Розділ «Проєкти» — завжди зверху списку чатів, окремо від пошуку */
+.project-section {
+  flex: 0 0 auto;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.project-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.project-section-add {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.project-section-add:hover {
+  background: rgba(201, 100, 66, 0.1);
+  color: var(--green);
+}
+
+.project-section-items {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.project-section-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.project-section-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-section-row:hover {
+  background: var(--bg-card);
+}
+
+/* Модалка проєкту: чати + бібліотека (картинки й файли) */
+.project-modal-title,
+.project-modal-rename {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.project-modal-rename .ant-input {
+  max-width: 260px;
+}
+
+.project-modal-section {
+  margin-top: 18px;
+}
+
+.project-modal-section:first-of-type {
+  margin-top: 4px;
+}
+
+.project-modal-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.project-modal-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+.project-modal-crumbs button {
+  border: none;
+  background: none;
+  color: var(--green);
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+}
+
+.project-modal-chats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.project-modal-chat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-modal-chat-row:hover {
+  border-color: var(--green);
+}
+
+.project-modal-empty {
+  padding: 10px 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.project-modal-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.project-modal-image {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  padding: 0;
+  cursor: pointer;
+  background: var(--bg-card);
+}
+
+.project-modal-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.project-modal-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.project-modal-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-modal-file-row:hover {
+  background: var(--bg-card);
 }
 
 /* Кнопка розмови голосом поруч із мікрофоном */
@@ -1317,63 +1822,59 @@ body {
   margin-top: 10px;
 }
 
-.img-gallery-stage {
+/* Стрічка мініатюр фіксованого розміру зі свайпом убік: видно ~2.5 картинки
+   одразу (наступна «виглядає» з-за краю — натяк, що можна проскролити),
+   замість однієї картинки на всю ширину контейнера. */
+.img-gallery-track {
   position: relative;
   display: flex;
-  justify-content: center;
+  gap: 8px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.img-gallery-track::-webkit-scrollbar {
+  height: 6px;
+}
+
+.img-gallery-track::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 999px;
+}
+
+.img-gallery-item {
+  position: relative;
+  flex: 0 0 auto;
+  width: 42%;
+  max-width: 220px;
+  min-width: 140px;
+  height: 160px;
   background: var(--bg-inset);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
+  cursor: zoom-in;
+  scroll-snap-align: start;
 }
 
-.img-gallery-stage img {
-  max-width: 100%;
-  max-height: 340px;
-  object-fit: contain;
-  cursor: zoom-in;
+.img-gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   display: block;
 }
 
 .img-gallery-like {
   position: absolute;
-  top: 10px;
-  right: 12px;
+  top: 8px;
+  right: 10px;
   color: var(--red);
-  font-size: 16px;
+  font-size: 15px;
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
 }
-
-/* Стрілки зʼявляються на наведення — щоб не заважали дивитись */
-.img-gallery-nav {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text);
-  background: rgba(251, 250, 247, 0.9);
-  border: 1px solid var(--border-bright);
-  border-radius: 999px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, background 0.15s ease;
-}
-
-.img-gallery:hover .img-gallery-nav {
-  opacity: 1;
-}
-
-.img-gallery-nav:hover {
-  background: #fff;
-  color: var(--green);
-}
-
-.img-gallery-prev { left: 8px; }
-.img-gallery-next { right: 8px; }
 
 .img-gallery-dots {
   display: flex;
@@ -1478,6 +1979,163 @@ body {
 
 .tool-block.tool-step-done .tool-step-state {
   color: var(--ok);
+}
+
+/* Живі UI-елементи бота: питання-кнопки, чекліст, картки вибору */
+.ui-card {
+  margin: 10px 0;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  animation: tool-block-open 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ui-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 10px;
+}
+
+.ui-card-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ui-option-btn {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.ui-option-btn:hover:not(:disabled) {
+  border-color: #C96442;
+  background: rgba(201, 100, 66, 0.08);
+}
+
+.ui-option-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.ui-option-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ui-option-btn.ui-option-picked {
+  border-color: #C96442;
+  background: rgba(201, 100, 66, 0.12);
+  color: #C96442;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.ui-card-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ui-card-answered-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ok);
+}
+
+.ui-card.ui-card-answered {
+  opacity: 0.85;
+}
+
+/* Тудушка */
+.ui-todo-progress {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.ui-todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ui-todo-list li {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.ui-todo-item-done .ant-checkbox-wrapper {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Картки вибору */
+.ui-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.ui-choice-card {
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.ui-choice-card:hover:not(:disabled) {
+  border-color: #C96442;
+  background: rgba(201, 100, 66, 0.08);
+}
+
+.ui-choice-card:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.ui-choice-card:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.ui-choice-card.ui-option-picked {
+  border-color: #C96442;
+  background: rgba(201, 100, 66, 0.12);
+  opacity: 1;
+}
+
+.ui-choice-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ui-choice-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.4;
 }
 
 /* Підпис під картинкою в каруселі */
@@ -1743,7 +2401,83 @@ body {
 @media (max-width: 680px) {
   .chat-panel-model {
     gap: 5px;
+    /* Без цього grid-колонка бере ширину ЗА ВМІСТОМ (auto = min-content),
+       і довга назва моделі «Claude Sonnet 5» розпирала шапку за межі
+       екрана — сторінка їхала вбік на 160px. */
+    min-width: 0;
+    overflow: hidden;
   }
+
+  /* `justify-self: start` робить колонку широкою за вмістом, і селектор
+     наповзав на кнопку «новий чат». Прив'язуємо блок до ширини колонки. */
+  .chat-panel-model {
+    justify-self: stretch;
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .chat-panel-model select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    text-overflow: ellipsis;
+  }
+
+  /* Перемикач і селектор моделі не вміщаються в один рядок на 390px —
+     віддаємо перемикачу власний рядок на всю ширину шапки. */
+  .chat-panel-header {
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    grid-template-areas:
+      "menu  model new"
+      "mode  mode  mode";
+    row-gap: 10px;
+  }
+
+  .chat-sidebar-toggle { grid-area: menu; }
+  .chat-panel-model { grid-area: model; }
+  .chat-panel-actions { grid-area: new; }
+
+  /* Позначка «локально» — службова, для розробки. На 390px вона разом
+     із кнопкою «новий чат» не влазила в колонку й тягла сторінку вбік. */
+  .chat-panel-actions .auth-local-badge { display: none; }
+  .chat-mode-wrap {
+    grid-area: mode;
+    display: flex;
+    width: 100%;
+  }
+
+  .chat-mode-switch > button {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Поле вводу: чотири кнопки з обох боків з'їдали ширину так, що
+     плейсхолдер ламався на два рядки в однорядковому полі. */
+  .chat-panel .chat-input-area .ant-sender-prefix,
+  .chat-panel .chat-input-area .ant-sender-actions {
+    gap: 0;
+  }
+
+  .chat-panel .chat-input-area .ant-sender {
+    padding-inline: 6px;
+  }
+
+  /* Текстове поле має право стискатися: без min-width: 0 flex-елемент
+     тримає min-content і виштовхує власний плейсхолдер у другий рядок. */
+  .chat-panel .chat-input-area .ant-sender-content,
+  .chat-panel .chat-input-area .ant-sender-input,
+  .chat-panel .chat-input-area .blur-typing-wrap {
+    min-width: 0;
+  }
+
+  /* Кнопка голосового режиму дублює мікрофон поруч (обидві — «говорити»).
+     На 390px це коштує 40px ширини поля: лишаємо диктовку, а повний
+     голосовий режим доступний із тієї ж панелі на ширшому екрані. */
+  .chat-panel .chat-input-area .voice-mode-btn {
+    display: none;
+  }
+
+  .chat-panel { padding: 10px; }
 
   .reasoning-control > span {
     position: absolute;
@@ -1780,4 +2514,422 @@ body {
 
 .side-preview-fullscreen .file-preview-image img {
   max-height: 80vh;
+}
+
+/* Спільна з оболонкою нічна графітова тема. */
+:root[data-theme="dark"] .chat-panel {
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .chat-body,
+:root[data-theme="dark"] .chat-panel-model select,
+:root[data-theme="dark"] .tool-card .ant-card-head,
+:root[data-theme="dark"] .ant-card,
+:root[data-theme="dark"] .ant-modal-content,
+:root[data-theme="dark"] .ant-drawer-content {
+  background: var(--bg-panel) !important;
+  border-color: var(--border) !important;
+}
+
+:root[data-theme="dark"] .chat-messages .markdown-body,
+:root[data-theme="dark"] .chat-panel-title,
+:root[data-theme="dark"] .tool-card .ant-card-head-title {
+  color: var(--text) !important;
+}
+
+:root[data-theme="dark"] .chat-messages .markdown-body pre,
+:root[data-theme="dark"] .chat-messages .markdown-body code,
+:root[data-theme="dark"] .attached-file {
+  background: var(--bg-inset) !important;
+  border-color: var(--border) !important;
+}
+
+.chat-body,
+.chat-panel-model select,
+.tool-card .ant-card,
+.attached-file {
+  transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease;
+}
+
+:root[data-theme="dark"] {
+  --bg: #171819;
+  --bg-panel: #222426;
+  --bg-inset: #2c2f31;
+  --bg-card: #292c2e;
+  --border: #3a3e41;
+  --border-bright: #5a6064;
+  --text: #e8e4dc;
+  --text-muted: #9a9da0;
+  --green: #d17a58;
+  --ok: #8ca879;
+  --blue: #b8b1a5;
+  --cyan: #76b5b0;
+  --yellow: #d7a65b;
+  --red: #d87869;
+}
+
+/* ---- Перемикач Чат / Код (Material 3 segmented button) ------------------
+   Кодинг-режим — це інший ХАРНЕС, не інша модель, тому окремий перемикач
+   поруч із селектором моделі.
+
+   Базову форму дає .m3-segmented з /static/m3.css (спільна для всієї
+   панелі). Тут лишається тільки те, що стосується саме цього місця:
+   як перемикач стоїть у шапці та як поводиться поруч із текою omp.
+   Дублювати правила сегментів не можна — chat-panel.css вантажиться
+   ПІСЛЯ m3.css і мовчки перебив би спільний компонент. */
+
+.chat-mode-wrap {
+  /* flex, а не inline-flex: базове правило оголошене НИЖЧЕ за медіа-блок
+     на 680px, де стояло `display: flex`, і за рівної специфічності
+     перемагало його. Елемент і так grid-item, тож inline тут нічого не
+     давало — прибираємо розбіжність, щоб не наступити на неї згодом. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Висота 36px замість типових 40: перемикач стоїть в одному рядку з
+   селектором моделі, і 40px робили шапку вищою за поле вводу. */
+.chat-mode-switch {
+  height: 36px;
+}
+
+.chat-mode-switch > button {
+  min-width: 58px;
+  padding: 0 14px;
+  font-size: 13px;
+}
+
+/* Тека, у якій працює omp. Показуємо саме ШЛЯХ, а не назву проєкту:
+   у кодингу важливо бачити, куди агент пише, а не як тека називається. */
+.chat-mode-project {
+  max-width: 220px;
+  height: 36px;
+  padding: 0 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--m3-surface-container-high, var(--bg-card));
+  border: 1px solid var(--m3-outline, var(--border-bright));
+  border-radius: var(--shape-full, 999px);
+  cursor: pointer;
+  transition: border-color var(--dur-medium, 200ms) var(--ease-standard, ease);
+}
+
+.chat-mode-project:hover {
+  border-color: var(--m3-primary, var(--green));
+}
+
+/* Модель, якою РЕАЛЬНО працює кодинг-режим. Не селектор: вибирати тут
+   нічого — модель задана в config.yaml (coding.model), і показувати
+   випадайку з чужими моделями чату означало б брехати. */
+.chat-code-model {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--bg-card);
+  border: 1px dashed var(--border-bright);
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+
+/* ---- Порожня розмова -----------------------------------------------------
+   Показуємо це замість голої білої області: користувач має розуміти, що
+   чат порожній НАВМИСНО, а не «не догрузився». */
+.chat-empty-state {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 24px;
+  text-align: center;
+}
+
+.chat-empty-mark {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--shape-full, 999px);
+  background: var(--m3-secondary-container, color-mix(in srgb, var(--green) 18%, transparent));
+  color: var(--m3-on-secondary-container, var(--green));
+}
+
+.chat-empty-mark svg {
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chat-empty-title {
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.chat-empty-lead {
+  max-width: 380px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+
+/* Третя колонка шапки: аватар/вхід + «новий чат». Не дає собі рости
+   ширшою за колонку — інакше сторінка їде вбік на вузькому екрані. */
+.chat-panel-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+
+/* ---- Мобільні розміри перемикача Чат/Код --------------------------------
+   Стоїть у кінці файлу НАВМИСНО: базове `.chat-mode-switch { height: 36px }`
+   оголошене нижче за медіа-запит ширини, і з однаковою специфічністю
+   перемагало б останнє правило. Тут воно останнє. */
+@media (max-width: 680px) {
+  /* 44px — мінімальна комфортна ціль дотику; 36px пальцем не беруться */
+  .chat-mode-switch {
+    flex: 1;
+    height: 44px;
+  }
+
+  .chat-mode-project { height: 44px; }
+}
+
+/* ---- Розділи в шухляді чату --------------------------------------------- */
+
+.drawer-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  margin-top: auto;
+}
+
+.drawer-sections-title {
+  padding: 8px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.drawer-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.drawer-section:hover { background: var(--bg-card); }
+
+.drawer-section.active {
+  background: var(--m3-secondary-container, var(--bg-inset));
+  color: var(--m3-on-secondary-container, var(--green));
+  font-weight: 600;
+}
+
+.drawer-section-ico { display: flex; flex: 0 0 auto; }
+.drawer-section-ico svg {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ============================================================
+   Телефон: чат — це РОЗМОВА, а не картка в картці
+   ------------------------------------------------------------
+   Було: картка панелі → падінг .chat-panel → ЩЕ ОДНА картка
+   .chat-body → падінг .chat-messages. Чотири вкладені коробки
+   зі своїми рамками, тінями й радіусами з'їдали ~40px ширини
+   й читались як інтерфейс поверх інтерфейсу.
+
+   Стало: жодної рамки. Повідомлення лежать прямо на полотні,
+   від краю до краю — як у будь-якому месенджері.
+   ============================================================ */
+
+@media (max-width: 700px) {
+  .chat-layout { gap: 0; }
+
+  .chat-panel {
+    padding: 0;
+    gap: 0;
+    min-height: 0;
+  }
+
+  .chat-panel-header {
+    padding: 8px 12px 10px;
+  }
+
+  /* Друга картка зникає повністю */
+  .chat-body {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .chat-messages {
+    padding: 8px 12px 4px;
+  }
+
+  .chat-input-area {
+    padding: 0 8px calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .chat-empty-state { padding: 24px 20px; }
+}
+
+/* ---- Шухляда на телефоні: теж без коробок --------------------------------
+   Список чатів — це .session-list із власною рамкою й радіусом. У бічній
+   панелі на десктопі це доречно (він там окрема колонка), а всередині
+   шухляди виходила картка в картці: рамка за 8px від рамки самої шухляди.
+
+   Тут же розподіляємо висоту: чати ростуть і прокручуються, розділи
+   лишаються компактним «підвалом» — інакше вісім розділів забирали
+   пів шухляди, а на список чатів лишалось чотири рядки. */
+
+@media (max-width: 700px) {
+  .ant-drawer .session-list {
+    padding: 8px;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    /* flex:1 + min-height:0 — щоб прокручувався саме список чатів,
+       а не вся шухляда разом із розділами */
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .drawer-sections {
+    flex: 0 0 auto;
+    margin-top: 0;
+    padding-block: 6px;
+  }
+
+  .drawer-section {
+    min-height: 40px;
+    font-size: 13px;
+  }
+
+  .drawer-sections-title { padding-top: 4px; }
+}
+
+
+/* ============================================================
+   Темна тема: редактор коду
+   ------------------------------------------------------------
+   CodeMirror малює власне біле тло, а текст успадковував кремовий
+   --text темної теми: вміст файлу ставав кремовим на білому й
+   практично не читався. Фарбуємо і полотно, і службові частини —
+   поле номерів рядків, активний рядок, курсор, виділення.
+   ============================================================ */
+
+:root[data-theme="dark"] .cm-editor,
+:root[data-theme="dark"] .cm-editor .cm-scroller,
+:root[data-theme="dark"] .cm-editor .cm-content {
+  background: var(--bg-inset);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .cm-editor .cm-gutters {
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border-right-color: var(--border);
+}
+
+:root[data-theme="dark"] .cm-editor .cm-activeLine,
+:root[data-theme="dark"] .cm-editor .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+:root[data-theme="dark"] .cm-editor .cm-cursor,
+:root[data-theme="dark"] .cm-editor .cm-dropCursor {
+  border-left-color: var(--text);
+}
+
+:root[data-theme="dark"] .cm-editor .cm-selectionBackground,
+:root[data-theme="dark"] .cm-editor.cm-focused .cm-selectionBackground,
+:root[data-theme="dark"] .cm-editor ::selection {
+  background: color-mix(in srgb, var(--green) 30%, transparent);
+}
+
+/* Кнопки antd у шапці «Файлів» лишалися світлими пігулками на темній
+   панелі — вони не знають про нашу тему, бо стилі їм дає сам antd. */
+:root[data-theme="dark"] .ws-actions .ant-btn,
+:root[data-theme="dark"] .ws-panel .ant-btn-default {
+  background: var(--bg-card);
+  border-color: var(--border-bright);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .ws-actions .ant-btn:hover,
+:root[data-theme="dark"] .ws-panel .ant-btn-default:hover {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* ============================================================
+   «Файли» на телефоні
+   ------------------------------------------------------------
+   .ws-body лишалась двоколонковою сіткою на будь-якій ширині:
+   дерево тек ліворуч, а редактор стискався до ~95px і вилазив за
+   правий край. Прочитати файл було неможливо. Складаємо в один
+   стовпець: дерево згори з обмеженою висотою, редактор під ним.
+   ============================================================ */
+
+@media (max-width: 700px) {
+  .ws-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(120px, 32dvh) minmax(0, 1fr);
+  }
+
+  .ws-tree { overflow-y: auto; }
+
+  .ws-header { padding-inline: 4px; }
+
+  /* Абсолютний шлях із 64-символьним хешем займав три рядки. Показуємо
+     його одним рядком з обрізанням — повний лишається в title. */
+  .ws-path {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    direction: rtl;
+    text-align: left;
+  }
+
+  .ws-actions { flex-wrap: wrap; }
+
+  .cm-editor { font-size: 12px; }
 }

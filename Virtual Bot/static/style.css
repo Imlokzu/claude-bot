@@ -23,7 +23,7 @@
   --pink: #D98BA0;        /* мʼяка троянда — love */
   --glow-green: rgba(201, 100, 66, 0.16);
   --glow-blue: rgba(0, 0, 0, 0.05);
-  --radius: 10px;
+  --radius: 24px;
   /* Системний гротеск (на macOS — SF Pro): читабельний, без «мультяшності» */
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", ui-sans-serif,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -186,61 +186,104 @@ body {
 
 /* ---------- Вкладки панелей ---------- */
 
+/* Вкладки — Material 3 primary tabs: підкреслення індикатором знизу,
+   state layer на наведення, ціль дотику 48px. На вузькому екрані цей
+   ряд ховається зовсім, бо там працює нижня навігація (.mobile-nav). */
 .dashboard-tabs {
   display: flex;
-  gap: 4px;
-  padding: 10px 14px 0;
-  border-bottom: 1px solid var(--border);
+  gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--m3-outline-variant, var(--border));
   background: var(--bg-panel);
   position: sticky;
-  top: 48px;
+  top: 52px;
   z-index: 40;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+
+.dashboard-tabs::-webkit-scrollbar { display: none; }
 
 .dashboard-tab {
+  position: relative;
+  isolation: isolate;
   font-family: var(--font);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--m3-on-surface-variant, var(--text-muted));
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
-  padding: 10px 14px;
+  padding: 0 16px;
+  min-height: 48px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition: color var(--dur-medium, 200ms) var(--ease-standard, ease);
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
+/* Активний індикатор M3: смуга 3px із заокругленим верхом, що росте
+   від центру. Це не рамка — рамка тягнула б за собою розмір елемента. */
+.dashboard-tab::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--m3-primary, var(--green));
+  transform: scaleX(0);
+  transition: transform var(--dur-medium, 200ms) var(--ease-emphasized, ease);
+}
+
+.dashboard-tab::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short, 100ms) var(--ease-standard, ease);
+  z-index: -1;
+}
+
+.dashboard-tab:hover::after { opacity: var(--state-hover, 0.08); }
+.dashboard-tab:active::after { opacity: var(--state-pressed, 0.1); }
+
 .dashboard-tab:hover {
-  color: var(--text);
-  background: rgba(43, 42, 38, 0.03);
+  color: var(--m3-on-surface, var(--text));
 }
 
 /* Лінійні іконки замість емодзі: колір і товщина успадковуються від стану
    елемента (активна вкладка, hover, disabled), емодзі так не вміють. */
 .ico {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   flex: 0 0 auto;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.6;
+  /* 1.7 на сітці 24 — вага Material Symbols Outlined. Тонше «розсипається»
+     на дрібних розмірах, товще починає сперечатися з текстом поруч. */
+  stroke-width: 1.7;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.btn .ico {
-  width: 13px;
-  height: 13px;
-}
+.btn .ico { width: 16px; height: 16px; }
 
 .dashboard-tab.active {
-  color: var(--green);
-  border-bottom-color: var(--green);
-  background: rgba(201, 100, 66, 0.06);
+  color: var(--m3-primary, var(--green));
+  font-weight: 600;
+}
+
+.dashboard-tab.active::before { transform: scaleX(1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-tab::before { transition: none; }
 }
 
 .dashboard {
@@ -288,7 +331,12 @@ body {
   max-width: none;
   min-width: 0;
   width: 100%;
-  height: 100%;
+  min-height: 0;
+  /* Колонка притиснута до верху й БЕРЕТЬСЯ ЗА ВМІСТ: розтягнута на всю
+     висоту, вона перетворювала краба на вузьку темну смугу через пів
+     екрана. Обличчя — акцент збоку, а не друга половина розкладки. */
+  align-self: start;
+  height: auto;
   justify-self: stretch;
 }
 
@@ -326,9 +374,11 @@ body.chat-preview-fullscreen-active .chat-grid .area-chat {
 }
 
 .chat-grid .face-screen {
-  min-height: 100%;
-  height: 100%;
-  flex: 1;
+  /* Пропорція, близька до реального екранчика бота (4:3), а не колонка
+     на всю висоту вікна. */
+  min-height: 0;
+  height: 168px;
+  flex: 0 0 auto;
 }
 
 .chat-grid .face-test {
@@ -405,8 +455,10 @@ body.chat-preview-fullscreen-active .chat-grid .area-chat {
 }
 
 .services-grid {
-  grid-template-columns: minmax(320px, 520px);
-  justify-content: start;
+  /* Комфортна ширина рядка, але не вужче за 320px: два сервіси в колонці
+     на 520px виглядали загубленою карткою в кутку широкого екрана. */
+  grid-template-columns: minmax(320px, 760px);
+  justify-content: center;
 }
 
 @media (min-width: 901px) {
@@ -441,24 +493,26 @@ body.chat-preview-fullscreen-active .chat-grid .area-chat {
 /* ---------- Панель ---------- */
 
 .panel {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
+  background: var(--m3-surface, var(--bg-panel));
+  border: 1px solid var(--m3-outline-variant, var(--border));
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 20px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  box-shadow: 0 1px 2px rgba(43, 42, 38, 0.04), 0 6px 20px rgba(43, 42, 38, 0.05);
+  gap: 16px;
+  box-shadow: var(--elev-1, none);
 }
 
+/* Заголовок панелі — серіф Клода. Розділювальної лінії немає: у M3 ієрархію
+   тримає розмір і відступ, а зайва лінія додає шуму на кожній картці. */
 .panel-title {
   font-family: var(--font-serif);
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
-  letter-spacing: 0.01em;
-  color: var(--text);
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 10px;
+  letter-spacing: -0.005em;
+  color: var(--m3-on-surface, var(--text));
+  padding-bottom: 0;
+  border-bottom: 0;
 }
 
 .panel-title::before {
@@ -470,10 +524,10 @@ body.chat-preview-fullscreen-active .chat-grid .area-chat {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
-  border-bottom: 1px dashed var(--border);
-  padding-bottom: 8px;
+  border-bottom: 0;
+  padding-bottom: 0;
 }
 
 .panel-head .panel-title {
@@ -505,49 +559,78 @@ body.chat-preview-fullscreen-active .chat-grid .area-chat {
 
 /* ---------- Кнопки та поля ---------- */
 
+/* .btn лишається для місць, які ще не переведені на .m3-btn, але виглядає
+   вже як outlined-кнопка M3: без CAPS (капс погано читається в українській
+   через діакритику), з нормальною висотою й state layer. */
 .btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   font-family: var(--font);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text);
-  background: var(--bg-card);
-  border: 1px solid var(--border-bright);
-  border-radius: 4px;
-  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--m3-on-surface, var(--text));
+  background: transparent;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--m3-outline, var(--border-bright));
+  border-radius: var(--shape-full, 999px);
+  min-height: 40px;
+  padding: 0 20px;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  transition: box-shadow var(--dur-medium, 200ms) var(--ease-standard, ease),
+              color var(--dur-medium, 200ms) var(--ease-standard, ease);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 8px;
 }
 
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short, 100ms) var(--ease-standard, ease);
+  z-index: -1;
+}
+
+.btn:hover:not(:disabled)::after { opacity: var(--state-hover, 0.08); }
+.btn:active:not(:disabled)::after { opacity: var(--state-pressed, 0.1); }
+
 .btn:hover:not(:disabled) {
-  border-color: var(--green);
-  color: var(--green);
-  box-shadow: 0 0 10px var(--glow-green);
+  color: var(--m3-primary, var(--green));
+  box-shadow: inset 0 0 0 1px var(--m3-primary, var(--green));
 }
 
 .btn:disabled {
-  opacity: 0.4;
-  cursor: default;
+  opacity: 0.38;
+  cursor: not-allowed;
 }
 
 .btn-accent {
-  border-color: var(--green);
-  color: var(--green);
+  background: var(--m3-primary-strong, var(--m3-primary, var(--green)));
+  color: var(--m3-on-primary, var(--bg-panel));
+  box-shadow: var(--elev-1, none);
+}
+
+.btn-accent:hover:not(:disabled) {
+  color: var(--m3-on-primary, var(--bg-panel));
+  box-shadow: var(--elev-2, none);
 }
 
 .btn-danger:hover:not(:disabled) {
-  border-color: var(--red);
-  color: var(--red);
-  box-shadow: 0 0 10px rgba(247, 118, 142, 0.35);
+  color: var(--m3-error, var(--red));
+  box-shadow: inset 0 0 0 1px var(--m3-error, var(--red));
 }
 
 .btn-small {
-  padding: 5px 9px;
-  font-size: 10px;
+  min-height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
 }
 
 .btn-row {
@@ -556,24 +639,43 @@ body.chat-preview-fullscreen-active .chat-grid .area-chat {
   flex-wrap: wrap;
 }
 
+/* Поля — filled-варіант M3: заливка контейнера + підкреслення знизу,
+   яке в фокусі товщає й фарбується акцентом. Рамка з усіх боків у теплій
+   гамі виглядала «клітинкою таблиці», підкреслення — спокійніше. */
 input[type="text"],
+input[type="password"],
+input[type="search"],
 textarea,
 select {
   font-family: var(--font);
-  font-size: 13px;
-  color: var(--text);
-  background: var(--bg-inset);
-  border: 1px solid var(--border-bright);
-  border-radius: 4px;
-  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--m3-on-surface, var(--text));
+  background: var(--m3-surface-container-high, var(--bg-inset));
+  border: 0;
+  border-bottom: 1px solid var(--m3-outline, var(--border-bright));
+  border-radius: var(--shape-xs, 4px) var(--shape-xs, 4px) 0 0;
+  min-height: 44px;
+  padding: 11px 14px;
+  transition: background var(--dur-medium, 200ms) var(--ease-standard, ease),
+              border-color var(--dur-medium, 200ms) var(--ease-standard, ease);
+}
+
+input[type="text"]:hover,
+input[type="password"]:hover,
+input[type="search"]:hover,
+textarea:hover,
+select:hover {
+  background: var(--m3-surface-container-highest, var(--bg-inset));
 }
 
 input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: var(--blue);
-  box-shadow: 0 0 8px var(--glow-blue);
+  border-bottom: 2px solid var(--m3-primary, var(--green));
+  padding-bottom: 10px;
 }
 
 input::placeholder,
@@ -884,9 +986,18 @@ textarea::placeholder {
   padding: 10px;
 }
 
+/* Іконка-заглушка вимкненого потоку. Розмір задаємо самій SVG: після
+   переходу з символу ▣ на іконку font-size уже нічого не вирішує, і
+   вона малювалась у типових 18px замість помітної заглушки. */
 .overlay-icon {
-  font-size: 30px;
-  color: var(--border-bright);
+  color: var(--m3-outline, var(--border-bright));
+  line-height: 0;
+}
+
+.overlay-icon .ico {
+  width: 44px;
+  height: 44px;
+  stroke-width: 1.2;
 }
 
 /* Бейдж подій зору (SSE): з'являється миттєво, зникає м'яко */
@@ -938,33 +1049,47 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 9px 2px;
-  border-bottom: 1px dashed var(--border);
-  font-size: 13px;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--m3-outline-variant, var(--border));
 }
 
 .status-list li:last-child {
-  border-bottom: none;
+  border-bottom: 0;
 }
 
 .status-name {
-  color: var(--text-muted);
+  font-size: 14px;
+  color: var(--m3-on-surface-variant, var(--text-muted));
 }
 
+/* Значення — не капсом: у статусі важливо швидко прочитати слово,
+   а капс в українській із діакритикою читається помітно гірше. */
 .status-val {
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.06em;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
 }
 
 .status-val.on  { color: var(--ok); }
 .status-val.off { color: var(--red); }
-.status-val.status-mode { color: var(--green); text-transform: uppercase; }
+.status-val.status-mode {
+  color: var(--m3-on-secondary-container, var(--green));
+  background: var(--m3-secondary-container, transparent);
+  border-radius: var(--shape-sm, 8px);
+  padding: 4px 10px;
+}
 
 /* ---------- 5. Сервіси ---------- */
 
 .service-row {
+  /* Рядок сервісу тягнеться на всю ширину панелі: раніше картка тулилася
+     в лівий верхній кут, а решта екрана лишалась порожньою. */
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1089,137 +1214,127 @@ textarea::placeholder {
   font-size: 11px;
 }
 
-/* ---------- Майстер налаштування ---------- */
+/* ---------- Налаштування: окрема сторінка ----------
+   Раніше це було модальне вікно-майстер. Тепер — звичайна вкладка дашборда:
+   ліва рейка розділів + прокручуване тіло + постійна смуга збереження. */
 
-.wizard-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 300;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background: rgba(4, 5, 10, 0.85);
-  backdrop-filter: blur(6px);
-  animation: msgIn 0.2s ease;
-}
-
-.wizard {
-  width: min(760px, 100%);
-  height: min(600px, 92vh);
-  background: var(--bg-panel);
-  border: 1px solid var(--border-bright);
-  border-radius: 10px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+.setup-page {
   display: grid;
-  grid-template-columns: 200px 1fr;
-  overflow: hidden;
+  grid-template-columns: 240px 1fr;
+  gap: 14px;
+  max-width: 1100px;
+  margin: 0 auto;
+  min-height: calc(100vh - 190px);
+  align-items: stretch;
 }
 
-/* Ліва рейка-степер */
-.wizard-rail {
-  background: linear-gradient(180deg, #EDEBE2, var(--bg-inset));
-  border-right: 1px solid var(--border);
+/* Ліва рейка розділів */
+.setup-rail {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
   padding: 18px 14px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  align-self: start;
+  position: sticky;
+  top: 14px;
 }
 
-.wizard-brand {
+.setup-rail-title {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;
+  text-transform: uppercase;
   color: var(--green);
-  text-shadow: 0 0 10px var(--glow-green);
 }
 
-.wizard-stepper {
+.setup-rail-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.setup-nav {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
-.wizard-stepper li {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 9px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-left: 2px solid transparent;
-  transition: background 0.15s, color 0.15s;
-}
-.wizard-stepper li:hover { background: rgba(122, 162, 247, 0.06); }
-
-.wizard-stepper li .wz-num {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  border: 1px solid var(--border-bright);
-  font-size: 10px;
-  color: var(--text-muted);
-}
-.wizard-stepper li .wz-ico { display: none; }
-.wizard-stepper li .wz-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-.wizard-stepper li.active {
-  background: rgba(158, 206, 106, 0.1);
-  border-left-color: var(--green);
-  color: var(--text);
-}
-.wizard-stepper li.active .wz-num {
-  border-color: var(--green);
-  color: var(--green);
-  box-shadow: 0 0 8px var(--glow-green);
-}
-.wizard-stepper li.done { color: var(--text); }
-.wizard-stepper li.done .wz-num {
-  background: var(--ok);
-  border-color: var(--ok);
-  color: #fff;
-}
-.wizard-stepper li.done .wz-num::after { content: "✓"; }
-.wizard-stepper li.done .wz-num { font-size: 0; }
-.wizard-stepper li.done .wz-num::after { font-size: 11px; }
-
-/* Права колонка */
-.wizard-main {
+.setup-nav li {
+  /* Пункт рейки — list item M3: 48px цілі дотику, стан як заливка
+     secondary-container, а не як зміна кольору тексту. */
   position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 14px;
+  border-radius: var(--shape-full, 999px);
+  color: var(--m3-on-surface-variant, var(--text-muted));
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--dur-medium, 200ms) var(--ease-standard, ease),
+              background var(--dur-medium, 200ms) var(--ease-standard, ease);
+}
+
+.setup-nav li::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short, 100ms) var(--ease-standard, ease);
+  z-index: -1;
+}
+
+.setup-nav li:hover::after { opacity: var(--state-hover, 0.08); }
+
+.setup-nav li:hover { color: var(--m3-on-surface, var(--text)); }
+
+.setup-nav li.active {
+  background: var(--m3-secondary-container, transparent);
+  color: var(--m3-on-secondary-container, var(--green));
+  font-weight: 600;
+}
+
+.setup-nav .st-ico { width: 20px; height: 20px; flex: 0 0 auto; }
+.setup-nav .st-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Права частина */
+.setup-main {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
-.wizard-close {
-  position: absolute;
-  top: 12px;
-  right: 14px;
-  z-index: 2;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 18px;
-  cursor: pointer;
-  padding: 2px 8px;
-}
-.wizard-close:hover { color: var(--red); }
-
-.wizard-body {
+.setup-body {
   flex: 1;
   overflow-y: auto;
-  padding: 22px 24px 12px;
+  padding: 24px 26px 16px;
   min-height: 0;
 }
 
+.setup-section { display: flex; flex-direction: column; animation: msgIn 0.18s ease; }
+
 .wz-step-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-family: var(--font-serif);
   font-size: 20px;
   font-weight: 600;
@@ -1256,22 +1371,62 @@ textarea::placeholder {
   width: 100%;
 }
 
-.wizard-step { display: flex; flex-direction: column; animation: msgIn 0.18s ease; }
-
-.wizard-nav {
+/* Постійна смуга збереження замість «Далі →» майстра */
+.setup-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 12px;
   border-top: 1px solid var(--border);
-  padding: 12px 24px;
+  padding: 12px 26px;
   background: var(--bg-inset);
 }
 
-.wizard-progress {
+.setup-saved {
   font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ok);
+}
+
+/* Акцентні свотчі (розділ «Вигляд») */
+.accent-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accent-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 7px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
   color: var(--text-muted);
-  letter-spacing: 0.1em;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+.accent-swatch:hover { border-color: var(--border-bright); color: var(--text); }
+
+.accent-swatch.sel {
+  border-color: var(--green);
+  color: var(--text);
+  background: var(--glow-green);
+  font-weight: 600;
+}
+
+.accent-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex: none;
+}
+
+.accent-swatch.sel .accent-dot {
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 3px var(--green);
 }
 
 /* Картки вибору (мова, характер) */
@@ -1283,102 +1438,76 @@ textarea::placeholder {
 .wz-cards-sm { grid-template-columns: repeat(3, 1fr); }
 
 .wz-card {
+  /* Це <button>, а не <div>: картку можна вибрати з клавіатури. Тому
+     явно знімаємо все, що браузер малює кнопці за замовчуванням. */
+  appearance: none;
+  font-family: var(--font);
+  text-align: left;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 10px;
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  gap: 12px;
+  min-height: 60px;
+  padding: 12px 16px;
+  background: var(--m3-surface-container-low, var(--bg-card));
+  border: 1px solid var(--m3-outline-variant, var(--border));
+  border-radius: var(--shape-md, 12px);
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-  min-width: 0;
+  transition: border-color var(--dur-medium, 200ms) var(--ease-standard, ease),
+              background var(--dur-medium, 200ms) var(--ease-standard, ease);
 }
-.wz-card:hover { border-color: var(--border-bright); }
+
+.wz-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-short, 100ms) var(--ease-standard, ease);
+  z-index: -1;
+}
+
+.wz-card:hover::after { opacity: var(--state-hover, 0.08); }
+
+.wz-card:hover { border-color: var(--m3-outline, var(--border-bright)); }
 .wz-card.sel {
+  background: var(--m3-secondary-container, transparent);
+  border-color: var(--m3-primary, var(--green));
   border-color: var(--green);
   background: rgba(158, 206, 106, 0.1);
   box-shadow: 0 0 10px var(--glow-green);
 }
-.wz-card .wz-card-ico { font-size: 16px; flex-shrink: 0; }
+.wz-card .wz-card-ico { width: 22px; height: 22px; flex-shrink: 0; color: var(--m3-primary, var(--green)); }
 .wz-card .wz-card-body { min-width: 0; }
-.wz-card .wz-card-name { font-size: 12px; font-weight: 700; color: var(--text); }
+.wz-card .wz-card-name { font-size: 14px; font-weight: 600; color: var(--m3-on-surface, var(--text)); }
 .wz-card .wz-card-hint {
   font-size: 10px; color: var(--text-muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 /* Сегментований перемикач (довжина відповідей) */
+/* Довжина відповідей — той самий сегментований перемикач Material 3, що й
+   Чат/Код у чаті: клас .m3-segmented стоїть у розмітці, тут лишається
+   тільки те, що стосується саме цього місця. Раніше тут лежала дослівна
+   копія всіх правил компонента — дві реалізації одного елемента розходяться
+   на першій же правці. */
 .wz-seg {
-  display: inline-flex;
-  border: 1px solid var(--border-bright);
-  border-radius: 6px;
-  overflow: hidden;
+  align-self: flex-start;
 }
-.wz-seg button {
-  font-family: var(--font);
-  font-size: 11px;
-  padding: 7px 14px;
-  background: var(--bg-card);
-  color: var(--text-muted);
-  border: none;
-  border-right: 1px solid var(--border);
-  cursor: pointer;
-}
-.wz-seg button:last-child { border-right: none; }
-.wz-seg button.sel { background: var(--green); color: var(--bg); font-weight: 700; }
 
-/* Тумблери */
 .wz-toggle-row { margin-bottom: 12px; }
-.wz-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--text);
-  cursor: pointer;
-}
-.wz-toggle input { display: none; }
-.wz-switch {
-  width: 38px;
-  height: 20px;
-  border-radius: 20px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-bright);
-  position: relative;
-  flex-shrink: 0;
-  transition: background 0.15s, border-color 0.15s;
-}
-.wz-switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  transition: transform 0.15s, background 0.15s;
-}
-.wz-toggle input:checked + .wz-switch {
-  background: rgba(158, 206, 106, 0.25);
-  border-color: var(--green);
-}
-.wz-toggle input:checked + .wz-switch::after {
-  transform: translateX(18px);
-  background: var(--green);
-}
 
-@media (max-width: 620px) {
-  .wizard { grid-template-columns: 1fr; height: 92vh; }
-  .wizard-rail { flex-direction: row; overflow-x: auto; padding: 10px; gap: 4px; }
-  .wizard-brand { display: none; }
-  .wizard-stepper { flex-direction: row; }
-  .wizard-stepper li .wz-label { display: none; }
-  .wz-cards { grid-template-columns: 1fr 1fr; }
-}
+/* .wz-toggle більше не існує: обгортка тумблера — це .m3-switch (m3.css).
+   Той варіант ще й ховав <input> через display:none, через що чекбокс
+   ставав недосяжним з клавіатури; .m3-switch ховає його прозорістю,
+   лишаючи у фокусному порядку. */
+/* Тумблери майстра використовують спільний .m3-switch (m3.css). Тут раніше
+   був другий, окремий тумблер із власною анімацією повзунка — при тому, що
+   на тій самій сторінці вже жив .m3-switch. Лишився лише рядок-обгортка. */
 
-/* Пресети MCP (набори в один клік) */
 .wz-presets {
   display: flex;
   flex-wrap: wrap;
@@ -1526,23 +1655,6 @@ textarea::placeholder {
 }
 .wz-svc-name { font-size: 13px; font-weight: 700; color: var(--text); }
 .wz-svc-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
-
-.wz-summary {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-}
-.wz-summary li {
-  display: flex;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--bg-inset);
-  border-radius: 4px;
-}
-.wz-summary .k { color: var(--text-muted); min-width: 120px; }
-.wz-summary .v { color: var(--text); font-weight: 700; }
 
 /* ---------- Сповіщення (toasts) ---------- */
 
