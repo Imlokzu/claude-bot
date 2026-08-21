@@ -81,6 +81,17 @@ coding:
   # muse-spark тут НЕ ставимо: omp падає на її стрімі (див. коментар у
   # ~/.omp/profiles/claude-bot/agent/models.yml). У чаті вона працює.
   model: opencode-go/kimi-k2.7-code
+  # Список для вибору в панелі. Як і в omni.models — ЛИШЕ те, що реально
+  # створило файл справжнім tool-call. Кожен id у формі «провайдер/модель»:
+  # без провайдера omp робить нечіткий збіг за своїм реєстром і влучає в
+  # платний двійник.
+  models:
+    - {id: opencode-go/kimi-k2.7-code, label: "Kimi K2.7 Code"}
+    - {id: opencode-go/deepseek-v4-pro, label: "DeepSeek V4 Pro"}
+    - {id: opencode-go/kimi-k3, label: "Kimi K3"}
+    - {id: opencode-zen/hy3-free, label: "HY3 (безкоштовна)"}
+    - {id: opencode-zen/nemotron-3.5-lightning-free, label: "Nemotron 3.5 Lightning (безкоштовна)"}
+    - {id: regolo/qwen3-coder-next, label: "Qwen3 Coder Next (Regolo)"}
   max_time_s: 900            # запобіжник: сесія не крутиться вічно
 
 openclaw:

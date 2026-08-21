@@ -161,6 +161,15 @@ export class BotClient {
     return this.request<CodeStatus>('/api/code/status');
   }
 
+  /**
+   * Вибір моделі кодингу. Бекенд гасить живі процеси omp сам: модель
+   * передається аргументом --model під час запуску, тож уже піднятий
+   * процес далі працював би старою.
+   */
+  selectCodeModel(model: string): Promise<{ ok: boolean; selected: string }> {
+    return this.request('/api/code/model', { method: 'POST', body: { model } });
+  }
+
   projects(): Promise<{ projects: Project[] }> {
     return this.request('/api/projects');
   }

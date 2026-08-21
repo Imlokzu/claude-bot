@@ -134,10 +134,20 @@ export interface Project {
 /** GET /api/code/status — чи взагалі показувати режим «Код». */
 export interface CodeStatus {
   available: boolean;
+  /** Модель, якою кодинг працює ЗАРАЗ (вибір, а не лише типова з конфіга). */
   model: string;
+  /** Кований список для пікера. */
+  models: CodeModelOption[];
+  default_model?: string;
   profile: string;
   /** Абсолютний шлях теки, у якій працює кодинг-агент. */
   root: string;
+}
+
+/** Модель кодинг-агента. id завжди у формі «провайдер/модель». */
+export interface CodeModelOption {
+  id: string;
+  label: string;
 }
 
 /** GET /api/auth/config. */

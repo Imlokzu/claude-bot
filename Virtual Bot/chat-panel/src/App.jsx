@@ -59,6 +59,15 @@ function DrawerSections({ onGo }) {
   );
 }
 
+/* Підпис моделі без префікса провайдера: «opencode-go/kimi-k3» → «kimi-k3».
+   У закритому пікері провайдер однаковий майже в усіх пунктах і лише
+   з'їдає ширину; у відкритому списку та в title повний id лишається. */
+function shortModel(name) {
+  const text = String(name || '');
+  const slash = text.lastIndexOf('/');
+  return slash === -1 ? text : text.slice(slash + 1);
+}
+
 /* Картинки з відповіді виносимо в карусель: markdown-рендер лишає текст,
    а самі зображення показуємо однією великою з навігацією. */
 /* Розкладає відповідь на блоки в тому порядку, в якому все відбувалось:
@@ -547,6 +556,7 @@ function App() {
   const [codeMode, setCodeMode] = useState(false);
   const [codeAvailable, setCodeAvailable] = useState(false);
   const [codeModel, setCodeModel] = useState('');
+  const [codeModels, setCodeModels] = useState([]);
   const [codeRoot, setCodeRoot] = useState('');
   const [codeProject, setCodeProject] = useState('');
   const [codeProjects, setCodeProjects] = useState([]);
@@ -788,6 +798,26 @@ function App() {
     return () => mq.removeEventListener('change', on);
   }, []);
 
+  /* Вибір моделі кодингу. Бекенд гасить живі процеси omp сам: модель
+     передається аргументом --model під час запуску, тож уже піднятий
+     процес далі працював би старою. */
+  const selectCodeModel = async (value) => {
+    if (!value || value === codeModel) return;
+    const previous = codeModel;
+    setCodeModel(value);   // оптимістично, щоб вибір не «залипав»
+    try {
+      const r = await api('/api/code/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: value }),
+      });
+      if (r?.selected) setCodeModel(r.selected);
+    } catch (e) {
+      setCodeModel(previous);
+      message.error(e.message);
+    }
+  };
+
   const switchMode = (nextCode) => {
     if (nextCode === codeMode || loading) return;
     try {
@@ -853,6 +883,7 @@ function App() {
         if (cancelled) return;
         setCodeAvailable(!!r.available);
         setCodeModel(r.model || '');
+        setCodeModels(Array.isArray(r.models) ? r.models : []);
         setCodeRoot(r.root || '');
       })
       .catch(() => !cancelled && setCodeAvailable(false));
@@ -1573,12 +1604,29 @@ function App() {
 
           <div className="chat-panel-model">
             {codeMode ? (
-              /* Селектор моделей керує мозком ЧАТУ. У режимі коду він показував
-                 би неправду — тому на його місці стоїть модель, якою omp
-                 справді працює. */
-              <span className="chat-code-model" title={`Кодом займається omp, модель ${codeModel}`}>
-                omp · {codeModel || '—'}
-              </span>
+              /* Селектор вище керує мозком ЧАТУ — у режимі коду він показував
+                 би неправду, тому тут окремий селектор моделі САМОГО omp.
+                 Раніше на цьому місці стояла незмінна підпис-табличка:
+                 модель було видно, а змінити нічим.
+
+                 У закритому вигляді підпис БЕЗ префікса провайдера:
+                 «opencode-go/» однакове майже в усіх пунктах і лише з'їдає
+                 ширину; повний id лишається в title. */
+              <select
+                className="chat-code-model"
+                value={codeModel}
+                onChange={(e) => selectCodeModel(e.target.value)}
+                disabled={loading || codeModels.length === 0}
+                aria-label="Модель кодинг-агента"
+                title={`Кодом займається omp, модель ${codeModel}`}
+              >
+                {codeModels.length === 0 && <option value="">— недоступно —</option>}
+                {codeModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {shortModel(m.label || m.id)}
+                  </option>
+                ))}
+              </select>
             ) : (
               <select
                 value={selectedModel}

@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  ApiError, shape, space, touchTarget,
-  type ChatMode, type Message, type ModelOption, type SessionSummary,
+  ApiError, shape, shortModelName, space, touchTarget,
+  type ChatMode, type CodeModelOption, type Message, type ModelOption, type SessionSummary,
 } from '@claude-bot/core';
 import { useApi } from '../api';
 import { useTheme } from '../theme';
@@ -38,6 +38,8 @@ export function ChatScreen() {
 
   const [mode, setMode] = React.useState<ChatMode>('chat');
   const [codeAvailable, setCodeAvailable] = React.useState(false);
+  const [codeModels, setCodeModels] = React.useState<CodeModelOption[]>([]);
+  const [codeModel, setCodeModel] = React.useState('');
   const [rows, setRows] = React.useState<Row[]>([]);
   const [draft, setDraft] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -67,7 +69,7 @@ export function ChatScreen() {
       try {
         const [m, code] = await Promise.all([
           client.models(),
-          client.codeStatus().catch(() => ({ available: false }) as { available: boolean }),
+          client.codeStatus().catch(() => null),
         ]);
         if (!alive) return;
         setModels(m.models);
@@ -75,7 +77,9 @@ export function ChatScreen() {
         // «Хто відповів останнім» — окремо від «що обрано»: інакше екран
         // приписував би відповідь моделі, яка її не давала.
         if (m.active) setActiveBrain(m.active);
-        setCodeAvailable(!!code.available);
+        setCodeAvailable(!!code?.available);
+        setCodeModels(Array.isArray(code?.models) ? code.models : []);
+        setCodeModel(code?.model || '');
       } catch (e) {
         if (!alive) return;
         const msg = e instanceof ApiError ? e.message : String(e);
@@ -136,8 +140,21 @@ export function ChatScreen() {
     setSessionId('');
   };
 
+  /* Один пікер на два режими: у «Чаті» він міняє мозок чату, у «Коді» —
+     модель самого omp. Це різні ендпоінти, тому й гілка тут. */
   const pickModel = async (value: string) => {
     setPickerOpen(false);
+    if (mode === 'code') {
+      const previous = codeModel;
+      setCodeModel(value);
+      try {
+        const r = await client.selectCodeModel(value);
+        if (r?.selected) setCodeModel(r.selected);
+      } catch {
+        setCodeModel(previous);
+      }
+      return;
+    }
     const previous = selected;
     setSelected(value); // оптимістично — щоб вибір не «залипав» до відповіді
     try {
@@ -184,7 +201,15 @@ export function ChatScreen() {
     if (rows.length) listRef.current?.scrollToEnd({ animated: true });
   }, [rows.length]);
 
-  const selectedLabel = models.find((m) => m.id === selected)?.label ?? '—';
+  /* Список і підпис залежать від режиму. Підпис у ЗАКРИТОМУ пікері — без
+     префікса провайдера: «opencode-go/» однакове майже в усіх пунктах і
+     з'їдає ширину, особливо на телефоні. Повний id лишається у відкритому
+     списку й у accessibilityLabel. */
+  const options: Array<{ id: string; label: string }> =
+    mode === 'code' ? codeModels : models.map((m) => ({ id: m.id, label: m.label }));
+  const currentId = mode === 'code' ? codeModel : selected;
+  const currentLabel = options.find((m) => m.id === currentId)?.label ?? currentId ?? '';
+  const selectedLabel = shortModelName(currentLabel) || '—';
 
   const sidebar = (
     <SessionList
@@ -252,7 +277,7 @@ export function ChatScreen() {
           <Pressable
             onPress={() => setPickerOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel={`Модель: ${selectedLabel}. Змінити`}
+            accessibilityLabel={`Модель: ${currentLabel || 'не обрано'}. Змінити`}
             style={[styles.modelBtn, { borderColor: palette.outline }]}
           >
             <Text numberOfLines={1} style={[styles.modelText, { color: palette.onSurface, fontFamily: fonts.sans }]}>
@@ -383,13 +408,13 @@ export function ChatScreen() {
         <View style={[styles.sheet, { backgroundColor: palette.surfaceContainerLow, paddingBottom: Math.max(insets.bottom, space.lg) }]}>
           <View style={[styles.handle, { backgroundColor: palette.outline }]} />
           <Text style={[styles.sheetTitle, { color: palette.onSurfaceVariant, fontFamily: fonts.sans }]}>
-            Модель
+            {mode === 'code' ? 'Модель кодинг-агента' : 'Модель'}
           </Text>
           <FlatList
-            data={models}
+            data={options}
             keyExtractor={(m) => m.id}
             renderItem={({ item }) => {
-              const on = item.id === selected;
+              const on = item.id === currentId;
               return (
                 <Pressable
                   onPress={() => pickModel(item.id)}
@@ -398,9 +423,17 @@ export function ChatScreen() {
                   style={[styles.modelRow, on ? { backgroundColor: palette.secondaryContainer } : null]}
                 >
                   <Icon name="check" size={18} color={on ? palette.onSecondaryContainer : 'transparent'} weight={2.2} />
-                  <Text style={[styles.modelRowText, { color: on ? palette.onSecondaryContainer : palette.onSurface, fontFamily: fonts.sans }]}>
-                    {item.label}
-                  </Text>
+                  <View style={styles.modelRowText}>
+                    <Text style={[styles.modelRowLabel, { color: on ? palette.onSecondaryContainer : palette.onSurface, fontFamily: fonts.sans }]}>
+                      {item.label}
+                    </Text>
+                    {/* У ВІДКРИТОМУ списку провайдера показуємо: саме він
+                        відрізняє двійники — платний «opencode/muse-spark-1.2»
+                        від безкоштовного «...-contributor-free». */}
+                    <Text style={[styles.modelRowId, { color: on ? palette.onSecondaryContainer : palette.onSurfaceVariant, fontFamily: fonts.mono }]}>
+                      {item.id}
+                    </Text>
+                  </View>
                 </Pressable>
               );
             }}
@@ -460,5 +493,7 @@ const styles = StyleSheet.create({
   handle: { width: 32, height: 4, borderRadius: shape.full, alignSelf: 'center', marginVertical: space.sm, opacity: 0.5 },
   sheetTitle: { fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', paddingHorizontal: space.md, paddingBottom: space.xs },
   modelRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, minHeight: 52, paddingHorizontal: space.md, borderRadius: shape.md },
-  modelRowText: { fontSize: 15, flex: 1 },
+  modelRowText: { flex: 1, minWidth: 0, paddingVertical: 8 },
+  modelRowLabel: { fontSize: 15 },
+  modelRowId: { fontSize: 11, marginTop: 2, opacity: 0.8 },
 });
