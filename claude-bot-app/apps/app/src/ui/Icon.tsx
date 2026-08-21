@@ -8,7 +8,7 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 
 export type IconName =
   | 'chat' | 'code' | 'send' | 'plus' | 'menu' | 'check' | 'close'
-  | 'mic' | 'folder' | 'settings' | 'error' | 'stop';
+  | 'mic' | 'folder' | 'settings' | 'error' | 'stop' | 'trash';
 
 interface Props {
   name: IconName;
@@ -40,6 +40,9 @@ export function Icon({ name, size = 20, color, weight = 1.7 }: Props) {
       {name === 'check' && <Path {...common} d="m5 12.6 4.6 4.4L19 6.8" />}
       {name === 'close' && <Path {...common} d="M6.2 6.2 17.8 17.8M17.8 6.2 6.2 17.8" />}
       {name === 'stop' && <Rect {...common} x={6.5} y={6.5} width={11} height={11} rx={1.6} />}
+      {name === 'trash' && (
+        <Path {...common} d="M4.5 7h15M9.5 7V5.2h5V7M6.5 7l.9 12A1.6 1.6 0 0 0 9 20.5h6a1.6 1.6 0 0 0 1.6-1.5l.9-12M10.2 10.6v6M13.8 10.6v6" />
+      )}
       {name === 'mic' && (
         <>
           <Rect {...common} x={9} y={3} width={6} height={10.5} rx={3} />

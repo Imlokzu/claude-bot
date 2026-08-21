@@ -19,6 +19,8 @@ export interface Message {
   steps?: ToolStep[];
   /** Прикріплення користувача. */
   attachments?: Attachment[];
+  /** Unix-час у секундах. */
+  ts?: number;
 }
 
 /** Виклик інструмента всередині відповіді. */
@@ -96,21 +98,31 @@ export interface ModelsResponse {
   brain?: string;
 }
 
-/** Коротка картка розмови у списку. */
+/**
+ * Коротка картка розмови у списку (GET /api/sessions).
+ * Поля — за фактичною відповіддю бекенда: `updated` це unix-СЕКУНДИ,
+ * а не ISO-рядок, і є лічильник повідомлень.
+ */
 export interface SessionSummary {
   id: string;
   title: string;
-  /** ISO-час останнього повідомлення. */
-  updated_at?: string;
-  pinned?: boolean;
-  /** Проєкт, до якого прив'язана розмова (для кодинг-режиму). */
-  project?: string;
+  /** Unix-час у секундах (не мілісекундах). */
+  updated: number;
+  /** Скільки повідомлень у розмові. */
+  count: number;
+  pinned: boolean;
+  /** Проєкт, до якого прив'язана розмова (для кодинг-режиму); "" — без проєкту. */
+  project: string;
 }
 
 export interface SessionDetail {
   id: string;
   title: string;
+  created: number;
+  updated: number;
   messages: Message[];
+  /** Чи має розмова справжню назву, чи автоматичну. */
+  titled?: boolean;
 }
 
 /** Проєкт кодинг-режиму — тека, у якій працює агент. */

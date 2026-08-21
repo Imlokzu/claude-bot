@@ -9,16 +9,20 @@
 import React from 'react';
 import {
   ActivityIndicator, FlatList, KeyboardAvoidingView, Modal, Platform,
-  Pressable, StyleSheet, Text, View,
+  Pressable, StyleSheet, Text, useWindowDimensions, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ApiError, shape, space, touchTarget, type ChatMode, type Message, type ModelOption } from '@claude-bot/core';
+import {
+  ApiError, shape, space, touchTarget,
+  type ChatMode, type Message, type ModelOption, type SessionSummary,
+} from '@claude-bot/core';
 import { useApi } from '../api';
 import { useTheme } from '../theme';
 import { Bubble } from '../ui/Bubble';
 import { Composer } from '../ui/Composer';
 import { Icon } from '../ui/Icon';
 import { Segmented } from '../ui/Segmented';
+import { SessionList } from '../ui/SessionList';
 
 interface Row extends Message {
   key: string;
@@ -43,6 +47,15 @@ export function ChatScreen() {
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [bootError, setBootError] = React.useState('');
   const [activeBrain, setActiveBrain] = React.useState('');
+  const [sessions, setSessions] = React.useState<SessionSummary[]>([]);
+  const [sessionsLoading, setSessionsLoading] = React.useState(true);
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+
+  /* Колонка чи шухляда — залежить від ширини, а не від платформи: планшет
+     і вікно Electron бувають і широкими, і вузькими, тому вирішує саме
+     доступне місце. 900px — межа, за якою колонка на 260px не тісна. */
+  const { width } = useWindowDimensions();
+  const wide = width >= 900;
 
   const listRef = React.useRef<FlatList<Row>>(null);
 
@@ -71,6 +84,57 @@ export function ChatScreen() {
     })();
     return () => { alive = false; };
   }, [client, baseUrl]);
+
+  const loadSessions = React.useCallback(async () => {
+    try {
+      const r = await client.sessions(mode);
+      setSessions(r.sessions || []);
+    } catch {
+      // Список — не критичний шлях: без нього чат працює далі, тому
+      // помилку не показуємо на весь екран.
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, [client, mode]);
+
+  React.useEffect(() => { void loadSessions(); }, [loadSessions]);
+
+  const openSession = async (id: string) => {
+    setDrawerOpen(false);
+    if (id === sessionId) return;
+    setBusy(true);
+    try {
+      const d = await client.session(id);
+      setSessionId(id);
+      setRows((d.messages || []).map((m, i) => ({
+        ...m,
+        key: `${id}-${i}`,
+        // Історія не зберігає, який мозок відповів, тому підпис лишаємо
+        // типовим: краще нейтральна назва, ніж вигадана модель.
+      })));
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : String(e);
+      setRows([{ key: `e${Date.now()}`, role: 'assistant', content: msg, error: true }]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeSession = async (id: string) => {
+    setSessions((list) => list.filter((s) => s.id !== id));   // оптимістично
+    try {
+      await client.deleteSession(id);
+      if (id === sessionId) { setSessionId(''); setRows([]); }
+    } catch {
+      void loadSessions();   // не вийшло — повертаємо справжній стан
+    }
+  };
+
+  const newSession = () => {
+    setDrawerOpen(false);
+    setRows([]);
+    setSessionId('');
+  };
 
   const pickModel = async (value: string) => {
     setPickerOpen(false);
@@ -111,6 +175,8 @@ export function ChatScreen() {
       setRows((r) => [...r, { key: `e${Date.now()}`, role: 'assistant', content: msg, error: true }]);
     } finally {
       setBusy(false);
+      // Назва розмови й час оновлюються на бекенді після відповіді
+      void loadSessions();
     }
   };
 
@@ -120,16 +186,47 @@ export function ChatScreen() {
 
   const selectedLabel = models.find((m) => m.id === selected)?.label ?? '—';
 
+  const sidebar = (
+    <SessionList
+      sessions={sessions}
+      activeId={sessionId}
+      loading={sessionsLoading}
+      onOpen={openSession}
+      onNew={newSession}
+      onDelete={removeSession}
+    />
+  );
+
   return (
-    <View style={[styles.root, { backgroundColor: palette.background, paddingTop: insets.top }]}>
+    <View style={[styles.shell, { backgroundColor: palette.background, paddingTop: insets.top }]}>
+      {/* Колонка розмов — тільки на широкому екрані. На вузькому той самий
+          список живе в шухляді нижче: два джерела правди тут не потрібні. */}
+      {wide && (
+        <View style={[styles.sidebar, { borderRightColor: palette.outlineVariant }]}>
+          {sidebar}
+        </View>
+      )}
+
+      <View style={styles.root}>
       {/* ---- шапка ---- */}
       <View style={[styles.header, { borderBottomColor: palette.outlineVariant }]}>
         <View style={styles.headerTop}>
-          <Text style={[styles.brand, { color: palette.primary, fontFamily: fonts.serif }]}>
+          {/* ☰ лише коли списку немає на екрані: на широкому він і так збоку */}
+          {!wide && (
+            <Pressable
+              onPress={() => setDrawerOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Мої розмови"
+              style={styles.iconBtn}
+            >
+              <Icon name="menu" size={22} color={palette.onSurfaceVariant} />
+            </Pressable>
+          )}
+          <Text style={[styles.brand, styles.brandWrap, { color: palette.primary, fontFamily: fonts.serif }]}>
             Клод Бот
           </Text>
           <Pressable
-            onPress={() => { setRows([]); setSessionId(''); }}
+            onPress={newSession}
             accessibilityRole="button"
             accessibilityLabel="Нова розмова"
             style={styles.iconBtn}
@@ -242,6 +339,44 @@ export function ChatScreen() {
         </View>
       </KeyboardAvoidingView>
 
+      </View>
+
+      {/* ---- шухляда з розмовами (вузький екран) ---- */}
+      <Modal visible={drawerOpen && !wide} transparent animationType="fade" onRequestClose={() => setDrawerOpen(false)}>
+        <View style={styles.drawerRow}>
+          <View style={[styles.drawer, { backgroundColor: palette.surface, paddingTop: insets.top }]}>
+            <View style={styles.drawerHead}>
+              <Text style={[styles.drawerTitle, { color: palette.onSurface, fontFamily: fonts.serif }]}>
+                Розмови
+              </Text>
+              <Pressable
+                onPress={() => setDrawerOpen(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Закрити"
+                style={styles.iconBtn}
+              >
+                <Icon name="close" size={20} color={palette.onSurfaceVariant} />
+              </Pressable>
+            </View>
+            <SessionList
+              sessions={sessions}
+              activeId={sessionId}
+              loading={sessionsLoading}
+              onOpen={openSession}
+              onNew={newSession}
+              onDelete={removeSession}
+              showHeader={false}
+            />
+          </View>
+          {/* Затемнення праворуч закриває шухляду — звичний жест */}
+          <Pressable
+            style={styles.drawerScrim}
+            onPress={() => setDrawerOpen(false)}
+            accessibilityLabel="Закрити розмови"
+          />
+        </View>
+      </Modal>
+
       {/* ---- вибір моделі ---- */}
       <Modal visible={pickerOpen} transparent animationType="slide" onRequestClose={() => setPickerOpen(false)}>
         <Pressable style={styles.scrim} onPress={() => setPickerOpen(false)} accessibilityLabel="Закрити" />
@@ -285,9 +420,20 @@ function brandFor(res: { mode?: string; model?: string }): string {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  shell: { flex: 1, flexDirection: 'row' },
+  sidebar: { width: 260, flexShrink: 0, borderRightWidth: 1 },
+  root: { flex: 1, minWidth: 0 },
+  drawerRow: { flex: 1, flexDirection: 'row' },
+  drawer: { width: '82%', maxWidth: 320, flexShrink: 0 },
+  drawerScrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.32)' },
+  drawerHead: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingLeft: space.md, paddingRight: space.xs, minHeight: touchTarget,
+  },
+  drawerTitle: { fontSize: 18, fontWeight: '600' },
   header: { paddingHorizontal: space.md, paddingBottom: space.sm, borderBottomWidth: 1, gap: space.sm },
-  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: touchTarget },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minHeight: touchTarget },
+  brandWrap: { flex: 1, minWidth: 0 },
   brand: { fontSize: 19, fontWeight: '600' },
   iconBtn: { width: touchTarget, height: touchTarget, alignItems: 'center', justifyContent: 'center' },
   headerControls: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
