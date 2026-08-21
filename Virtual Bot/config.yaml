@@ -19,22 +19,31 @@ server:
 # бо auto/* комбо-маршрутизує і може влучати в мертві провайдери (503).
 omni:
   base_url: http://localhost:20128/v1
-  # Типова модель: opencode-go. Перевірено живим запитом — відповідає.
-  # Раніше тут стояло `claude/claude-sonnet-5`, але провайдера `claude`
-  # у роутері немає взагалі, тому кожен запит падав до демо-режиму.
-  default_model: opencode-go/kimi-k3
-  # Запасна в межах Omni: якщо обрана модель відповіла швидкою помилкою
+  # Типова модель — БЕЗКОШТОВНА (contributor-free на OpenCode Zen), тому
+  # звичайна розмова не витрачає платну квоту. Перевірено живим запитом.
+  default_model: opencode/muse-spark-1.2-contributor-free
+  # Запасна в межах Omni: якщо обрана відповіла швидкою помилкою
   # (401/404/503), пробуємо цю, і лише потім падаємо на наступний мозок.
-  fallback_model: opencode-go/glm-5.2
-  # Vision: єдина з перевірених, що приймає картинки.
+  fallback_model: opencode/nemotron-3.5-lightning-free
+  # Vision: перевірена модель, що приймає картинки.
   vision_model: opencode-go/minimax-m3
   timeout_s: 60
-  # Моделі для вибору в панелі. Тут ЛИШЕ те, що реально відповіло на
-  # тестовий запит через роутер (див. omni_shim.py). Провайдер `opencode`
-  # (OpenCode Zen) віддає «No payment method», `claude/*` і `regolo/*`
-  # у роутері не існують — тому їх тут немає: мертвий пункт у списку
-  # гірший за його відсутність.
+  # Тут ЛИШЕ те, що реально відповіло на тестовий запит через роутер
+  # (див. omni_shim.py). Мертвий пункт у списку гірший за його відсутність.
+  #
+  # Провайдер `opencode` (OpenCode Zen) має і безкоштовні, і платні моделі:
+  # усе з суфіксом `-free` працює, а `opencode/claude-*` віддає
+  # «No payment method». Провайдерів `claude/*` і `regolo/*` у роутері
+  # немає взагалі — саме через них типова модель раніше гарантовано падала.
   models:
+    # --- безкоштовні (OpenCode Zen) ---
+    - {id: opencode/muse-spark-1.2-contributor-free, label: "Muse Spark 1.2 (безкоштовна)"}
+    - {id: opencode/nemotron-3-ultra-free, label: "Nemotron 3 Ultra (безкоштовна)"}
+    - {id: opencode/nemotron-3.5-lightning-free, label: "Nemotron 3.5 Lightning (безкоштовна, швидка)"}
+    - {id: opencode/mimo-v2.5-free, label: "MiMo v2.5 (безкоштовна)"}
+    - {id: opencode/hy3-free, label: "HY3 (безкоштовна)"}
+    - {id: opencode/x-preview-f-free, label: "X Preview F (безкоштовна)"}
+    # --- opencode-go (власна квота) ---
     - {id: opencode-go/kimi-k3, label: "Kimi K3"}
     - {id: opencode-go/glm-5.2, label: "GLM-5.2"}
     - {id: opencode-go/deepseek-v4-pro, label: "DeepSeek V4 Pro"}
@@ -81,7 +90,13 @@ chat:
   # Таймаут ОДНІЄЇ спроби OpenClaw у чаті. OpenClaw тепер ГОЛОВНИЙ мозок і робить
   # реальну агентну роботу (памʼять, tools, маршрутизація до Claude), тож
   # відповідь легітимно триває довше — 60с (не 10), інакше чат марно падав на Omni.
-  openclaw_timeout_s: 60
+  # Було 60 — і коли OpenClaw підвисав, чат стояв ХВИЛИНУ, перш ніж
+  # відповісти через Omni (заміряно: 65с). Виміряні реальні відповіді
+  # OpenClaw на звичайну репліку: 8.4 / 16.6 / 16.8с. 35с дає вдвічі
+  # більше запасу за спостережуваний максимум — тобто довший хід не
+  # падає на Omni марно (саме цього боявся попередній коментар), але
+  # завислий шлюз коштує 35с, а не хвилину.
+  openclaw_timeout_s: 35
   # Запобіжник (circuit breaker): після невдалої спроби OpenClaw у чаті
   # пропускаємо його стільки секунд; успішна відповідь скидає запобіжник.
   # 30с (а не 120) — щоб під час налаштування OpenClaw чат швидко перемкнувся
