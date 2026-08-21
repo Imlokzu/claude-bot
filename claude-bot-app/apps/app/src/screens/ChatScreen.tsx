@@ -165,7 +165,11 @@ export function ChatScreen() {
           {/* Правда про те, хто відповідає насправді. Дебаг-панель показувала
               обрану модель навіть коли працював демо-режим — виглядало так,
               ніби це вона так відповіла. */}
-          {activeBrain && activeBrain !== selectedLabel && (
+          {/* Саме !!activeBrain, а не activeBrain: у JS `'' && <JSX>` дає
+              ПОРОЖНІЙ РЯДОК, і React намагається намалювати текстовий вузол
+              усередині <View> — React Native це забороняє й сипле
+              попередження на кожен рендер. */}
+          {!!activeBrain && activeBrain !== selectedLabel && (
             <Text style={[styles.liveBrain, { color: palette.onSurfaceVariant, fontFamily: fonts.sans }]}>
               {activeBrain}
             </Text>
