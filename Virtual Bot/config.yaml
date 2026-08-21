@@ -19,32 +19,49 @@ server:
 # бо auto/* комбо-маршрутизує і може влучати в мертві провайдери (503).
 omni:
   base_url: http://localhost:20128/v1
-  # Модель за замовчуванням: Claude (провайдер claude) — за побажанням власника
-  default_model: claude/claude-sonnet-5
-  # Запасна модель у межах Omni («другий мозок» — opencode-go): якщо обрана
-  # модель не відповіла швидкою помилкою (401/404/503), Omni пробує цю, і лише
-  # потім падає на наступний мозок (chat2api → demo). Порожнє — без запасної.
-  fallback_model: opencode-go/kimi-k3
-  # Перевірена vision-модель: використовується для картинок, коли обрана модель
-  # не має vision або її провайдер тимчасово втратив авторизацію.
+  # Типова модель: opencode-go. Перевірено живим запитом — відповідає.
+  # Раніше тут стояло `claude/claude-sonnet-5`, але провайдера `claude`
+  # у роутері немає взагалі, тому кожен запит падав до демо-режиму.
+  default_model: opencode-go/kimi-k3
+  # Запасна в межах Omni: якщо обрана модель відповіла швидкою помилкою
+  # (401/404/503), пробуємо цю, і лише потім падаємо на наступний мозок.
+  fallback_model: opencode-go/glm-5.2
+  # Vision: єдина з перевірених, що приймає картинки.
   vision_model: opencode-go/minimax-m3
   timeout_s: 60
-  # Моделі для вибору у панелі. id — як віддає роутер (/v1/models), label — підпис.
+  # Моделі для вибору в панелі. Тут ЛИШЕ те, що реально відповіло на
+  # тестовий запит через роутер (див. omni_shim.py). Провайдер `opencode`
+  # (OpenCode Zen) віддає «No payment method», `claude/*` і `regolo/*`
+  # у роутері не існують — тому їх тут немає: мертвий пункт у списку
+  # гірший за його відсутність.
   models:
-    # --- Claude (провайдер claude) — головний ---
-    - {id: claude/claude-sonnet-5, label: "Claude Sonnet 5"}
-    - {id: claude/claude-opus-4-8, label: "Claude Opus 4.8"}
-    - {id: claude/claude-haiku-4-5-20251001, label: "Claude Haiku 4.5 (швидкий)"}
-    - {id: claude/claude-fable-5, label: "Claude Fable 5"}
-    - {id: claude/claude-opus-4-7, label: "Claude Opus 4.7"}
-    - {id: claude/claude-sonnet-4-6, label: "Claude Sonnet 4.6"}
-    # --- opencode-go (другий мозок) ---
-    - {id: opencode-go/kimi-k3, label: "Kimi K3 (opencode-go)"}
-    - {id: opencode-go/glm-5.2, label: "GLM-5.2 (opencode-go)"}
-    - {id: opencode-go/deepseek-v4-pro, label: "DeepSeek V4 Pro (opencode-go)"}
-    - {id: opencode-go/qwen3.7-max, label: "Qwen 3.7 Max (opencode-go)"}
-    - {id: opencode-go/grok-4.5, label: "Grok 4.5 (opencode-go)"}
-    - {id: opencode-go/minimax-m3, label: "MiniMax M3 (opencode-go)"}
+    - {id: opencode-go/kimi-k3, label: "Kimi K3"}
+    - {id: opencode-go/glm-5.2, label: "GLM-5.2"}
+    - {id: opencode-go/deepseek-v4-pro, label: "DeepSeek V4 Pro"}
+    - {id: opencode-go/qwen3.7-max, label: "Qwen 3.7 Max"}
+    - {id: opencode-go/grok-4.5, label: "Grok 4.5"}
+    - {id: opencode-go/minimax-m3, label: "MiniMax M3 (бачить картинки)"}
+
+asr:
+  # auto: локальний faster-whisper, якщо встановлений; інакше Regolo fallback.
+  # Щоб примусово працювати без хмари, постав provider: whisper_local.
+  provider: auto
+  base_url: https://api.regolo.ai/v1
+  model: faster-whisper-large-v3
+  local_model: large-v3-turbo # або large-v3 для максимальної точності
+  local_device: cpu           # cuda для NVIDIA; macOS працює через CPU
+  local_compute_type: int8
+  local_beam_size: 3
+  language: uk
+  timeout_s: 45
+  max_upload_bytes: 10485760
+
+# Кодинг-режим: код пише omp (oh-my-pi), а не мозок чату. Модель — через
+# Regolo (той самий акаунт, що й ASR: env REGOLO_ASR_API_KEY).
+coding:
+  profile: claude-bot        # ізольований профіль omp — особистий omp не чіпаємо
+  model: qwen3-coder-next    # кодингова модель Regolo
+  max_time_s: 900            # запобіжник: сесія не крутиться вічно
 
 openclaw:
   base_url: http://127.0.0.1:18789
