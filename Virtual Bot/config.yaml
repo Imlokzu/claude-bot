@@ -69,7 +69,18 @@ asr:
 # Regolo (той самий акаунт, що й ASR: env REGOLO_ASR_API_KEY).
 coding:
   profile: claude-bot        # ізольований профіль omp — особистий omp не чіпаємо
-  model: qwen3-coder-next    # кодингова модель Regolo
+  # Модель ЗАВЖДИ у формі «провайдер/модель». Без провайдера omp робить
+  # нечіткий збіг за своїм ВЛАСНИМ реєстром і влучає в платний двійник:
+  # «muse-spark» давав 401 «No payment method».
+  #
+  # kimi-k2.7-code — кодингова модель OpenCode Go, перевірена на живому:
+  # реальний tool-call, файл створено, ~4с. Безкоштовні альтернативи, які
+  # теж пройшли перевірку: opencode-zen/hy3-free,
+  # opencode-zen/nemotron-3.5-lightning-free.
+  #
+  # muse-spark тут НЕ ставимо: omp падає на її стрімі (див. коментар у
+  # ~/.omp/profiles/claude-bot/agent/models.yml). У чаті вона працює.
+  model: opencode-go/kimi-k2.7-code
   max_time_s: 900            # запобіжник: сесія не крутиться вічно
 
 openclaw:
