@@ -28,6 +28,7 @@ SCREENS: dict[str, str] = {
     "quick": "Швидкі дії",
     "memory": "Памʼять",
     "chats": "Розмови",
+    "store": "Магазин",
     "apps": "Усі застосунки",
 }
 
@@ -41,6 +42,7 @@ _ALIASES: dict[str, str] = {
     "памʼять": "memory", "память": "memory", "нотатки": "memory", "notes": "memory", "memory": "memory",
     "розмови": "chats", "історія чатів": "chats", "історія": "chats", "chats": "chats", "history": "chats",
     "швидкі дії": "quick", "налаштування": "quick", "settings": "quick",
+    "магазин": "store", "крамниця": "store", "store": "store",
     "усі екрани": "apps", "всі екрани": "apps", "меню": "apps", "apps": "apps",
 }
 

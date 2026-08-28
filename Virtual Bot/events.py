@@ -94,6 +94,19 @@ def publish_say(text: str, emotion: str) -> None:
     publish({"type": "say", "text": text, "emotion": emotion})
 
 
+def publish_reply(text: str, emotion: str) -> None:
+    """
+    Бот ВІДПОВІВ у чаті. Потрібно екрану пристрою (/screen), який показує
+    останню репліку, але не бере участі в самому чаті.
+
+    Навмисно окремий тип, а не "say": на "say" панель додає бульбашку
+    «бот сказав сам», і відповідь чату там задвоїлася б.
+    """
+    if emotion not in ALLOWED_EMOTIONS:
+        emotion = "speaking"
+    publish({"type": "reply", "text": str(text)[:2000], "emotion": emotion})
+
+
 def publish_tool(tool: str, detail: str = "", state: str = "start") -> None:
     """
     Бот скористався інструментом. Потрібно, коли тули виконує НЕ панель, а
@@ -106,6 +119,39 @@ def publish_tool(tool: str, detail: str = "", state: str = "start") -> None:
         "detail": str(detail)[:160],
         "state": "done" if state == "done" else "start",
     })
+
+
+def publish_screen(screen: str) -> None:
+    """
+    Перемкнути екран пристрою (/screen). Шле мозок через тул open_screen —
+    щоб «покажи годинник» справді щось робило, а не лише описувалось словами.
+    """
+    publish({"type": "screen", "screen": str(screen)[:20]})
+
+
+def publish_music(track: dict, action: str = "play") -> None:
+    """
+    Керувати Now Playing на екрані пристрою: почати грати трек (play) або
+    зупинити (stop). Тул play_music шле мозок — екран підхоплює і грає
+    через /api/music/stream. Трек: {provider, id, title, uploader, duration,
+    url?} — url потрібен лише для живих радіо-потоків.
+    """
+    clean = dict(track or {})
+    publish({
+        "type": "music",
+        "action": "stop" if action == "stop" else "play",
+        "track": clean,
+    })
+
+
+def publish_ui(kind: str, data: dict) -> None:
+    """
+    Елемент інтерфейсу від бота: питання з кнопками, чекліст, картки вибору.
+
+    Панель домальовує його прямо у відповідь — щоб бот міг ПОКАЗАТИ, а не
+    описувати текстом «оберіть варіант 1 або 2».
+    """
+    publish({"type": "ui", "kind": str(kind)[:20], "data": data or {}})
 
 
 def publish_preview(path: str) -> None:
