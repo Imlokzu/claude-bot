@@ -1,0 +1,11 @@
+{
+  "id": "metronome",
+  "type": "app",
+  "label": "Метроном",
+  "icon": "clock",
+  "tint": "#d7a65b",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Клацає темп: 40–208 BPM, підсвітка на кожен бит. Працює офлайн.",
+  "entry": "index.html"
+}

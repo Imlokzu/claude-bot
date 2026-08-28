@@ -1,0 +1,20 @@
+{
+  "id": "skin-terminal",
+  "type": "skin",
+  "label": "Термінал",
+  "icon": "power",
+  "tint": "#5fae5f",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Зелений фосфор на чорному — як старий монітор.",
+  "vars": {
+    "--bg": "#050805",
+    "--panel": "#0b120b",
+    "--line": "#1c2e1c",
+    "--text": "#8ef08e",
+    "--muted": "#4f8a4f",
+    "--accent": "#4fe04f",
+    "--ok": "#4fe04f",
+    "--off": "#3a5c3a"
+  }
+}

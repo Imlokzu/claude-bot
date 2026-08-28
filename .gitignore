@@ -47,8 +47,6 @@ Thumbs.db
 # ---- Runtime / logs ----
 *.pid
 service_logs/
-brain/logs/
-Virtual Bot/user_data/
 
 # ---- Pi subagent runtime artifacts ----
 .pi-subagents/
@@ -59,5 +57,13 @@ Virtual Bot/user_data/
 .context/
 .postman/
 
-# ---- Робоча тека бота (файли бота, не код проєкту) ----
+# ---- Дані користувача (НІКОЛИ не комітити) ----
+# Три окремі корені живуть під user_data/: brain (інфа про юзера),
+# workspace (файли бота) і code (код-проєкти). Шляхи задає config.yaml →
+# paths.*_dir; ігноруємо і їх, і старі місця, якщо конфіг повернуть назад.
+Virtual Bot/user_data/
+Virtual Bot/brain/
 Virtual Bot/workspace/
+Virtual Bot/code/
+# Встановлені пакети магазину екрана — runtime-копії з store/packages/
+Virtual Bot/store/installed/

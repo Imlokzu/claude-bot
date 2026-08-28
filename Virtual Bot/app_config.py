@@ -150,11 +150,25 @@ def cfg_str(*keys: str, default: str) -> str:
 
 
 # Часто вживані шляхи
-BRAIN_DIR = resolve_path("paths", "brain_dir", default="brain")
+# Дані власника лежать у ТРЬОХ окремих коренях під user_data/ (git-ignored),
+# щоб у репозиторії не було нічого особистого, а кодинг-агент не бачив памʼяті:
+#   brain     — інформація про користувача (профіль, нотатки, памʼять, журнали);
+#   workspace — файли бота (ігри, нотатки, завантаження, теки сесій);
+#   code      — код-проєкти; єдина тека, яку отримує кодинг-агент.
+BRAIN_DIR = resolve_path("paths", "brain_dir", default="user_data/owner/brain")
 STATIC_DIR = resolve_path("paths", "static_dir", default="static")
 UPLOADS_DIR = resolve_path("paths", "uploads_dir", default="uploads")
-# Робоча тека бота на диску (файли, проєкти, ігри, теки сесій)
-WORKSPACE_DIR = resolve_path("paths", "workspace_dir", default="workspace")
+WORKSPACE_DIR = resolve_path("paths", "workspace_dir", default="user_data/owner/workspace")
+CODE_DIR = resolve_path("paths", "code_dir", default="user_data/owner/code")
+# Магазин екрана: catalog.json + packages/ — у репозиторії, installed/ — runtime
+STORE_DIR = resolve_path("paths", "store_dir", default="store")
+
+# --- Кодинг-режим (окремий харнес omp над текою code/) ---
+# Профіль ізолює omp бота від особистого omp користувача: свої ключі,
+# сесії, налаштування й кеш лежать у ~/.omp/profiles/<профіль>/.
+CODING_PROFILE: str = cfg_str("coding", "profile", default="claude-bot")
+CODING_MODEL: str = cfg_str("coding", "model", default="qwen3-coder-next")
+CODING_MAX_TIME_S: float = cfg_float("coding", "max_time_s", default=900)
 SERVICE_LOGS_DIR = resolve_path("paths", "service_logs_dir", default="service_logs")
 VISION_DIR = resolve_path("vision", "dir", default="../Vision Agent")
 DISPLAY_DIR = resolve_path("display", "dir", default="../claude-bot-display")
@@ -204,12 +218,23 @@ OPENCLAW_TIMEOUT_S: float = cfg_float("openclaw", "timeout_s", default=45)
 # (щоб завислий gateway не додавав десятки секунд до кожної відповіді чату)
 CHAT_OPENCLAW_TIMEOUT_S: float = cfg_float("chat", "openclaw_timeout_s", default=10)
 CHAT_OPENCLAW_BACKOFF_S: float = cfg_float("chat", "openclaw_backoff_s", default=120)
+ANTHROPIC_BASE_URL: str = cfg_str("anthropic", "base_url", default="https://api.anthropic.com").rstrip("/")
 ANTHROPIC_MODEL: str = cfg_str("anthropic", "model", default="claude-sonnet-5")
 ANTHROPIC_MAX_TOKENS: int = cfg_int("anthropic", "max_tokens", default=1024)
 ANTHROPIC_TIMEOUT_S: float = cfg_float("anthropic", "timeout_s", default=60)
 CHAT2API_BASE_URL: str = cfg_str("chat2api", "base_url", default="http://127.0.0.1:8080/v1").rstrip("/")
 CHAT2API_MODEL: str = cfg_str("chat2api", "model", default="Qwen3.7-Max")
 CHAT2API_TIMEOUT_S: float = cfg_float("chat2api", "timeout_s", default=60)
+ASR_PROVIDER: str = cfg_str("asr", "provider", default="regolo").casefold()
+REGOLO_ASR_BASE_URL: str = cfg_str("asr", "base_url", default="https://api.regolo.ai/v1").rstrip("/")
+REGOLO_ASR_MODEL: str = cfg_str("asr", "model", default="faster-whisper-large-v3")
+REGOLO_ASR_LANGUAGE: str = cfg_str("asr", "language", default="uk")
+REGOLO_ASR_TIMEOUT_S: float = cfg_float("asr", "timeout_s", default=45)
+REGOLO_ASR_MAX_UPLOAD_BYTES: int = cfg_int("asr", "max_upload_bytes", default=10 * 1024 * 1024)
+ASR_LOCAL_MODEL: str = cfg_str("asr", "local_model", default="large-v3-turbo")
+ASR_LOCAL_DEVICE: str = cfg_str("asr", "local_device", default="cpu").casefold()
+ASR_LOCAL_COMPUTE_TYPE: str = cfg_str("asr", "local_compute_type", default="int8")
+ASR_LOCAL_BEAM_SIZE: int = cfg_int("asr", "local_beam_size", default=3)
 VISION_BASE_URL: str = cfg_str("vision", "base_url", default="http://127.0.0.1:8000").rstrip("/")
 DISPLAY_BASE_URL: str = cfg_str("display", "base_url", default="http://127.0.0.1:8001").rstrip("/")
 
@@ -266,4 +291,10 @@ def get_chat2api_key() -> str | None:
     Chat2API авторизації не вимагає). Значення — секрет, не логувати!
     """
     key = os.environ.get("CHAT2API_API_KEY", "").strip()
+    return key or None
+
+
+def get_regolo_asr_key() -> str | None:
+    """Ключ Regolo ASR — тільки з env REGOLO_ASR_API_KEY."""
+    key = os.environ.get("REGOLO_ASR_API_KEY", "").strip()
     return key or None
