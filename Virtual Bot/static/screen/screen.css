@@ -1215,3 +1215,254 @@ html, body {
 
 .mode-name { font: 600 12px/1.2 var(--font); }
 .mode-hint { font: 400 10px/1.25 var(--font); color: var(--muted); }
+
+/* ---------- Now Playing: музика внизу екрана ----------
+   Бар з'являється, лише коли є що грати (екран 240px заввишки — постійний
+   бар з'їв би чверть тайла). Коли він є, він ЗАМІНЮЄ крапки-індикатори,
+   а тайли піднімають свій вміст, щоб кнопки не сховались під баром. */
+
+.nowplaying {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border-top: 1px solid var(--line);
+}
+
+.np-progress {
+  height: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.np-progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
+.np-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px;
+}
+
+.np-btn {
+  flex: none;
+  width: 24px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.np-btn:active { color: var(--accent); }
+
+/* Назва трека: одна стрічка в ряд; довга — біжить, як рекламна стрічка
+   над магазином (дві копії тексту + translateX(-50%) = безшовне коло) */
+.np-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: 500 11px/26px var(--font);
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.np-track {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+.np-text { padding-right: 26px; }
+.nowplaying.rolling .np-track {
+  animation: np-scroll var(--np-dur, 9s) linear infinite;
+}
+@keyframes np-scroll {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+/* Бар на екрані → крапки не потрібні, вміст тайлів піднімаємо */
+.stage.np .dots { opacity: 0; }
+.stage.np .tile { padding-bottom: 48px; }
+.stage.np.layered .nowplaying { opacity: 0; transition: opacity 150ms ease; }
+
+/* ---------- Шіт плеєра ---------- */
+
+.music-card {
+  max-height: 218px;
+  display: flex;
+  flex-direction: column;
+}
+
+.np-providers {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.np-provider-chip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: 600 11px/1 var(--font);
+  cursor: pointer;
+}
+.np-provider-chip.on { border-color: var(--accent); color: var(--accent); }
+
+.np-now {
+  min-width: 0;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.np-now .np-text { padding-right: 26px; }
+.np-now.rolling .np-track {
+  animation: np-scroll var(--np-dur, 9s) linear infinite;
+}
+.np-sub {
+  display: block;
+  font: 400 10px/1.3 var(--font);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.np-seek {
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.np-seek:disabled { opacity: 0.3; }
+.np-times {
+  display: flex;
+  justify-content: space-between;
+  font: 400 9px/1 var(--mono);
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.np-controls {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+.np-controls .np-btn { width: 34px; height: 28px; }
+.np-controls .np-big { width: 44px; height: 28px; }
+.np-controls .np-btn:disabled { opacity: 0.3; }
+
+.np-list {
+  flex: 1;
+  min-height: 40px;
+  overflow-y: auto;
+  touch-action: pan-y;
+  border-top: 1px solid var(--line);
+  padding-top: 5px;
+}
+.np-row-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  padding: 4px 2px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: 400 11px/1.3 var(--font);
+  cursor: pointer;
+}
+.np-row-item.on { color: var(--accent); }
+.np-row-item .np-item-sub { color: var(--muted); font-size: 9px; flex: none; }
+.np-hint {
+  font: 400 10px/1.35 var(--font);
+  color: var(--muted);
+  padding: 2px 0;
+}
+
+/* ---------- Магазин ---------- */
+
+.store-tabs {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.store-tab {
+  flex: 1;
+  min-height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: 600 10px/1 var(--font);
+  cursor: pointer;
+}
+.store-tab.on { border-color: var(--accent); color: var(--accent); }
+
+.store-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.store-row:last-child { border-bottom: none; }
+.store-info { flex: 1; min-width: 0; }
+.store-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 11px/1.25 var(--font);
+}
+.store-desc {
+  font: 400 9px/1.3 var(--font);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.store-badge {
+  flex: none;
+  font: 600 8px/1 var(--font);
+  color: var(--ok);
+  border: 1px solid var(--ok);
+  border-radius: 6px;
+  padding: 2px 4px;
+}
+.store-actions { flex: none; display: flex; gap: 4px; }
+.store-actions .cta { min-height: 22px; padding: 0 8px; font-size: 10px; margin: 0; }
+.store-actions .cta.quiet { background: transparent; color: var(--muted); border-color: var(--line); }
+
+/* Скіни: превʼю — три крапки кольорами теми */
+.skin-dots { flex: none; display: flex; gap: 3px; }
+.skin-dots i { width: 9px; height: 9px; border-radius: 50%; }
+
+/* Встановлений store-застосунок: iframe на весь вміст шару */
+.storeapp-body { padding: 0; gap: 0; }
+.storeapp-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: var(--bg);
+}
+
+/* Коли назва влазить — друга (роликова) копія тексту зайва */
+.np-track.single .np-text:nth-child(2) { display: none; }

@@ -97,6 +97,14 @@
   $("minus").addEventListener("click", () => { bpm = Math.max(40, bpm - 1); localStorage.setItem("metronome.bpm", String(bpm)); draw(); });
   $("plus").addEventListener("click", () => { bpm = Math.min(208, bpm + 1); localStorage.setItem("metronome.bpm", String(bpm)); draw(); });
   draw();
+
+  // Скін екрана приходить від батька повідомленням (CSS-змінні крізь iframe
+  // не проходять) — застосовуємо до :root, кнопки й повзунок підфарбуються
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "botSkin" && e.data.vars) {
+      for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
+    }
+  });
 </script>
 </body>
 </html>

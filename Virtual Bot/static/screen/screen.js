@@ -384,6 +384,11 @@ setLink(false);
       showScreen(ev.screen);
       return;
     }
+    if (ev.type === "music") {
+      // Мозок увімкнув музику (тул play_music) або зупинив — Now Playing
+      onMusicEvent(ev);
+      return;
+    }
     if (ev.type === "emotion") {
       setEmotion(ev.emotion);
     } else if (ev.type === "reply") {
@@ -456,6 +461,8 @@ const PIXEL_ICON_ASSETS = {
   settings: "settings.svg",
   memory: "memory.svg",
   history: "chats.svg",
+  store: "store.svg",
+  music: "music.svg",
 };
 const PIXEL_ICON_TINTS = {
   face: "#4ecdc4",
@@ -470,6 +477,8 @@ const PIXEL_ICON_TINTS = {
   settings: "#5b9bd5",
   memory: "#d7a65b",
   history: "#5b9bd5",
+  store: "#d7a65b",
+  music: "#d98263",
 };
 let iconStyle = "pixel";
 let iconTint = DEFAULT_ICON_TINT;
@@ -568,6 +577,7 @@ function rebuildIcons() {
     ["brightIco", "sun", 3], ["volIco", "speaker", 3], ["quickEdit", "pencil", 2],
     ["micIco", "mic", 3], ["faceMicIco", "mic", 2],
     ["sessionsIco", "list", 2], ["chatNewIco", "plus", 2],
+    ["npProvYoutubeIco", "youtube", 2], ["npProvRadioIco", "radio", 2],
   ];
   for (const [id, name, cell] of slots) {
     const host = $(id);
@@ -664,9 +674,41 @@ function applyMotion(value) {
 
 const voiceAudio = new Audio();
 let voiceUrl = null;
-voiceAudio.addEventListener("ended", () => { botSpeaking = false; });
-voiceAudio.addEventListener("pause", () => { botSpeaking = false; });
-voiceAudio.addEventListener("error", () => { botSpeaking = false; });
+voiceAudio.addEventListener("ended", () => { botSpeaking = false; syncMusicVolume(); });
+voiceAudio.addEventListener("pause", () => { botSpeaking = false; syncMusicVolume(); });
+voiceAudio.addEventListener("error", () => { botSpeaking = false; syncMusicVolume(); });
+
+/* ---- Ядро Now Playing: оголошення вгорі файлу, бо гучність (applyVolume)
+   і ducking під час мови бота потрібні ДО відкриття будь-якого тайла.
+   Повний плеєр (шіт, списки, перемотка) — унизу, поруч із магазином. ---- */
+
+const musicAudio = new Audio();
+musicAudio.preload = "none";
+// Налагодження з консолі/тестів: новий Audio() не потрапляє в DOM
+window.musicAudio = musicAudio;
+
+const PROVIDER_KEY = "botScreenMusicProvider";
+const PROVIDERS = {
+  youtube: { label: "YouTube", icon: "youtube" },
+  radio: { label: "Радіо", icon: "radio" },
+};
+
+const musicState = {
+  provider: "youtube",
+  track: null,          // {provider, id, title, uploader, duration, url?}
+  queue: [],            // черга для prev/next (тільки youtube)
+  playing: false,
+  live: false,          // радіо: без перемотки й тривалості
+  seeking: false,       // палець на повзунку — не смикаємо значення
+};
+
+let musicDucked = false;
+
+function syncMusicVolume() {
+  // Той самий повзунок гучності, що й у голосу бота; ducking — тимчасово
+  const base = volume / 100;
+  musicAudio.volume = musicDucked ? Math.max(0.05, base * 0.25) : base;
+}
 
 async function checkTts() {
   try {
@@ -700,6 +742,9 @@ async function speak(text) {
     voiceUrl = URL.createObjectURL(blob);
     voiceAudio.src = voiceUrl;
     voiceAudio.volume = volume / 100;
+    // Поки бот говорить — музика притихає, щоб було чутно мову
+    musicDucked = true;
+    syncMusicVolume();
     // Прапорець ставимо ДО play(): у відкритому мікрофоні бот інакше почує
     // власну озвучку й почне відповідати сам собі
     botSpeaking = true;
@@ -823,6 +868,7 @@ function applyVolume(v) {
   volRange.value = String(volume);
   if (ttsAvailable) $("volVal").textContent = volume + "%";
   voiceAudio.volume = volume / 100;
+  syncMusicVolume();
 }
 
 brightRange.addEventListener("input", () => {
@@ -1663,6 +1709,8 @@ const SCREENS = [
   { id: "settings", label: "Налаштування", icon: "settings", app: true },
   { id: "memory", label: "Памʼять", icon: "memory", app: true },
   { id: "chats", label: "Розмови", icon: "history", app: true },
+  { id: "store", label: "Магазин", icon: "store", app: true },
+  // Встановлені з магазину застосунки дописує refreshInstalledApps()
 ];
 
 function appsOpen() {
@@ -1680,7 +1728,8 @@ function closeApps() {
 
 function renderApps() {
   appsGrid.innerHTML = "";
-  for (const scr of SCREENS) {
+  const all = SCREENS.concat(installedApps);
+  for (const scr of all) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "app-tile";
@@ -1691,11 +1740,11 @@ function renderApps() {
     const circle = document.createElement("span");
     circle.className = "app-icon";
     circle.dataset.icon = scr.icon;
-    const tint = iconStyle === "color"
+    const tint = scr.tint || (iconStyle === "color"
       ? (ICON_COLORS[scr.icon] || iconTint)
       : iconStyle === "pixel"
         ? (PIXEL_ICON_TINTS[scr.icon] || iconTint)
-        : iconTint;
+        : iconTint);
     circle.style.setProperty("--app-tint", tint);
     circle.appendChild(drawerIcon(scr.icon, here));
     btn.appendChild(circle);
@@ -1724,7 +1773,13 @@ function showScreen(id) {
   if (id === "panel") { closeApps(); openPanel(); return; }
   if (id === "memory") { closeApps(); openMemory(); return; }
   if (id === "chats") { closeApps(); openChats(); return; }
+  if (id === "store") { closeApps(); openStore(); return; }
   if (id === "quick") { openLayer("quick"); return; }
+  // Застосунок, встановлений з магазину: id виглядає як "app:metronome"
+  if (typeof id === "string" && id.startsWith("app:")) {
+    const entry = installedApps.find((a) => a.id === id);
+    if (entry) { closeApps(); openStoreApp(entry); return; }
+  }
   const idx = tiles.findIndex((t) => t.dataset.tile === id);
   if (idx === -1) return;
   closeApps();
@@ -2182,7 +2237,8 @@ function openPanel() {
 
 function resetScreenPrefs() {
   [THEME_KEY, BRIGHT_KEY, VOL_KEY, VOICE_KEY, ORDER_KEY, ICON_KEY, ICON_TINT_KEY,
-    IDLE_HOME_KEY, IDLE_SLEEP_KEY, CLOCK_FORMAT_KEY, CLOCK_DATE_KEY, MOTION_KEY]
+    IDLE_HOME_KEY, IDLE_SLEEP_KEY, CLOCK_FORMAT_KEY, CLOCK_DATE_KEY, MOTION_KEY,
+    SKIN_KEY, SKIN_VARS_KEY, PROVIDER_KEY]
     .forEach(removePref);
   document.documentElement.dataset.theme = "dark";
   document.documentElement.dataset.motion = "full";
@@ -2199,6 +2255,8 @@ function resetScreenPrefs() {
   editing = false;
   picked = null;
   quickOrder = DEFAULT_ORDER.slice();
+  applySkinVars(null);
+  musicState.provider = "youtube";
   applyBright(bright);
   applyVolume(volume);
   tickClock();
@@ -2541,9 +2599,636 @@ function openSettings() {
   });
 }
 
+/* ---------- Now Playing: музика внизу екрана ----------
+   Джерела:
+     youtube — пошук робить МОЗОК (тул play_music): «Клод, увімкни …».
+               Аудіо тягнеться з /api/music/stream — проксі з Range, тому
+               перемотка працює по-справжньому;
+     radio   — живі потоки (SomaFM тощо), тапаються прямо зі списку.
+               Живе мовлення не перемотується — повзунок ховаємо.
+
+   Бар видно з будь-якого тайла й з'являється лише коли є трек: він
+   заміняє крапки-індикатори (.stage.np), а тайли піднімають вміст.
+   Ядро стану плеєра — вгорі файлу (гучність/ducking); тут — UI. */
+
+musicState.provider = readPref(PROVIDER_KEY, "youtube");
+if (!PROVIDERS[musicState.provider]) musicState.provider = "youtube";
+
+function npClipEl(kind) {
+  return kind === "bar" ? $("npTitleBtn") : $("npNow");
+}
+
+/* Стрічка-заголовок: дві копії тексту, поки влазить — одна. Швидкість
+   пропорційна довжині (однакова швидкість пікселів/с), межі 5..30 с. */
+function npMarquee(holder, clip) {
+  const trackEl = clip.querySelector(".np-track");
+  const textEl = trackEl.querySelector(".np-text");
+  if (!trackEl || !textEl) return;
+  if (trackEl.children.length < 2) {
+    const dup = textEl.cloneNode();
+    dup.setAttribute("aria-hidden", "true");
+    trackEl.appendChild(dup);
+  }
+  const copies = trackEl.querySelectorAll(".np-text");
+  copies.forEach((el) => { el.textContent = textEl.textContent; });
+  const oneCopy = textEl.offsetWidth;          // уже з padding-right
+  if (oneCopy > clip.clientWidth - 4) {
+    holder.classList.add("rolling");
+    trackEl.classList.remove("single");
+    holder.style.setProperty("--np-dur", Math.max(5, Math.min(30, oneCopy / 22)) + "s");
+  } else {
+    holder.classList.remove("rolling");
+    trackEl.classList.add("single");
+  }
+}
+
+function fmtTime(sec) {
+  if (!isFinite(sec) || sec <= 0) return "—:—";
+  sec = Math.round(sec);
+  return Math.floor(sec / 60) + ":" + two(sec % 60);
+}
+
+function providerIconName() {
+  return musicState.track ? PROVIDERS[musicState.track.provider].icon : "music";
+}
+
+function updateNpChrome() {
+  // Іконки провайдера й play/pause в барі та в шіті — у поточному стилі
+  const slots = [
+    ["npProviderIco", providerIconName(), 2],
+    ["npToggleIco", musicState.playing ? "pause" : "play", 2],
+    ["npBigIco", musicState.playing ? "pause" : "play", 3],
+    ["npPrevIco", "prev", 2],
+    ["npNextIco", "next", 2],
+    ["npProvYoutubeIco", "youtube", 2],
+    ["npProvRadioIco", "radio", 2],
+  ];
+  for (const [id, name, cell] of slots) {
+    const host = $(id);
+    if (!host) continue;
+    const old = host.querySelector(".pxicon, .svgicon");
+    if (old) old.remove();
+    host.appendChild(uiIcon(name, { cell }));
+  }
+  document.querySelectorAll("#npProviders .np-provider-chip").forEach((chip) => {
+    chip.classList.toggle("on", chip.dataset.provider === musicState.provider);
+  });
+}
+
+function updateNpText() {
+  const title = musicState.track
+    ? (musicState.track.title || "Без назви")
+    : "Музика вимкнена";
+  $("npText").textContent = title;
+  $("npNowTitle").textContent = title;
+  $("npNowSub").textContent = musicState.track
+    ? (musicState.track.uploader || (musicState.live ? "живий стрім" : ""))
+    : "тапни ✕-іконку зліва або попроси бота";
+  npMarquee($("nowPlaying"), npClipEl("bar"));
+  npMarquee($("npNow"), npClipEl("sheet"));
+}
+
+function updateNpSeek() {
+  const seek = $("npSeek");
+  const isLive = musicState.live && musicState.track;
+  seek.disabled = isLive || !musicState.track;
+  $("npCur").textContent = musicState.track ? fmtTime(musicAudio.currentTime) : "—:—";
+  $("npDur").textContent = musicState.track ? (isLive ? "LIVE" : fmtTime(musicAudio.duration)) : "—:—";
+  if (musicState.track && !musicState.seeking) {
+    if (isLive) {
+      $("npProgress").style.width = "100%";
+      seek.value = "1000";
+    } else if (musicAudio.duration > 0) {
+      const pct = musicAudio.currentTime / musicAudio.duration;
+      seek.value = String(Math.round(pct * 1000));
+      $("npProgress").style.width = (pct * 100).toFixed(1) + "%";
+    }
+  } else if (!musicState.track) {
+    $("npProgress").style.width = "0";
+  }
+}
+
+function showNpBar(show) {
+  $("nowPlaying").classList.toggle("hidden", !show);
+  stage.classList.toggle("np", !!show);
+  if (show) updateNpText();
+}
+
+async function musicPlayTrack(track, opts) {
+  const push = (opts || {}).queue !== false;
+  musicState.track = track;
+  musicState.live = track.provider === "radio";
+  if (push && track.provider === "youtube") {
+    // без дублів: той самий id переносять у хвіст черги
+    musicState.queue = musicState.queue.filter((t) => t.id !== track.id);
+    musicState.queue.push(track);
+    if (musicState.queue.length > 12) musicState.queue.shift();
+  }
+  musicAudio.pause();
+  musicAudio.src = track.provider === "radio"
+    ? track.url
+    : "/api/music/stream?provider=youtube&id=" + encodeURIComponent(track.id);
+  syncMusicVolume();
+  showNpBar(true);
+  updateNpChrome();
+  updateNpSeek();
+  renderNpList();
+  try {
+    musicState.playing = true;
+    await musicAudio.play();
+  } catch (e) {
+    // Автоплей без жесту може бути заблокований: чесно показуємо паузу
+    musicState.playing = false;
+  }
+  updateNpChrome();
+  if (musicSheetOpen) renderNpList();
+}
+
+function musicToggle() {
+  if (!musicState.track) { openMusicSheet(); return; }
+  wake();
+  if (musicState.playing) {
+    musicAudio.pause();
+  } else {
+    syncMusicVolume();
+    musicAudio.play().catch(() => {});
+  }
+}
+
+musicAudio.addEventListener("play", () => { musicState.playing = true; updateNpChrome(); });
+musicAudio.addEventListener("pause", () => { musicState.playing = false; updateNpChrome(); });
+musicAudio.addEventListener("playing", updateNpChrome);
+musicAudio.addEventListener("loadedmetadata", updateNpSeek);
+musicAudio.addEventListener("timeupdate", updateNpSeek);
+musicAudio.addEventListener("error", () => {
+  if (!musicState.track) return;
+  showCaption("Стрім обірвався", "bot");
+  musicState.playing = false;
+  updateNpChrome();
+});
+musicAudio.addEventListener("ended", () => {
+  // Черга: після трека — попередній за списком (bot додає в хвіст)
+  const q = musicState.queue;
+  const idx = q.findIndex((t) => musicState.track && t.id === musicState.track.id);
+  if (q.length > 1 && idx >= 0 && idx < q.length - 1) {
+    musicPlayTrack(q[idx + 1]);
+  } else {
+    musicState.playing = false;
+    updateNpChrome();
+  }
+});
+
+function musicStep(dir) {
+  const q = musicState.queue;
+  if (!q.length) return;
+  const idx = musicState.track ? q.findIndex((t) => t.id === musicState.track.id) : -1;
+  const next = q[Math.max(0, Math.min(q.length - 1, (idx < 0 ? 0 : idx + dir)))];
+  if (next) musicPlayTrack(next);
+}
+
+/* Шіт плеєра: вибір джерела, перемотка, список станцій/черги */
+
+const musicSheet = $("musicSheet");
+let musicSheetOpen = false;
+
+function openMusicSheet() {
+  musicSheetOpen = true;
+  updateNpChrome();
+  updateNpSeek();
+  renderNpList();
+  musicSheet.classList.remove("hidden");
+  wake();
+}
+
+function closeMusicSheet() {
+  musicSheetOpen = false;
+  musicSheet.classList.add("hidden");
+}
+
+function renderNpList() {
+  const list = $("npList");
+  list.innerHTML = "";
+  if (musicState.provider === "radio") {
+    // Радіо: список тягнемо з бекенда (це теж «каталог», але живий)
+    list.textContent = "Завантаження…";
+    fetch("/api/music/radio").then((r) => r.json()).then((d) => {
+      list.innerHTML = "";
+      for (const st of d.stations || []) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "np-row-item" + (musicState.track && musicState.track.id === st.id ? " on" : "");
+        const name = document.createElement("span");
+        name.textContent = st.title;
+        const sub = document.createElement("span");
+        sub.className = "np-item-sub";
+        sub.textContent = st.genre;
+        btn.appendChild(name);
+        btn.appendChild(sub);
+        btn.addEventListener("click", () => {
+          wake();
+          musicPlayTrack({ provider: "radio", id: st.id, title: st.title, uploader: st.genre, url: st.url });
+          renderNpList();
+        });
+        list.appendChild(btn);
+      }
+    }).catch(() => { list.textContent = "Радіо недоступне."; });
+    return;
+  }
+  if (!musicState.queue.length) {
+    const hint = document.createElement("div");
+    hint.className = "np-hint";
+    hint.textContent = "Попроси бота: «Клод, увімкни Океан Ельзи» — тут з'явиться черга.";
+    list.appendChild(hint);
+    return;
+  }
+  for (const t of musicState.queue.slice().reverse()) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "np-row-item" + (musicState.track && musicState.track.id === t.id ? " on" : "");
+    const name = document.createElement("span");
+    name.textContent = t.title;
+    const sub = document.createElement("span");
+    sub.className = "np-item-sub";
+    sub.textContent = t.uploader || "";
+    btn.appendChild(name);
+    btn.appendChild(sub);
+    btn.addEventListener("click", () => { wake(); musicPlayTrack(t); });
+    list.appendChild(btn);
+  }
+}
+
+function setMusicProvider(provider) {
+  if (!PROVIDERS[provider]) return;
+  musicState.provider = provider;
+  writePref(PROVIDER_KEY, provider);
+  updateNpChrome();
+  renderNpList();
+}
+
+musicSheet.addEventListener("click", (e) => {
+  if (e.target.closest("[data-music-close]")) { closeMusicSheet(); return; }
+  const chip = e.target.closest(".np-provider-chip");
+  if (chip) { setMusicProvider(chip.dataset.provider); return; }
+});
+
+$("npProvider").addEventListener("click", (e) => { e.stopPropagation(); openMusicSheet(); wake(); });
+$("npTitleBtn").addEventListener("click", () => openMusicSheet());
+$("npToggle").addEventListener("click", musicToggle);
+$("npBigToggle").addEventListener("click", musicToggle);
+$("npPrev").addEventListener("click", () => musicStep(-1));
+$("npNext").addEventListener("click", () => musicStep(1));
+
+const npSeek = $("npSeek");
+npSeek.addEventListener("pointerdown", () => { musicState.seeking = true; });
+npSeek.addEventListener("input", () => {
+  // Живий прев'ю часу під час тяга; саме перемотування — на відпусті (change)
+  if (!musicAudio.duration || !isFinite(musicAudio.duration)) return;
+  const t = (Number(npSeek.value) / 1000) * musicAudio.duration;
+  $("npCur").textContent = fmtTime(t);
+});
+npSeek.addEventListener("change", () => {
+  if (musicAudio.duration && isFinite(musicAudio.duration)) {
+    musicAudio.currentTime = (Number(npSeek.value) / 1000) * musicAudio.duration;
+  }
+  musicState.seeking = false;
+});
+npSeek.addEventListener("pointerup", () => { musicState.seeking = false; });
+
+/* Подія від мозку (тул play_music / listen_to_video): SSE {"type":"music"} */
+
+function onMusicEvent(ev) {
+  if (ev.action === "stop") {
+    musicAudio.pause();
+    return;
+  }
+  const track = ev.track && typeof ev.track === "object" ? ev.track : null;
+  if (!track || !track.id) return;
+  if (track.provider !== "radio") {
+    track.provider = "youtube";
+    if (musicState.track && musicState.track.id === track.id) {
+      // Той самий трек: якщо на паузі — продовжити, повторно не перезапускаємо
+      if (!musicState.playing) musicToggle();
+      return;
+    }
+  }
+  musicPlayTrack(track);
+}
+
+/* ---------- Магазин: пакети для екрана (apps/skins) + скіли/MCP ----------
+   «Додатки» та «Скіни» живуть у /api/screen-store (локальні пакети з
+   store/packages). «Скіли» і «Тулзи» — це OpenClaw-контур (ClawHub і
+   кураторський MCP), звідси вони лише показуються і ставляться через
+   наявні /api/store ендпоінти. */
+
+const SKIN_KEY = "botScreenSkin";
+const SKIN_VARS_KEY = "botScreenSkinVars";
+const SKIN_VAR_NAMES = ["--bg", "--panel", "--line", "--text", "--muted", "--accent", "--ok", "--off"];
+
+let installedApps = [];
+
+async function refreshInstalledApps() {
+  try {
+    const r = await fetch("/api/screen-store/installed");
+    const d = await r.json();
+    installedApps = (d.apps || []).map((pkg) => ({
+      id: "app:" + pkg.id,
+      label: pkg.label || pkg.id,
+      icon: pkg.icon || "store",
+      tint: pkg.tint || "",
+      app: true,
+      pkg: pkg.id,
+      title: pkg.label || pkg.id,
+    }));
+  } catch (e) {
+    installedApps = [];
+  }
+}
+
+function applySkinVars(vars) {
+  const rootStyle = document.documentElement.style;
+  SKIN_VAR_NAMES.forEach((name) => rootStyle.removeProperty(name));
+  if (vars && typeof vars === "object") {
+    SKIN_VAR_NAMES.forEach((name) => {
+      const value = vars[name];
+      if (typeof value === "string" && /^#[0-9a-fA-F]{3,8}$/.test(value)) {
+        rootStyle.setProperty(name, value);
+      }
+    });
+  }
+  repaintPixels();
+}
+
+function applySkin(manifest) {
+  if (manifest) {
+    applySkinVars(manifest.vars || {});
+    writePref(SKIN_KEY, manifest.id);
+    writePref(SKIN_VARS_KEY, JSON.stringify(manifest.vars || {}));
+    showCaption("Скін: " + (manifest.label || manifest.id), "bot");
+  } else {
+    applySkinVars(null);
+    removePref(SKIN_KEY);
+    removePref(SKIN_VARS_KEY);
+  }
+}(function restoreSkin() {
+  let vars = null;
+  try { vars = JSON.parse(readPref(SKIN_VARS_KEY, "null")); } catch (e) { vars = null; }
+  if (vars && typeof vars === "object") applySkinVars(vars);
+})();
+
+function currentSkinVars() {
+  try { return JSON.parse(readPref(SKIN_VARS_KEY, "null")) || {}; } catch (e) { return {}; }
+}
+
+function openStoreApp(entry) {
+  openAppLayer(entry.title || "Застосунок", (box) => {
+    box.classList.add("storeapp-body");
+    const frame = document.createElement("iframe");
+    frame.className = "storeapp-frame";
+    frame.src = "/store-apps/" + encodeURIComponent(entry.pkg) + "/index.html";
+    frame.title = entry.title || entry.pkg;
+    // CSS-змінні крізь iframe не проходять — скін шлемо повідомленням;
+    // застосунок підхоплює його слухачем message (див. docs/SCREEN-PLATFORM.md)
+    frame.addEventListener("load", () => {
+      try {
+        frame.contentWindow.postMessage({ type: "botSkin", vars: currentSkinVars() }, "*");
+      } catch (e) { /* застосунок може і не чекати скіна */ }
+    });
+    box.appendChild(frame);
+  });
+}
+
+function storeIconEl(name) {
+  // Іконка рядка магазину: той самий drawerIcon, що й у шухляді
+  return drawerIcon(name, false);
+}
+
+function openStore() {
+  openAppLayer("Магазин", (box) => {
+    box.classList.add("storeapp-body");
+    box.style.padding = "10px 12px";
+    box.style.gap = "0";
+
+    const tabs = document.createElement("div");
+    tabs.className = "store-tabs";
+    const TABS = [
+      ["apps", "Додатки"],
+      ["skins", "Скіни"],
+      ["skills", "Скіли"],
+      ["mcp", "Тулзи"],
+    ];
+    let active = "apps";
+    const tabBtns = {};
+    const body = document.createElement("div");
+    body.className = "np-list store-list";
+    body.style.borderTop = "none";
+
+    for (const [id, label] of TABS) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "store-tab";
+      btn.textContent = label;
+      btn.addEventListener("click", () => { active = id; syncTabs(); renderTab(); wake(); });
+      tabs.appendChild(btn);
+      tabBtns[id] = btn;
+    }
+
+    function syncTabs() {
+      for (const id in tabBtns) tabBtns[id].classList.toggle("on", id === active);
+    }
+
+    function rowAction(label, quiet) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "cta" + (quiet ? " quiet" : "");
+      btn.textContent = label;
+      return btn;
+    }
+
+    function infoRow({ icon, tint, name, desc, badge, dots, actions }) {
+      const row = document.createElement("div");
+      row.className = "store-row";
+      const iconHost = document.createElement("span");
+      iconHost.className = "app-icon";
+      iconHost.style.setProperty("--app-tint", tint || iconTint);
+      iconHost.appendChild(storeIconEl(icon || "store"));
+      row.appendChild(iconHost);
+      const info = document.createElement("div");
+      info.className = "store-info";
+      const nameRow = document.createElement("div");
+      nameRow.className = "store-name";
+      const nameEl = document.createElement("span");
+      nameEl.textContent = name;
+      nameRow.appendChild(nameEl);
+      if (badge) {
+        const badgeEl = document.createElement("span");
+        badgeEl.className = "store-badge";
+        badgeEl.textContent = badge;
+        nameRow.appendChild(badgeEl);
+      }
+      info.appendChild(nameRow);
+      if (desc) {
+        const descEl = document.createElement("div");
+        descEl.className = "store-desc";
+        descEl.textContent = desc;
+        info.appendChild(descEl);
+      }
+      row.appendChild(info);
+      if (dots) {
+        const dotsEl = document.createElement("span");
+        dotsEl.className = "skin-dots";
+        for (const color of dots) {
+          const dot = document.createElement("i");
+          dot.style.background = color;
+          dotsEl.appendChild(dot);
+        }
+        row.appendChild(dotsEl);
+      }
+      const act = document.createElement("span");
+      act.className = "store-actions";
+      (actions || []).forEach((a) => act.appendChild(a));
+      row.appendChild(act);
+      return row;
+    }
+
+    async function renderTab() {
+      body.textContent = "Завантаження…";
+      try {
+        if (active === "apps" || active === "skins") {
+          const kind = active === "apps" ? "app" : "skin";
+          const r = await fetch("/api/screen-store/catalog");
+          const d = await r.json();
+          const pkgs = (d.packages || []).filter((p) => p.type === kind);
+          body.innerHTML = "";
+          if (!pkgs.length) { body.textContent = "Каталог порожній."; return; }
+          for (const pkg of pkgs) {
+            const actions = [];
+            const applied = readPref(SKIN_KEY, "") === pkg.id;
+            if (kind === "app") {
+              if (pkg.installed) {
+                const open = rowAction("Відкрити");
+                open.addEventListener("click", () => {
+                  closeAppLayer();
+                  openStoreApp({ pkg: pkg.id, title: pkg.label });
+                });
+                actions.push(open);
+              } else {
+                const get = rowAction("Взяти");
+                get.addEventListener("click", async () => {
+                  get.disabled = true; get.textContent = "…";
+                  try {
+                    await fetch("/api/screen-store/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pkg.id }) });
+                    await refreshInstalledApps();
+                    renderApps();
+                  } catch (e) { /* стан оновиться при наступному рендері */ }
+                  renderTab();
+                  wake();
+                });
+                actions.push(get);
+              }
+              if (pkg.installed) {
+                const del = rowAction("✕", true);
+                del.title = "Прибрати";
+                del.addEventListener("click", async () => {
+                  await fetch("/api/screen-store/uninstall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pkg.id }) });
+                  await refreshInstalledApps();
+                  renderApps();
+                  renderTab();
+                  wake();
+                });
+                actions.push(del);
+              }
+            } else {
+              const use = rowAction(applied ? "Зняти" : (pkg.installed ? "Застосувати" : "Взяти"));
+              use.addEventListener("click", async () => {
+                if (applied) { applySkin(null); renderTab(); wake(); return; }
+                if (!pkg.installed) {
+                  await fetch("/api/screen-store/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pkg.id }) });
+                }
+                applySkin(pkg);
+                renderTab();
+                wake();
+              });
+              actions.push(use);
+            }
+            const dotColors = kind === "skin" && pkg.vars
+              ? ["--bg", "--panel", "--accent"].map((k) => pkg.vars[k]).filter(Boolean)
+              : null;
+            body.appendChild(infoRow({
+              icon: pkg.icon,
+              tint: pkg.tint,
+              name: pkg.label || pkg.id,
+              desc: pkg.description || "",
+              badge: kind === "skin" ? (applied ? "увімк." : (pkg.installed ? "є" : "")) : (pkg.installed ? "є" : ""),
+              dots: dotColors,
+              actions,
+            }));
+          }
+        } else {
+          // Скіли (ClawHub) і MCP-тулзи — OpenClaw-контур
+          const kind = active === "skills" ? "skills" : "mcp";
+          const r = await fetch("/api/store?kind=" + kind + "&limit=20");
+          const d = await r.json();
+          body.innerHTML = "";
+          const items = kind === "skills" ? (d.skills || []) : (d.mcp || []);
+          const errors = d.errors || {};
+          if (errors[kind]) {
+            const note = document.createElement("div");
+            note.className = "np-hint";
+            note.textContent = "OpenClaw недоступний: " + errors[kind];
+            body.appendChild(note);
+            return;
+          }
+          if (!items.length) {
+            body.textContent = kind === "skills" ? "Скіл не знайдено." : "Каталог тулзів порожній.";
+            return;
+          }
+          for (const item of items) {
+            const name = item.slug || item.id || item.name || "?";
+            const isInstalled = item.installed;
+            const actions = [];
+            if (!isInstalled) {
+              const btn = rowAction("Взяти");
+              btn.addEventListener("click", async () => {
+                btn.disabled = true; btn.textContent = "…";
+                const url = kind === "skills" ? "/api/store/skills/install" : "/api/store/mcp/install";
+                const payload = kind === "skills" ? { slug: item.slug } : { id: item.id };
+                try {
+                  const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+                  if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    showCaption(err.detail || "Не встановилось", "bot");
+                  }
+                } catch (e) { showCaption("Не встановилось", "bot"); }
+                renderTab();
+                wake();
+              });
+              actions.push(btn);
+            }
+            body.appendChild(infoRow({
+              icon: kind === "skills" ? "bubble" : "server",
+              name,
+              desc: item.description || item.desc || item.summary || "",
+              badge: isInstalled ? "є" : "",
+              actions,
+            }));
+          }
+        }
+      } catch (e) {
+        body.textContent = "Магазин недоступний.";
+      }
+    }
+
+    box.appendChild(tabs);
+    box.appendChild(body);
+    syncTabs();
+    renderTab();
+  });
+}
+
 /* ---------- Старт ---------- */
 
 renderDots();
 goTile(0);
 syncQuickButtons();
 wake();
+refreshInstalledApps();

@@ -103,6 +103,29 @@
   <!-- Крапки-індикатор тайлів -->
   <div class="dots" id="dots" aria-hidden="true"></div>
 
+  <!-- ── Now Playing: музика, видно з будь-якого тайла ───────────────
+       Ліва іконка — джерело (тап: змінити провайдер), посередині назва
+       (довга — біжить, як стрічка над магазином), праворуч — пуск/пауза.
+       Тонка смужка прогресу по верхньому краю; тап по назві — повний плеєр
+       з перемоткою. Коли екран «спить», музика грає далі (як радіобудильник). -->
+  <div class="nowplaying hidden" id="nowPlaying">
+    <div class="np-progress" aria-hidden="true"><i id="npProgress"></i></div>
+    <div class="np-row">
+      <button class="np-btn np-provider" id="npProvider" type="button" title="Джерело музики">
+        <span class="ico-slot" id="npProviderIco"></span>
+      </button>
+      <button class="np-title" id="npTitleBtn" type="button">
+        <span class="np-track" id="npTrack">
+          <span class="np-text" id="npText">Музика вимкнена</span>
+        </span>
+      </button>
+      <button class="np-btn np-toggle" id="npToggle" type="button">
+        <span class="ico-slot" id="npToggleIco"></span>
+      </button>
+    </div>
+  </div>
+
+
   <!-- ── Шторка швидких дій: свайп ВНИЗ, виїжджає згори ── -->
   <section class="layer layer-quick" id="layerQuick">
     <div class="layer-head">
@@ -191,6 +214,47 @@
       </button>
     </div>
   </div>
+
+  <!-- Плеєр: джерело музики, перемотка, черга -->
+  <div class="mode-sheet hidden" id="musicSheet">
+    <div class="mode-card music-card">
+      <div class="mode-head">
+        <span>Музика</span>
+        <button class="layer-back" data-music-close type="button">✕</button>
+      </div>
+
+      <!-- Джерело: тап — змінити. YouTube шукається голосом через бота,
+           радіо тапається прямо зі списку нижче -->
+      <div class="np-providers" id="npProviders">
+        <button class="np-provider-chip" data-provider="youtube" type="button">
+          <span class="ico-slot" id="npProvYoutubeIco"></span>YouTube
+        </button>
+        <button class="np-provider-chip" data-provider="radio" type="button">
+          <span class="ico-slot" id="npProvRadioIco"></span>Радіо
+        </button>
+      </div>
+
+      <!-- Поточний трек: назва біжить, якщо не влазить -->
+      <div class="np-now">
+        <span class="np-track" id="npTrack2"><span class="np-text" id="npNowTitle">—</span></span>
+        <span class="np-sub" id="npNowSub"></span>
+      </div>
+
+      <!-- Перемотка: для живого радіо ховається (його не можна мотати) -->
+      <input type="range" class="np-seek" id="npSeek" min="0" max="1000" value="0" aria-label="Позиція трека">
+      <div class="np-times" id="npTimes"><span id="npCur">0:00</span><span id="npDur">0:00</span></div>
+
+      <div class="np-controls">
+        <button class="np-btn" id="npPrev" type="button" aria-label="Попередній"><span class="ico-slot" id="npPrevIco"></span></button>
+        <button class="np-btn np-big" id="npBigToggle" type="button" aria-label="Грати/пауза"><span class="ico-slot" id="npBigIco"></span></button>
+        <button class="np-btn" id="npNext" type="button" aria-label="Наступний"><span class="ico-slot" id="npNextIco"></span></button>
+      </div>
+
+      <div class="np-list" id="npList"></div>
+    </div>
+  </div>
+
+
 
   <!-- Затемнення: яскравість і «сон». Окремий шар з opacity —
        композитор тягне його безкоштовно, на відміну від filter. -->

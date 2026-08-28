@@ -77,6 +77,27 @@ const PATHS = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   list:
     '<path d="M4 6.5h.01M4 12h.01M4 17.5h.01M8.5 6.5h11.5M8.5 12h11.5M8.5 17.5h11.5"/>',
+  /* Магазин і музика: нові розділи екрана (store-пакети, Now Playing) */
+  store:
+    '<path d="M6.2 8.5h11.6l-1 10.1a1.9 1.9 0 0 1-1.9 1.7H9.1a1.9 1.9 0 0 1-1.9-1.7z"/>' +
+    '<path d="M9 8.3V7a3 3 0 0 1 6 0v1.3"/>' +
+    '<path d="M9.5 12.5h5"/>',
+  music:
+    '<path d="M9.2 18V6.2l9.3-2v11.6"/>' +
+    '<circle cx="6.9" cy="18" r="2.4"/>' +
+    '<circle cx="16.2" cy="15.8" r="2.4"/>',
+  radio:
+    '<rect x="3.2" y="9" width="17.6" height="11" rx="2"/>' +
+    '<path d="M7.5 9l10-4.6"/>' +
+    '<circle cx="15.8" cy="14.5" r="2.7"/>' +
+    '<path d="M6.5 12.5h4M6.5 15h4M6.5 17.5h4"/>',
+  play: '<path d="M8 5.4v13.2L19.2 12z"/>',
+  pause: '<path d="M8.6 5.5v13M15.4 5.5v13"/>',
+  prev: '<path d="M17.5 5.5v13L8.2 12z"/><path d="M6.5 5.5v13"/>',
+  next: '<path d="M6.5 5.5v13L15.8 12z"/><path d="M17.5 5.5v13"/>',
+  youtube:
+    '<rect x="3" y="6.2" width="18" height="11.6" rx="3"/>' +
+    '<path d="M10.4 9.6v4.8l4.2-2.4z"/>',
 };
 
 /* Кольорова палітра: кожна іконка має свій відтінок, як застосунки на
@@ -104,6 +125,14 @@ export const ICON_COLORS = {
   pencil: "#9aa3a8",
   plus: "#9aa3a8",
   list: "#9aa3a8",
+  store: "#d7a65b",
+  music: "#d98263",
+  radio: "#5fb0a8",
+  play: "#8ca879",
+  pause: "#8ca879",
+  prev: "#9aa3a8",
+  next: "#9aa3a8",
+  youtube: "#d95a5a",
 };
 
 /** Готовий <svg> як елемент; колір і товщина — з CSS. */
