@@ -26,7 +26,16 @@ from typing import Any
 
 import httpx
 
+import app_config
+
 log = logging.getLogger("virtual_bot.music")
+
+# Різні джерела примхливі до User-Agent:
+# - Invidious: «нічийні» UA (ClaudeBot) — 403, браузерні — JS-челендж,
+#   тому йдемо з дефолтним python-httpx;
+# - icecast-радіо (SomaFM): голий curl/python UA — обрив зʼєднання,
+#   тому там потрібен звичайний браузерний UA (див. BROWSER_UA).
+BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
 # ---------------------------------------------------------------- доступність
 
@@ -192,16 +201,146 @@ def _extract_sync(video_id: str) -> str:
     return _pick_audio_url(info or {})
 
 
+# ---------------------------------------------------------------- Invidious
+#
+# Прямі ссилки googlevideo (yt-dlp) прив'язані до IP і з 2025-го часто
+# закриті PO-токен-гейтом — на частині провайдерів вони віддають 403 навіть
+# yt-dlp. Тому АУДІО беремо через Invidious: `local=true` означає, що
+# інстанс ПРОКСЮЄ videoplayback крізь себе — Range/перемотка працюють,
+# гейт обходиться легально (це той самий неофіційний API, що й у NewPipe).
+# Список інстансів — у config.yaml (music.invidious_instances).
+
+def invidious_instances() -> list[str]:
+    """Інстанси з config.yaml (music.invidious_instances); порожньо → дефолт."""
+    raw = app_config.cfg("music", "invidious_instances", default=None)
+    out = []
+    for item in raw if isinstance(raw, list) else []:
+        text = str(item).strip().rstrip("/")
+        # http:// теж дозволено: власний Invidious у локальній мережі —
+        # найстабільніший варіант для реального бота (див. docs/)
+        if text.startswith(("https://", "http://")):
+            out.append(text)
+    return out or ["https://invidious.f5.si"]
+
+
+# Публічні інстанси дихають нерівно (502 → 206 → 502 в межах хвилини), тож
+# кандидатів має бути БАГАТО. Раз на добу питаемо офіційний список
+# api.invidious.io/instances.json — інстанси, живі на цю годину.
+_DISCOVER_CACHE: tuple[float, list[str]] = (0.0, [])
+_DISCOVER_TTL_S = 86400
+
+
+def _discovered_sync() -> list[str]:
+    try:
+        response = httpx.get("https://api.invidious.io/instances.json?sort_by=health", timeout=10)
+        data = response.json()
+    except Exception:  # noqa: BLE001 — список — це бонус, живемо й без нього
+        return []
+    out = []
+    for entry in data if isinstance(data, list) else []:
+        info = entry[1] if isinstance(entry, list) and len(entry) > 1 else None
+        if isinstance(info, dict) and info.get("type") == "https":
+            uri = str(info.get("uri", "")).strip().rstrip("/")
+            if uri.startswith("https://"):
+                out.append(uri)
+    return out[:8]
+
+
+async def all_invidious_instances() -> list[str]:
+    """config-інстанси + автодискаверені (без дублів)."""
+    global _DISCOVER_CACHE
+    configured = invidious_instances()
+    cached_at, cached_list = _DISCOVER_CACHE
+    if time.monotonic() - cached_at < _DISCOVER_TTL_S:
+        discovered = cached_list
+    else:
+        discovered = await asyncio.to_thread(_discovered_sync)
+        _DISCOVER_CACHE = (time.monotonic(), discovered)
+    seen = set(configured)
+    return configured + [u for u in discovered if u not in seen]
+
+
+_ITAG_AUDIO = 140   # audio/mp4 ~128k — стандартна аудіо-доріжка Invidious
+
+
+def _probe_stream(url: str) -> bool:
+    """Перевіряє, що ссилка віддає АУДІО з Range (1 байт), а не HTML-помилку."""
+    try:
+        with httpx.Client(timeout=httpx.Timeout(6.0), follow_redirects=True) as client:
+            response = client.get(url, headers={"Range": "bytes=0-0"})
+    except Exception:  # noqa: BLE001 — мережа/таймаут = кандидат не живий
+        return False
+    ctype = (response.headers.get("content-type") or "").lower()
+    return response.status_code in (200, 206) and ctype.startswith("audio")
+
+
 async def audio_stream_url(video_id: str) -> str:
-    """Пряма аудіо-ссилка для відео (кешована). Кидає RuntimeError якщо ні."""
-    if yt_dlp is None:
-        raise RuntimeError("yt-dlp не встановлено")
+    """Робоча аудіо-ссилка для відео: Invidious (local=true) → yt-dlp.
+
+    Кандидати пробуються ДО 3 КОЛ: інстанси-флаппери частенько оживають на
+    другій спробі. Результат валідовується одним байтом і кешується — щоб
+    кожна перемотка в плеєрі не народжувала нові проби інстансів.
+    """
     cached = _URL_CACHE.get(video_id)
     if cached and time.monotonic() - cached[0] < _URL_TTL_S:
         return cached[1]
-    url = await asyncio.to_thread(_extract_sync, video_id)
-    _URL_CACHE[video_id] = (time.monotonic(), url)
-    return url
+
+    bases = await all_invidious_instances()
+    yt_url = None
+    if yt_dlp is not None:
+        try:
+            yt_url = await asyncio.to_thread(_extract_sync, video_id)
+        except Exception as exc:  # noqa: BLE001 — мережа/гейт: є ще Invidious
+            log.warning("yt-dlp extract %s не вдався: %s", video_id, exc)
+
+    def candidates() -> list[str]:
+        urls = [
+            f"{base}/latest_version?id={video_id}&itag={_ITAG_AUDIO}&local=true"
+            for base in bases
+        ]
+        if yt_url:
+            urls.append(yt_url)
+        return urls
+
+    last_error = "немає кандидатів стріму"
+    for round_no in range(3):
+        for url in candidates():
+            if await asyncio.to_thread(_probe_stream, url):
+                _URL_CACHE[video_id] = (time.monotonic(), url)
+                return url
+            last_error = url.split("/")[2] if "://" in url else url
+        if round_no < 2:
+            await asyncio.sleep(1.5)
+    raise RuntimeError(f"жодне джерело аудіо не відповіло (останнє: {last_error})")
+
+
+async def open_audio_stream(video_id: str, range_header: str | None, attempts: int = 3):
+    """Відкриває аудіо-потік з ретраями.
+
+    Публічні інстанси флапають: проба (1 байт) зелена, а наступний запит —
+    уже 502. Тому спроба невдачі інвалідує кеш, і ссилка шукається заново
+    (в межах attempts), поки якась не протримається хоча б до відкриття.
+    """
+    last_exc = None
+    for attempt in range(attempts):
+        url = await audio_stream_url(video_id)
+        try:
+            status, headers, body = await open_stream(url, range_header)
+        except Exception as exc:  # noqa: BLE001 — флап інстансу: пробуємо інший
+            last_exc = exc
+            log.warning("Стрім %s (спроба %d) упав: %s", video_id, attempt + 1, exc)
+            _URL_CACHE.pop(video_id, None)
+            await asyncio.sleep(1.0)
+            continue
+        if status < 500:
+            return status, headers, body
+        # 5xx від інстансу: закриваємо і ретраїмо з новою ссилкою
+        await body.aclose()
+        last_exc = RuntimeError(f"інстанс віддав {status}")
+        log.warning("Стрім %s (спроба %d): інстанс віддав %d", video_id, attempt + 1, status)
+        _URL_CACHE.pop(video_id, None)
+        await asyncio.sleep(1.0)
+    raise last_exc or RuntimeError("стрім не відкрився")
 
 
 # ---------------------------------------------------------------- транскрайб
@@ -246,11 +385,21 @@ def _transcript_sync(video_id: str, languages: list[str]) -> list[dict[str, Any]
 
 
 async def transcript(video_id: str, languages: list[str] | None = None) -> list[dict[str, Any]]:
-    """Сегменти субтитрів [{start, text}] або RuntimeError із людською причиною."""
-    if YouTubeTranscriptApi is None:
-        raise RuntimeError("youtube-transcript-api не встановлено")
+    """Сегменти субтитрів [{start, text}] або RuntimeError із людською причиною.
+
+    Спершу прямий youtube-transcript-api (timedtext YouTube), якщо він
+    закритий для IP — фолбек на Invidious-інстанси.
+    """
     langs = [l for l in (languages or []) if isinstance(l, str) and l.strip()][:4]
-    return await asyncio.to_thread(_transcript_sync, video_id, langs)
+    if YouTubeTranscriptApi is not None:
+        try:
+            return await asyncio.to_thread(_transcript_sync, video_id, langs)
+        except Exception as exc:  # noqa: BLE001 — далі пробуємо Invidious
+            log.warning("Прямий транскрайб %s не вдався (%s), пробую Invidious", video_id, type(exc).__name__)
+    if not langs:
+        langs = ["uk", "en"]
+    bases = await all_invidious_instances()
+    return await asyncio.to_thread(_invidious_captions_sync, video_id, langs + ["uk", "en"], bases)
 
 
 def transcript_to_text(segments: list[dict[str, Any]], max_chars: int = 4000) -> str:
@@ -268,6 +417,66 @@ def transcript_to_text(segments: list[dict[str, Any]], max_chars: int = 4000) ->
     return " ".join(parts)[:max_chars].strip()
 
 
+# --- Фолбек транскрайбу через Invidious: субтитри беремо з інстансу, якщо
+# прямий timedtext YouTube закритий для цього IP ---
+
+_VTT_TS = re.compile(r"^(?:(\d+):)?(\d+):(\d+)[.,](\d+)$")
+
+
+def _vtt_seconds(stamp: str) -> float:
+    match = _VTT_TS.match(stamp.strip())
+    if not match:
+        return 0.0
+    h, m, s, ms = match.groups()
+    return int(h or 0) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+
+
+def _vtt_to_segments(vtt: str) -> list[dict[str, Any]]:
+    """Мінімальний парсер WebVTT: блоки «таймкод --> таймкод» + текст."""
+    segments: list[dict[str, Any]] = []
+    current_start = None
+    current_text: list[str] = []
+    for line in vtt.splitlines():
+        line = line.strip()
+        if "-->" in line:
+            if current_start is not None and current_text:
+                segments.append({"start": round(current_start, 2), "text": " ".join(current_text)})
+            current_start = _vtt_seconds(line.split("-->")[0])
+            current_text = []
+        elif line and not line.startswith(("WEBVTT", "Kind:", "Language:", "NOTE")) and current_start is not None:
+            current_text.append(line)
+    if current_start is not None and current_text:
+        segments.append({"start": round(current_start, 2), "text": " ".join(current_text)})
+    return segments[:_TRANSCRIPT_MAX_SEGMENTS]
+
+
+def _invidious_captions_sync(video_id: str, languages: list[str], bases: list[str] | None = None) -> list[dict[str, Any]]:
+    """Субтитри з першого живого Invidious-інстансу (WebVTT → сегменти)."""
+    for base in (bases or invidious_instances()):
+        try:
+            with httpx.Client(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
+                listing = client.get(f"{base}/api/v1/captions/{video_id}")
+                if listing.status_code != 200:
+                    continue
+                items = (listing.json() or {}).get("captions") or []
+                by_code = {item.get("code", ""): item for item in items}
+                vtt = None
+                for code in languages:
+                    item = by_code.get(code)
+                    if item:
+                        vtt = client.get(base + item["url"]).text
+                        break
+                if vtt is None and items:
+                    vtt = client.get(base + items[0]["url"]).text
+                if vtt:
+                    segments = _vtt_to_segments(vtt)
+                    if segments:
+                        return segments
+        except Exception:  # noqa: BLE001 — інстанс мертвий/без субтитрів, пробуємо наступний
+            continue
+    raise RuntimeError("Invidious не віддав субтитрів")
+
+
 # ---------------------------------------------------------------- проксі-стрім
 
 # Заголовки відповіді, які ПРОКСЮЄМО нагору: без них перемотка не працює —
@@ -281,7 +490,7 @@ async def open_stream(url: str, range_header: str | None, client_headers: dict[s
     Ніякого буферу цілком: аудіо йде шматками по мірі читання — інакше
     10-хвилинний трек висів би в RAM Raspberry Pi.
     """
-    headers: dict[str, str] = {"User-Agent": "ClaudeBot/1.0"}
+    headers: dict[str, str] = {}
     if range_header:
         # Range клієнта йде нагорі як є: googlevideo/icecast самі віддадуть 206
         headers["Range"] = range_header[:200]

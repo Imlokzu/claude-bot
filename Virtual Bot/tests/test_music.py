@@ -81,20 +81,51 @@ def test_search_without_ytdlp_returns_empty(monkeypatch):
     assert run_async(music.search("lofi")) == []
 
 
-def test_audio_url_cached(monkeypatch):
-    calls = {"n": 0}
+def test_audio_url_invidious_first_then_cached(monkeypatch):
+    calls = {"probe": 0, "extract": 0}
+
+    def fake_probe(url):
+        calls["probe"] += 1
+        return calls["probe"] > 1      # інстанс «мертвий», yt-dlp «живий»
 
     def fake_extract(video_id):
-        calls["n"] += 1
-        return "https://example.com/audio"
+        calls["extract"] += 1
+        return "https://ytdlp.example/audio"
 
+    monkeypatch.setattr(music, "invidious_instances", lambda: ["https://inv.test"])
+    monkeypatch.setattr(music, "_probe_stream", fake_probe)
     monkeypatch.setattr(music, "_extract_sync", fake_extract)
     music._URL_CACHE.clear()
 
-    first = run_async(music.audio_stream_url("dQw4w9WgXcQ"))
-    second = run_async(music.audio_stream_url("dQw4w9WgXcQ"))
-    assert first == second == "https://example.com/audio"
-    assert calls["n"] == 1
+    import asyncio
+
+    def run(coro):
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+            asyncio.set_event_loop(asyncio.new_event_loop())
+
+    first = run(music.audio_stream_url("dQw4w9WgXcQ"))
+    second = run(music.audio_stream_url("dQw4w9WgXcQ"))
+    assert first == second == "https://ytdlp.example/audio"
+    assert calls["extract"] == 1        # кеш: другий виклик без витягу
+    assert calls["probe"] == 2
+
+
+def test_invidious_vtt_parsing():
+    vtt = (
+        "WEBVTT\nKind: captions\n\n"
+        "00:00:01.239 --> 00:00:03.400\nпривіт світе\n"
+        "00:00:03.400 --> 00:00:05.000\nдругий рядок\n"
+    )
+    segments = music._vtt_to_segments(vtt)
+    assert segments == [
+        {"start": 1.24, "text": "привіт світе"},
+        {"start": 3.4, "text": "другий рядок"},
+    ]
 
 
 # ---------------------------------------------------------------- ендпоінти

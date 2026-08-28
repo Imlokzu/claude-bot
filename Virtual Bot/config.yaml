@@ -7,6 +7,20 @@ server:
   host: 127.0.0.1
   port: 8100
 
+# Музика на екрані (Now Playing). Пошук і субтитри — YouTube напряму
+# (yt-dlp / youtube-transcript-api), а АУДІО тягнемо через Invidious:
+# `local=true` проксіює стрім крізь інстанс, бо прямі googlevideo-ссилки
+# з багатьох IP віддають 403 (PO-токен-гейт). Перший живий інстанс виграє.
+music:
+  # Публічні інстанси флапають (хвилина працює — хвилина 502), тому їх
+  # кілька і код пробує їх по колу. Для реального бота найстабільніше —
+  # підняти СВІЙ Invidious (docker, ~200 МБ RAM) і вписати його ПЕРШИМ:
+  #   - http://127.0.0.1:8343
+  invidious_instances:
+    - https://invidious.f5.si
+    - https://inv.nadeko.net
+    - https://invidious.nerdvpn.de
+
 # Omni-роутер — ГОЛОВНИЙ мозок чату (OpenAI-сумісний мультимодельний шлюз).
 # У ланцюжку мозків пробується ПЕРШИМ (див. brains.py).
 # КЛЮЧ — секрет: тільки env OMNI_API_KEY (файл .env, який читає app_config).
@@ -24,7 +38,14 @@ omni:
   default_model: opencode/muse-spark-1.2-contributor-free
   # Запасна в межах Omni: якщо обрана відповіла швидкою помилкою
   # (401/404/503), пробуємо цю, і лише потім падаємо на наступний мозок.
-  fallback_model: opencode/nemotron-3.5-lightning-free
+  #
+  # 2026-08-28: попередня запасна `opencode/nemotron-3.5-lightning-free`
+  # ПОМЕРЛА — Zen віддає «Upstream request failed: [404]» на кожен запит
+  # (перевірено 3/3). Замінено на gpt-oss-20b через Regolo: він іде ПОВЗ
+  # opencode (прямий OpenAI-виклик у шимі), тому відповідає за ~0.4с проти
+  # ~5с у будь-якої моделі через сесійне API. Для запасної, яку смикають
+  # саме тоді, коли основна вже змарнувала час, швидкість важливіша за розум.
+  fallback_model: regolo/gpt-oss-20b
   # Vision: перевірена модель, що приймає картинки.
   vision_model: opencode-go/minimax-m3
   timeout_s: 60
@@ -39,17 +60,31 @@ omni:
     # --- безкоштовні (OpenCode Zen) ---
     - {id: opencode/muse-spark-1.2-contributor-free, label: "Muse Spark 1.2 (безкоштовна)"}
     - {id: opencode/nemotron-3-ultra-free, label: "Nemotron 3 Ultra (безкоштовна)"}
-    - {id: opencode/nemotron-3.5-lightning-free, label: "Nemotron 3.5 Lightning (безкоштовна, швидка)"}
     - {id: opencode/mimo-v2.5-free, label: "MiMo v2.5 (безкоштовна)"}
     - {id: opencode/hy3-free, label: "HY3 (безкоштовна)"}
     - {id: opencode/x-preview-f-free, label: "X Preview F (безкоштовна)"}
     # --- opencode-go (власна квота) ---
     - {id: opencode-go/kimi-k3, label: "Kimi K3"}
-    - {id: opencode-go/glm-5.2, label: "GLM-5.2"}
+    # GLM-5.3-Flash (реліз 26.08.2026): 320B total / 18B active, 1M контексту,
+    # нативно мультимодальна — приймає картинки без окремої vision-моделі.
+    # Живий тест через шим: текст ~7.5с, картинку описала правильно (~11с).
+    # «Flash» тут про ЦІНУ токена, а не про латентність: minimax-m3 у нас
+    # відповідає втричі швидше, тому vision_model лишається на ньому.
+    # GLM-5.2 прибрано: 5.3-flash обходить її з великим відривом і на бенчах
+    # (DeepSWE 63.4 vs 46.2), і в ціні, а картинок 5.2 не бачить узагалі.
+    - {id: opencode-go/glm-5.3-flash, label: "GLM-5.3 Flash (бачить картинки)"}
+    - {id: opencode-go/glm-5.3, label: "GLM-5.3"}
     - {id: opencode-go/deepseek-v4-pro, label: "DeepSeek V4 Pro"}
     - {id: opencode-go/qwen3.7-max, label: "Qwen 3.7 Max"}
     - {id: opencode-go/grok-4.5, label: "Grok 4.5"}
     - {id: opencode-go/minimax-m3, label: "MiniMax M3 (бачить картинки)"}
+    # --- regolo (прямо, повз opencode; ключ той самий, що й для ASR) ---
+    # Сенс цих двох — ШВИДКІСТЬ: ~0.4–0.6с на відповідь проти ~5с у всього
+    # вище (там на кожен запит створюється сесія opencode з власним агентним
+    # циклом). Розуму менше, зате для коротких питань різниця відчутна.
+    # Картинок НЕ приймають — шим на такий запит чесно віддає 400.
+    - {id: regolo/gpt-oss-20b, label: "GPT-OSS 20B (найшвидша)"}
+    - {id: regolo/gpt-oss-120b, label: "GPT-OSS 120B (швидка)"}
 
 asr:
   # auto: локальний faster-whisper, якщо встановлений; інакше Regolo fallback.
@@ -89,6 +124,9 @@ coding:
     - {id: opencode-go/kimi-k2.7-code, label: "Kimi K2.7 Code"}
     - {id: opencode-go/deepseek-v4-pro, label: "DeepSeek V4 Pro"}
     - {id: opencode-go/kimi-k3, label: "Kimi K3"}
+    # Перевірено на живому: справжній tool-call, файл створено, ~25с.
+    # Модель зареєстрована у ~/.omp/profiles/claude-bot/agent/models.yml.
+    - {id: opencode-go/glm-5.3-flash, label: "GLM-5.3 Flash"}
     - {id: opencode-zen/hy3-free, label: "HY3 (безкоштовна)"}
     - {id: opencode-zen/nemotron-3.5-lightning-free, label: "Nemotron 3.5 Lightning (безкоштовна)"}
     - {id: regolo/qwen3-coder-next, label: "Qwen3 Coder Next (Regolo)"}
@@ -126,7 +164,20 @@ chat:
   openclaw_backoff_s: 30
 
 anthropic:
-  model: claude-sonnet-5
+  # Базовий URL Messages API. Офіційний — https://api.anthropic.com;
+  # сумісний шлюз-посередник вказується тут же (шлях /v1/messages дописується сам).
+  #
+  # ЗАРАЗ тут SotaModel (www.sotamodel.net) — сторонній Claude-шлюз, що говорить
+  # обома протоколами (Anthropic /v1/messages і OpenAI /chat/completions).
+  # Ключ — env ANTHROPIC_API_KEY у .env: це ключ SotaModel, НЕ офіційного Anthropic.
+  # Моделі з /v1/models цього шлюзу: claude-opus-5, claude-opus-5-max,
+  # claude-opus-5-xhigh (і приховані model-S/O/A/T). Перемикати — полем model нижче.
+  #
+  # Стан на 2026-08-25: ключ валідний, але баланс акаунта 0 → кожен запит
+  # відповідає INSUFFICIENT_BALANCE, тож ланцюг мозків цей крок перескакує на
+  # Chat2API/демо. Поповниться баланс — мозок оживе без змін у коді.
+  base_url: https://www.sotamodel.net
+  model: claude-opus-5
   max_tokens: 1024
   timeout_s: 60
 
@@ -165,7 +216,10 @@ liveliness:
   mood_calm_s: 12           # спонтанні емоції лише коли стільки с не було взаємодії
 
 paths:
-  brain_dir: "brain"
+  # Три ОКРЕМІ корені даних. Усі під user_data/ — вона в .gitignore, тож нічого
+  # особистого не потрапляє в репозиторій і не качається разом з кодом.
+  brain_dir: "user_data/owner/brain"          # інфа про користувача: профіль, нотатки, памʼять, журнали
+  workspace_dir: "user_data/owner/workspace"  # файли бота: ігри, нотатки, завантаження, теки сесій
+  code_dir: "user_data/owner/code"            # код-проєкти; ТІЛЬКИ цю теку бачить кодинг-агент
   static_dir: "static"
   service_logs_dir: "service_logs"
-  workspace_dir: "workspace"   # робоча тека бота на диску (можна винести куди завгодно)

@@ -759,18 +759,22 @@ async def api_music_stream(request: Request, provider: str = Query(default="yout
         video_id = music.parse_video_id(id)
         if video_id is None:
             raise HTTPException(status_code=400, detail="Некоректний id відео")
-        try:
-            upstream_url = await music.audio_stream_url(video_id)
-        except Exception as exc:  # noqa: BLE001 — yt-dlp/мережа: віддаємо 503
-            log.warning("Стрім %s не вдалося відкрити: %s", video_id, exc)
-            raise HTTPException(status_code=503, detail="Не вдалося отримати аудіопотік (див. лог)") from exc
+        upstream_url = None  # youtube: ссилку резолвить open_audio_stream (з ретраями)
 
-    range_header = request.headers.get("range")
+    # Радіо — icecast: Range не підтримує і на такий запит обриває зʼєднання,
+    # тож для живих потоків заголовок не пропускаємо (перемотки й нема).
+    range_header = request.headers.get("range") if provider == "youtube" else None
     try:
-        status, headers, body = await music.open_stream(upstream_url, range_header)
-    except Exception as exc:  # noqa: BLE001 — upstream впав/таймаут
+        if provider == "radio":
+            status, headers, body = await music.open_stream(
+                upstream_url, range_header,
+                client_headers={"User-Agent": music.BROWSER_UA},
+            )
+        else:
+            status, headers, body = await music.open_audio_stream(video_id, range_header)
+    except Exception as exc:  # noqa: BLE001 — upstream впав/таймаут/усі ретраї
         log.warning("Upstream-стрім недоступний: %s: %s", type(exc).__name__, exc)
-        raise HTTPException(status_code=502, detail="Потік недоступний") from exc
+        raise HTTPException(status_code=502, detail="Потік недоступний (джерела флапають, спробуй ще раз)") from exc
 
     return StreamingResponse(
         body,
@@ -787,8 +791,6 @@ async def api_music_transcript(id: str = Query(min_length=1, max_length=200), la
     video_id = music.parse_video_id(id)
     if video_id is None:
         raise HTTPException(status_code=400, detail="Це не схоже на id/посилання YouTube")
-    if music.YouTubeTranscriptApi is None:
-        raise HTTPException(status_code=503, detail="Встанови youtube-transcript-api (pip install youtube-transcript-api)")
     try:
         segments = await music.transcript(video_id, [lang, "uk", "en"])
     except RuntimeError as exc:
