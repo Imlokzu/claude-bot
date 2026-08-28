@@ -127,6 +127,11 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   пробами й ретраями; радіо — SomaFM/Radio Paradise (без Range, браузерний
   UA — інакше icecast обриває). Транскрайб — youtube-transcript-api +
   фолбек на Invidious-капшени (VTT).
+- **Застосунок YouTube у магазині**: пошук на екрані (клавіатура в браузері /
+  голосом через бота), тап по відео → `POST /api/music/play` → SSE → грає в
+  Now Playing (музика живе після закриття застосунку). Тули `play_music`/
+  `listen_to_video` шлють ту саму подію; автоплей-блок після тапу в iframe
+  знімається ретраєм на перший дотик по екрану.
 - **Тули мозку**: `play_music`, `stop_music`, `listen_to_video` (SSE-подія
   `music` керує екраном); `open_screen` тепер знає `store`.
 - **Доки для розробників**: `Virtual Bot/docs/SCREEN-PLATFORM.md` (формати

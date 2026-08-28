@@ -155,6 +155,8 @@ surprised | love | sleepy`). Бекенд парсить тег і прибир�
 | GET | `/api/music/radio` | Живі радіостанції |
 | GET | `/api/music/stream` | Аудіо з Range — перемотка працює (Invidious → yt-dlp) |
 | GET | `/api/music/transcript` | Субтитри відео (youtube-transcript-api, безкоштовно) |
+| POST | `/api/music/play` | `{"id"\|"query", title?…}` — грати в Now Playing (для застосунків екрана) |
+| POST | `/api/music/stop` | Зупинити Now Playing |
 
 Тули мозку: `play_music`, `stop_music`, `listen_to_video` (транскрайб +
 звук на екрані). Екран керується з мозку тулом `open_screen` (тепер і

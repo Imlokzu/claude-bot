@@ -413,6 +413,17 @@ class StorePackageRequest(BaseModel):
     id: str = Field(min_length=1, max_length=40)
 
 
+class MusicPlayRequest(BaseModel):
+    # Трек, який треба показати на екрані (Now Playing). Або id відео,
+    # або запит для пошуку; title/uploader/duration — з результатів пошуку
+    # (застосунок YouTube у магазині передає їх, щоб бар показав назву одразу).
+    id: str = Field(default="", max_length=64)
+    query: str = Field(default="", max_length=200)
+    title: str = Field(default="", max_length=300)
+    uploader: str = Field(default="", max_length=200)
+    duration: int = Field(default=0, ge=0, le=200_000)
+
+
 class KeysSaveRequest(BaseModel):
     # Порожнє значення = не міняти. Значення — секрети, у відповідях не світимо.
     omni_key: str = Field(default="", max_length=300)
@@ -801,6 +812,43 @@ async def api_music_transcript(id: str = Query(min_length=1, max_length=200), la
     if text:
         return {"video_id": video_id, "text": music.transcript_to_text(segments)}
     return {"video_id": video_id, "segments": segments}
+
+
+@app.post("/api/music/play")
+async def api_music_play(req: MusicPlayRequest) -> dict:
+    """Увімкнути трек у Now Playing на екрані пристрою (SSE-подія music).
+
+    Місток для застосунків екрана (YouTube у магазині) і панелі: аудіо все
+    одно грає В БАРІ ЕКРАНА, а не в застосунку — тож музика не вмирає, коли
+    застосунок закривається. Без Clerk-гейту, як решта /api/music/*.
+    """
+    if req.id:
+        video_id = music.parse_video_id(req.id)
+        if video_id is None:
+            raise HTTPException(status_code=400, detail="Некоректний id/посилання")
+        track = {
+            "provider": "youtube",
+            "id": video_id,
+            "title": req.title or "Без назви",
+            "uploader": req.uploader,
+            "duration": req.duration,
+        }
+    elif req.query:
+        tracks = await music.search(req.query, limit=1)
+        if not tracks:
+            raise HTTPException(status_code=404, detail="Нічого не знайшлось")
+        track = tracks[0]
+    else:
+        raise HTTPException(status_code=400, detail="Вкажи id або query")
+    events.publish_music(track)
+    return {"ok": True, "track": track}
+
+
+@app.post("/api/music/stop")
+async def api_music_stop() -> dict:
+    """Зупинити Now Playing (SSE-подія music action=stop)."""
+    events.publish_music({}, action="stop")
+    return {"ok": True}
 
 
 # ------------------------------------------------------------------ сесійна памʼять чату

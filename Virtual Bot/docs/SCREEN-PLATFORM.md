@@ -209,6 +209,14 @@ Invidious-капшени (WebVTT парситься своїм кодом).
 | `GET /api/music/radio` | `{stations:[{id,title,genre,url}]}` |
 | `GET /api/music/stream?provider=youtube|radio&id=` | аудіо-потік з Range (206/Content-Range) |
 | `GET /api/music/transcript?id=&lang=&text=` | сегменти субтитрів або склеєний текст |
+| `POST /api/music/play` | `{"id","title","uploader","duration"}` або `{"query"}` → SSE `music` (так застосунки вмикають музику в барі) |
+| `POST /api/music/stop` | зупинити Now Playing |
+
+Архітектурне правило: застосунок у iframe НІКОЛИ не грає аудіо сам —
+він передає трек у Now Playing через `POST /api/music/play`, і музика
+живе далі після закриття застосунку. Якщо тап стався всередині iframe і
+браузер заблокував автоплей — бар показує ▶ і дограє на першому дотику
+по екрану (ретрай в `musicPlayTrack`).
 
 ### SSE (`/api/events`), подія музики
 

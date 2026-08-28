@@ -2737,8 +2737,15 @@ async function musicPlayTrack(track, opts) {
     musicState.playing = true;
     await musicAudio.play();
   } catch (e) {
-    // Автоплей без жесту може бути заблокований: чесно показуємо паузу
+    // Автоплей без жесту заблокований (напр., тап був всередині iframe
+    // застосунка): показуємо паузу і домовляємось дограти на ПЕРШОМУ
+    // дотику по екрану — користувач все одно щось тапне найближчим часом
     musicState.playing = false;
+    const retry = () => {
+      syncMusicVolume();
+      musicAudio.play().catch(() => {});
+    };
+    stage.addEventListener("pointerdown", retry, { once: true });
   }
   updateNpChrome();
   if (musicSheetOpen) renderNpList();

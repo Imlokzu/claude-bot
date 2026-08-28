@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<style>
+  /* Застосунок екрана: батько — iframe 320×240. Кольори — зі змінних теми
+     (скін приходить повідомленням від батька), фолбеки — темна тема. */
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg, #16181a); color: var(--text, #e8e4dc);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; }
+  .wrap { display: flex; flex-direction: column; height: 100%; padding: 8px; gap: 6px; }
+  .bar { display: flex; gap: 5px; flex: none; }
+  input { flex: 1; min-width: 0; height: 30px; padding: 0 9px;
+    border: 1px solid var(--line, #2f3438); border-radius: 15px;
+    background: var(--panel, #1e2124); color: var(--text, #e8e4dc);
+    font-size: 13px; outline: none; }
+  input:focus { border-color: var(--accent, #d17a58); }
+  button { background: var(--panel, #1e2124); color: var(--text, #e8e4dc);
+    border: 1px solid var(--line, #2f3438); border-radius: 15px;
+    height: 30px; padding: 0 12px; font-size: 13px; flex: none; cursor: pointer; }
+  button:active { background: var(--accent, #d17a58); }
+  .status { flex: none; font-size: 11px; color: var(--muted, #8e9498);
+    min-height: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status.now { color: var(--accent, #d17a58); }
+  .list { flex: 1; min-height: 0; overflow-y: auto; touch-action: pan-y;
+    border-top: 1px solid var(--line, #2f3438); }
+  .list::-webkit-scrollbar { display: none; }
+  .item { display: block; width: 100%; text-align: left; padding: 6px 4px;
+    border: none; border-bottom: 1px solid var(--line, #2f3438);
+    background: transparent; color: var(--text, #e8e4dc); cursor: pointer; }
+  .item:active { background: var(--line, #2f3438); }
+  .t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden; font-size: 12px; line-height: 1.25; font-weight: 600; }
+  .s { font-size: 10px; color: var(--muted, #8e9498); margin-top: 2px; }
+  .hint { padding: 8px 4px; font-size: 11px; line-height: 1.4;
+    color: var(--muted, #8e9498); }
+  .play-tag { display: inline-block; margin-top: 8px; padding: 3px 8px;
+    border: 1px solid var(--accent, #d17a58); border-radius: 9px;
+    color: var(--accent, #d17a58); font-size: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <input id="q" type="search" placeholder="Що шукати на YouTube?" aria-label="Пошук">
+    <button id="go" type="button">Шукати</button>
+  </div>
+  <div class="status" id="status">Пошук по YouTube. Тап по відео — грає внизу екрана.</div>
+  <div class="list" id="list">
+    <div class="hint">
+      Знайдені відео передаються в <b>Now Playing</b> — бар знизу екрана.
+      Музика грає далі, навіть коли застосунок закрито, а перемотка — у тапі
+      по назві трека в барі.
+      <span class="play-tag">▶ як у справжньому плеєрі</span>
+    </div>
+  </div>
+</div>
+<script>
+  // Клієнт YouTube на екрані 320×240: пошук через /api/music/search
+  // (yt-dlp на бекенді, без ключів), відтворення — через /api/music/play,
+  // який шле SSE-подію боту: аудіо грає в Now Playing, не в цьому iframe.
+  const $ = (id) => document.getElementById(id);
+  const q = $("q"), go = $("go"), list = $("list"), status = $("status");
+  const KEY = "youtube.lastQuery";
+
+  function fmt(sec) {
+    sec = Number(sec) || 0;
+    return sec ? Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0") : "";
+  }
+  function say(text, now) {
+    status.textContent = text;
+    status.className = "status" + (now ? " now" : "");
+  }
+
+  function render(tracks) {
+    list.innerHTML = "";
+    if (!tracks.length) {
+      say("Нічого не знайшлось.", false);
+      return;
+    }
+    for (const t of tracks) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "item";
+      const title = document.createElement("div");
+      title.className = "t";
+      title.textContent = t.title;
+      const sub = document.createElement("div");
+      sub.className = "s";
+      sub.textContent = (t.uploader || "YouTube") + (t.duration ? " · " + fmt(t.duration) : "");
+      btn.appendChild(title);
+      btn.appendChild(sub);
+      btn.addEventListener("click", () => play(t, btn));
+      list.appendChild(btn);
+    }
+    say("Знайдено: " + tracks.length + ". Тап — увімкнути.", false);
+  }
+
+  async function play(t, btn) {
+    btn.disabled = true;
+    say("Вмикаю: " + t.title, true);
+    try {
+      const r = await fetch("/api/music/play", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: t.id, title: t.title,
+          uploader: t.uploader || "", duration: t.duration || 0,
+        }),
+      });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        say("Не вийшло: " + (err.detail || r.status), false);
+      } else {
+        say("▶ Грає в Now Playing знизу: " + t.title, true);
+      }
+    } catch (e) {
+      say("Бот недоступний.", false);
+    }
+    btn.disabled = false;
+  }
+
+  async function search() {
+    const query = q.value.trim();
+    if (!query) return;
+    try { localStorage.setItem(KEY, query); } catch (e) {}
+    say("Шукаю «" + query + "»…", false);
+    list.innerHTML = "";
+    go.disabled = true;
+    try {
+      const r = await fetch("/api/music/search?q=" + encodeURIComponent(query) + "&limit=8");
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        say(err.detail || "Пошук недоступний.", false);
+        return;
+      }
+      const d = await r.json();
+      render(d.tracks || []);
+    } catch (e) {
+      say("Бот недоступний.", false);
+    } finally {
+      go.disabled = false;
+    }
+  }
+
+  go.addEventListener("click", search);
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+
+  // Скін екрана приходить від батька повідомленням
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "botSkin" && e.data.vars) {
+      for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
+    }
+  });
+
+  // Памʼятаємо останній запит і одразу показуємо результати
+  try { q.value = localStorage.getItem(KEY) || ""; } catch (e) {}
+  if (q.value) search();
+</script>
+</body>
+</html>

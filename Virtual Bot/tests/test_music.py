@@ -160,3 +160,42 @@ def test_search_endpoint_without_ytdlp(monkeypatch):
         response = client.get("/api/music/search", params={"q": "lofi"})
         assert response.status_code == 503
         assert "yt-dlp" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------- місток до Now Playing
+
+def test_music_play_publishes_event(monkeypatch):
+    import asyncio
+
+    import events
+    from main import app
+
+    published = []
+    monkeypatch.setattr(events, "publish_music", lambda track, action="play": published.append((dict(track), action)))
+
+    async def fake_search(query, limit=1):
+        return [{"provider": "youtube", "id": "aaaaaaaaaaa", "title": "З пошуку", "uploader": "Хтось", "duration": 99}]
+
+    monkeypatch.setattr(music, "search", fake_search)
+
+    with TestClient(app) as client:
+        # id + метадані з результатів пошуку застосунка
+        r = client.post("/api/music/play", json={"id": "dQw4w9WgXcQ", "title": "Трек", "uploader": "Хтось", "duration": 213})
+        assert r.status_code == 200
+        assert r.json()["track"]["id"] == "dQw4w9WgXcQ"
+        assert published[-1][1] == "play"
+
+        # варіант «тільки запит»: бекенд шукає сам
+        r2 = client.post("/api/music/play", json={"query": "lofi"})
+        assert r2.status_code == 200
+        assert r2.json()["track"]["title"] == "З пошуку"
+
+        # сміття і порожнеча — керовані 400
+        assert client.post("/api/music/play", json={"id": "!!"}).status_code == 400
+        assert client.post("/api/music/play", json={}).status_code == 400
+
+        # stop
+        assert client.post("/api/music/stop").status_code == 200
+        assert published[-1][1] == "stop"
+        # play(id) + play(query) + stop; невдалі 400 публікацій не створюють
+        assert len(published) == 3
