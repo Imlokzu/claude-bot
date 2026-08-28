@@ -48,17 +48,23 @@ python3 -m venv .venv
    «Секрети» нижче). Ключ — секрет: він ніколи не потрапляє у відповіді API,
    статику, цей README чи вікі.
 
-   > Список моделей містить лише провайдерів, для яких у ключа Є креденшели
-   > (перевірено: працюють `claude/*` і `opencode-go/*`; `github/*`, `fireworks/*`
-   > тощо повертають 404/401). Тому вживаємо прямі `claude/…` й `opencode-go/…`
-   > id, а не `auto/*` (той комбо-маршрутизує і може влучати в мертві провайдери).
+   > Список моделей містить прямі id провайдерів, які налаштовані в Omni. Regolo
+   > додається саме в конфігурацію Omni: Virtual Bot не має окремого Regolo LLM
+   > клієнта й передає роутеру лише вибраний model id. Вживаємо прямі `claude/…`,
+   > `opencode-go/…` або підтверджені `regolo/…` id, а не `auto/*` (той
+   > комбо-маршрутизує і може влучати в мертві провайдери).
    > Чат має короткий таймаут (`chat.omni_timeout_s`) і запобіжник
    > (`chat.omni_backoff_s`), щоб завислий роутер не тримав кожну відповідь.
 1. **OpenClaw** — gateway на `127.0.0.1:18789` (OpenAI-сумісний
    `/v1/chat/completions`). Токен: env `OPENCLAW_TOKEN` (пріоритет), інакше
    читається з `../Voice Loop/config.yaml`. Токен — секрет.
-2. **Anthropic API** — прямий виклик `POST /v1/messages` через httpx (без SDK),
-   модель `claude-sonnet-5`. Ключ: env `ANTHROPIC_API_KEY`.
+2. **Anthropic API** — прямий виклик `POST /v1/messages` через httpx (без SDK).
+   Base URL конфігурується (`anthropic.base_url`): зараз тут **SotaModel**
+   (www.sotamodel.net) — сторонній Anthropic-сумісний Claude-шлюз із моделями
+   `claude-opus-5` / `claude-opus-5-max` / `claude-opus-5-xhigh`. Ключ: env
+   `ANTHROPIC_API_KEY` (це ключ шлюзу, НЕ офіційного Anthropic). Поки на
+   акаунті SotaModel нуль балансу, кожен запит відповідає INSUFFICIENT_BALANCE
+   і ланцюг просто йде далі; після поповнення мозок оживає без змін коду.
 3. **Chat2API** — локальний OpenAI-сумісний сервер на `127.0.0.1:8080/v1`
    (`POST /chat/completions`), модель за замовчуванням `Qwen3.7-Max`
    (`config.yaml`, секція `chat2api`). Авторизація зазвичай не потрібна;
@@ -80,6 +86,16 @@ gateway доступний, а chatCompletions віддає 500); до перш�
 `POST /api/model {"model": "<id>"}` перемикає модель (приймаються ЛИШЕ id зі
 списку — довільні рядки відхиляються з `400`). Вибір діє на рівні процесу
 (спільний для всіх клієнтів; скидається на типовий при перезапуску сервера).
+
+### Голос
+
+- **ASR:** `/api/asr` передає аудіо браузера до Regolo `faster-whisper-large-v3`.
+  Потрібен локальний секрет `REGOLO_ASR_API_KEY`; маршрут вимагає такого самого
+  Clerk-входу, як чат, і приймає не більше 10 MiB аудіо за запит. Якщо Regolo
+  недоступний, бекенд повертає `503`, а панель використовує свій браузерний
+  резервний режим. Ніякого серверного fallback у цей тестовий період немає.
+- **TTS:** `/api/tts` синтезує українську мову локальним Piper. Це спільний
+  голос для віртуального та майбутнього фізичного бота.
 
 ### Емоції
 
@@ -125,6 +141,30 @@ surprised | love | sleepy`). Бекенд парсить тег і прибир�
 повторний `start` не плодить процеси; `stop` ніколи не вбиває процес, який
 запускали не ми. Логи процесів — у `service_logs/`.
 
+### Екран пристрою (`/screen`), магазин і музика
+
+| Метод | Шлях | Опис |
+|---|---|---|
+| GET | `/api/screen-store/catalog` | Каталог пакетів екрана (застосунки, скіни) |
+| GET | `/api/screen-store/installed` | Встановлені пакети |
+| POST | `/api/screen-store/install` | `{"id"}` — встановити пакет |
+| POST | `/api/screen-store/uninstall` | `{"id"}` — прибрати пакет |
+| GET | `/store-apps/<id>/...` | Статика встановленого застосунка (iframe) |
+| GET | `/api/music/status` | Доступність yt-dlp / транскрайбу |
+| GET | `/api/music/search?q=` | Пошук на YouTube (yt-dlp, без ключів) |
+| GET | `/api/music/radio` | Живі радіостанції |
+| GET | `/api/music/stream` | Аудіо з Range — перемотка працює (Invidious → yt-dlp) |
+| GET | `/api/music/transcript` | Субтитри відео (youtube-transcript-api, безкоштовно) |
+
+Тули мозку: `play_music`, `stop_music`, `listen_to_video` (транскрайб +
+звук на екрані). Екран керується з мозку тулом `open_screen` (тепер і
+`store` — магазин).
+
+**Розробка додатків для екрана** — формат пакетів, скіни, обмеження 320×240
+і довідник: [`docs/SCREEN-PLATFORM.md`](docs/SCREEN-PLATFORM.md). Порівняння
+неофіційних YouTube-клієнтів і транскрайб-опцій:
+[`docs/YOUTUBE-CLIENTS.md`](docs/YOUTUBE-CLIENTS.md).
+
 ## Конфігурація
 
 `config.yaml` — порти, шляхи, базові URL і список моделей Omni, **без секретів**.
@@ -141,6 +181,7 @@ surprised | love | sleepy`). Бекенд парсить тег і прибир�
 - `OPENCLAW_TOKEN` — токен OpenClaw (інакше береться з `../Voice Loop/config.yaml`).
 - `ANTHROPIC_API_KEY` — ключ прямого Anthropic API.
 - `CHAT2API_API_KEY` — необовʼязковий ключ локального Chat2API.
+- `REGOLO_ASR_API_KEY` — ключ Regolo лише для розпізнавання мовлення.
 
 **`.env` — секрет:** не комітьте його, не додавайте у вікі/фронтенд. Ключі
 ніколи не повертаються з API і не потрапляють у статику.
