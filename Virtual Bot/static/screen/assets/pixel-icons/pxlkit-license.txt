@@ -1,0 +1,12 @@
+Pxlkit pixel icon assets
+
+The SVG assets in this directory are rendered from the Pxlkit icon data pack:
+https://github.com/joangeldelarosa/pxlkit
+
+Source revision:
+8e735fa3404a2b4a067e6904a4759a50b1af5bb7
+
+License:
+Pxlkit Asset License. The application includes visible attribution in the
+screen settings as “Піксельні іконки: Pxlkit”. See the upstream repository's
+LICENSE-ASSETS file for the complete terms.

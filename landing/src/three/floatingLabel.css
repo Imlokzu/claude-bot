@@ -1,0 +1,161 @@
+/* The picked-object read-out. Deliberately lives outside `.tv-grade` (see
+   FloatingLabel.jsx) so the viewport chromatic-aberration grade never
+   touches it — this is the one surface on the page that has to stay
+   legible, so it gets no lens effects at all.
+
+   `--lit` is cursor proximity, 0..1, written from JS (see
+   FloatingLabelLayer). Everything that glows here scales its intensity off
+   it, so bringing the pointer to the read-out lifts it out of the dark
+   instead of the copy sitting at one fixed brightness. */
+.fl-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+
+.fl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-family: var(--mono);
+  text-align: left;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  /* Never interactive. The layer is portalled to <body>, i.e. outside the
+     ScrollControls container — a pointer-events:auto panel here would eat
+     the wheel and stall the page scroll wherever it happened to sit. The
+     cursor "hover" effect is done by proximity in JS instead. */
+  pointer-events: none;
+  /* keep the glyphs on whole pixels — no fractional-transform resampling */
+  will-change: transform;
+  text-rendering: geometricPrecision;
+  --lit: 0;
+}
+
+.fl.is-on {
+  opacity: 1;
+}
+
+/* The light itself: a soft pool that follows the cursor across the plate.
+   Sits behind the type (z-index -1), fades in with proximity, and is pure
+   background — it never touches the glyphs, so nothing here can soften
+   them. */
+.fl::before {
+  content: "";
+  position: absolute;
+  inset: -22px -28px;
+  z-index: -1;
+  border-radius: 18px;
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(127, 208, 255, 0.16),
+    rgba(127, 208, 255, 0.05) 42%,
+    transparent 72%
+  );
+  /* The pool is wider than this box, so without a mask its own rectangle
+     edge shows up as a lit panel — exactly the docked card the read-out is
+     not supposed to be. Fade the box out at its own borders so all you
+     ever see is light falling off into the dark. */
+  -webkit-mask-image: radial-gradient(
+    closest-side ellipse at 50% 50%,
+    #000 45%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    closest-side ellipse at 50% 50%,
+    #000 45%,
+    transparent 100%
+  );
+  opacity: var(--lit);
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.fl__eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--fl-accent, #7fd0ff);
+  text-shadow: 0 0 calc(6px + 8px * var(--lit))
+    rgba(127, 208, 255, calc(0.35 + 0.4 * var(--lit)));
+}
+
+.fl__title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: #fff;
+  /* Layered tight-to-wide, the way lit phosphor actually falls off: a 1px
+     white core keeps the strokes hard, then progressively wider blue
+     halos carry the light out. The core never widens — that's what lets
+     this glow hard without going soft. Intensity rides the cursor. */
+  text-shadow: 0 0 1px rgba(255, 255, 255, calc(0.75 + 0.25 * var(--lit))),
+    0 0 6px rgba(214, 236, 255, calc(0.5 + 0.3 * var(--lit))),
+    0 0 calc(18px + 10px * var(--lit))
+      rgba(127, 208, 255, calc(0.55 + 0.35 * var(--lit))),
+    0 0 calc(44px + 20px * var(--lit))
+      rgba(127, 208, 255, calc(0.28 + 0.3 * var(--lit))),
+    0 1px 2px rgba(0, 0, 0, 0.85);
+}
+
+.fl__rule {
+  width: 100%;
+  height: 1px;
+  margin: 2px 0 4px;
+  background: linear-gradient(
+    to right,
+    rgba(159, 182, 214, calc(0.5 + 0.5 * var(--lit))),
+    rgba(159, 182, 214, 0)
+  );
+  box-shadow: 0 0 calc(6px * var(--lit)) rgba(127, 208, 255, calc(0.5 * var(--lit)));
+}
+
+.fl__copy {
+  font-size: 13px;
+  /* Bold, same as the title — this is a readout on a dark, busy
+     starfield, not body copy in a document. */
+  font-weight: 700;
+  line-height: 1.6;
+  letter-spacing: 0.02em;
+  color: #fff;
+  /* The title's glow stack, scaled to this size: 1px white core (never
+     widens — that's what keeps the strokes hard), then blue halos out to
+     32px. The dark drop underneath is what holds the text off the stars. */
+  text-shadow: 0 0 1px rgba(255, 255, 255, calc(0.85 + 0.15 * var(--lit))),
+    0 0 5px rgba(214, 236, 255, calc(0.4 + 0.3 * var(--lit))),
+    0 0 calc(14px + 8px * var(--lit))
+      rgba(127, 208, 255, calc(0.45 + 0.35 * var(--lit))),
+    0 0 calc(32px + 14px * var(--lit))
+      rgba(127, 208, 255, calc(0.2 + 0.25 * var(--lit))),
+    0 1px 3px rgba(0, 0, 0, 0.95);
+}
+
+@media (max-width: 720px) {
+  .fl {
+    /* on a phone there is no room beside the object — dock the read-out to
+       the bottom of frame instead of chasing the anchor across it */
+    width: calc(100vw - 32px) !important;
+    left: 16px;
+    top: auto;
+    bottom: 15vh;
+    transform: none !important;
+  }
+  .fl__title {
+    font-size: 19px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fl::before {
+    transition: none;
+  }
+}

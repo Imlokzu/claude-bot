@@ -1,0 +1,540 @@
+.pricing {
+  width: 100vw;
+  /* Must stay exactly one block tall, always — see Overlays. It used to
+     grow past 100vh on narrow/stacked layouts instead, which quietly
+     broke things: the outer scroll track is sized for five even 100vh
+     blocks, so a taller sixth one pushed real content past what the
+     track could ever scroll to — the tail of Pricing (and the section
+     after it) became permanently unreachable, not just cramped. If the
+     stacked content doesn't fit, this scrolls *inside* the block instead
+     of growing it. */
+  height: 100vh;
+  padding: 4vh 5vw;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-family: var(--mono);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* plain `center` on a flex box centers overflowing content
+     symmetrically, which makes the *start* of the content unreachable by
+     scrolling all the way up (a well-known flexbox trap) — exactly the
+     block that needs to scroll internally when stacked. `safe center`
+     falls back to start-alignment only once it would overflow; browsers
+     that don't understand the keyword just keep the line above. */
+  justify-content: center;
+  justify-content: safe center;
+  gap: clamp(10px, 1.8vh, 22px);
+  scroll-snap-align: center;
+  scroll-snap-stop: normal;
+  /* the volume the tilted deck below is read in — far enough back that
+     8° of lean stays a lean and never turns into a vanishing-point stunt */
+  perspective: 1600px;
+  perspective-origin: 50% 30%;
+}
+
+/* ── the tilted deck ───────────────────────────────────
+   The spec sheet is held at a slight angle rather than lying flat on
+   the glass: a small rotateX with a touch of rotateZ, so it reads as an
+   object floating in the same space as the scene behind it. Transforms
+   don't affect layout, so this cannot grow the block past the 100vh the
+   scroll track budgets for it (see .pricing above). */
+.pricing__deck {
+  width: min(1020px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, 1.8vh, 22px);
+  transform-style: preserve-3d;
+  transform-origin: 50% 0%;
+  transform: rotateX(8deg) rotateZ(-1.2deg);
+}
+
+/* Tiles ride the deck's plane and lift off it under the cursor: forward
+   in Z (so perspective actually enlarges them), a little up, and the
+   lean eases out — the tile squares up to you as it comes closer. */
+.pricing__deck .spec,
+.pricing__deck .plans {
+  /* pass the deck's volume through to the tiles — a flattening wrapper
+     here would collapse every child's Z back onto one plane */
+  transform-style: preserve-3d;
+}
+
+.pricing__deck .board,
+.pricing__deck .plan {
+  /* breathing room so the hover glow has an edge to fall off against
+     instead of being cropped flush to the text */
+  padding-left: 10px;
+  padding-right: 10px;
+  transform-style: preserve-3d;
+  transform: translateZ(0);
+  transition: transform 0.28s cubic-bezier(0.2, 0.7, 0.3, 1),
+    border-color 0.24s ease, color 0.24s ease, box-shadow 0.28s ease,
+    background 0.28s ease;
+}
+
+/* Hover is the tile rising and the TYPE lighting up — no panel, no fill,
+   no shadow box. Any background or box-shadow here draws its own rectangle
+   and the tile instantly reads as a card that appeared under the cursor,
+   which is the one thing this page's whole language is built to avoid. So
+   the only things that change are position and the light coming off the
+   letterforms themselves. */
+/* `.board.is-active` below carries its own resting lift, and at equal
+   specificity (three classes each) the later rule wins — so the selected
+   board simply stopped responding to hover. Naming it here explicitly
+   outranks it. */
+.pricing__deck .board:hover,
+.pricing__deck .board.is-active:hover,
+.pricing__deck .board:focus-visible,
+.pricing__deck .board.is-active:focus-visible,
+.pricing__deck .plan:hover {
+  /* Scale, not translateZ. Coming forward in Z under a perspective
+     magnifies an element *away from the perspective origin* (50% 30% of
+     the block), so the further a tile sits from that point the more the
+     lift shoved it sideways and down — the bottom-right plan visibly slid
+     down-right instead of rising. Scale grows a tile about its own centre,
+     so every tile now lifts identically wherever it sits in the deck. */
+  transform: translate3d(0, -10px, 0) scale(1.035) rotateX(-5deg);
+  border-top-color: rgba(127, 208, 255, 0.7);
+  color: #fff;
+  /* NO box-shadow. A shadow is painted around the whole border box, not
+     just the edge you aimed it at — even offset upward with negative
+     spread it drew a lit rectangle on all four sides, which is the panel
+     look this hover is specifically meant not to have. The hairline gets
+     its glow from the ::after below instead, which is 1px tall. */
+}
+
+/* the hairline the tile hangs from, lit — a 1px line with a blur, not a
+   surface with a shadow */
+.pricing__deck .board,
+.pricing__deck .plan {
+  position: relative;
+}
+.pricing__deck .board::after,
+.pricing__deck .plan::after {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: rgba(127, 208, 255, 0.9);
+  filter: blur(3px);
+  opacity: 0;
+  transition: opacity 0.24s ease;
+  pointer-events: none;
+}
+.pricing__deck .board:hover::after,
+.pricing__deck .board.is-active:hover::after,
+.pricing__deck .board:focus-visible::after,
+.pricing__deck .plan:hover::after {
+  opacity: 1;
+}
+
+/* every line in a lifted tile goes white and bold, and throws light */
+.pricing__deck .board:hover .board__name,
+.pricing__deck .board.is-active:hover .board__name,
+.pricing__deck .board:focus-visible .board__name,
+.pricing__deck .plan:hover .plan__title {
+  color: #fff;
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.7),
+    0 0 14px rgba(127, 208, 255, 0.75), 0 0 34px rgba(127, 208, 255, 0.4);
+}
+
+.pricing__deck .board:hover .board__price,
+.pricing__deck .board.is-active:hover .board__price,
+.pricing__deck .board:focus-visible .board__price,
+.pricing__deck .plan:hover .plan__price {
+  color: #fff;
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.8),
+    0 0 18px rgba(127, 208, 255, 0.85), 0 0 46px rgba(127, 208, 255, 0.45);
+}
+
+.pricing__deck .board:hover .board__specs li,
+.pricing__deck .board.is-active:hover .board__specs li,
+.pricing__deck .board:focus-visible .board__specs li,
+.pricing__deck .plan:hover .plan__desc,
+.pricing__deck .plan:hover .plan__features li {
+  color: #fff;
+  font-weight: 500;
+  text-shadow: 0 0 1px rgba(214, 236, 255, 0.6), 0 0 12px rgba(127, 208, 255, 0.3);
+}
+
+
+/* the selected board already sits proud of the others even at rest —
+   same scale-not-Z rule as the hover above, for the same reason */
+.pricing__deck .board.is-active {
+  transform: translate3d(0, -3px, 0) scale(1.012);
+}
+
+/* the total bar is the deck's own base plate — sat back a touch so the
+   tiles above clearly float in front of it. Scaled down rather than
+   pushed back in Z: this bar spans the full width, so a Z offset dragged
+   it off-centre toward the perspective origin. */
+.pricing__deck .spec__total {
+  transform: scale(0.995);
+}
+
+.pricing__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+/* ── board picker ──────────────────────────────────── */
+.spec {
+  width: min(1020px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spec__label {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(159, 182, 214, 0.6);
+}
+
+.spec__boards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+/* No card, no fill, no box — a picked board is just brighter text and a
+   lit hairline underneath, the same "instrument readout" language as the
+   rest of the site instead of a UI-kit pricing tile. */
+.board {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 4px 10px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid rgba(159, 182, 214, 0.16);
+  color: rgba(210, 222, 236, 0.6);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+.board:hover {
+  border-top-color: rgba(127, 208, 255, 0.5);
+  color: var(--ink);
+}
+.board.is-active {
+  border-top-color: var(--accent);
+  color: var(--ink);
+}
+.board.is-active .board__name {
+  text-shadow: 0 0 14px rgba(127, 208, 255, 0.3);
+}
+
+.board__flag {
+  position: absolute;
+  top: 10px;
+  right: 4px;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.board__flag::before {
+  content: "▸ ";
+}
+
+.board__name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+
+.board__price {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+  text-shadow: 0 0 18px rgba(127, 208, 255, 0.4);
+}
+
+.board__specs {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 1px;
+}
+.board__specs li {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgba(210, 222, 236, 0.6);
+}
+
+.spec__note {
+  font-size: 11.5px;
+  color: rgba(210, 222, 236, 0.7);
+}
+
+.spec__total {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 4px;
+  border-top: 1px solid rgba(159, 182, 214, 0.2);
+  border-bottom: 1px solid rgba(159, 182, 214, 0.2);
+}
+.spec__total-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(159, 182, 214, 0.55);
+}
+.spec__total-board {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: #fff;
+}
+.spec__total-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.spec__total-price {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+  text-shadow: 0 0 22px rgba(127, 208, 255, 0.35);
+}
+
+/* ── standing offers ───────────────────────────────── */
+.plans {
+  width: min(1020px, 100%);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.plan {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px 4px 0;
+  border-top: 1px solid rgba(159, 182, 214, 0.16);
+}
+.plan.is-hero {
+  border-top-color: rgba(127, 208, 255, 0.45);
+}
+.plan.is-hero .plan__title {
+  text-shadow: 0 0 16px rgba(127, 208, 255, 0.3);
+}
+
+.plan__kicker {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(127, 208, 255, 0.8);
+}
+.plan__title {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #fff;
+}
+.plan__price {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+.plan__unit {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(159, 182, 214, 0.6);
+}
+.plan__desc {
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: rgba(210, 222, 236, 0.75);
+}
+.plan__features {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 14px;
+  margin-top: 2px;
+}
+.plan__features li {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgba(210, 222, 236, 0.8);
+}
+.plan__cta {
+  margin-top: 8px;
+  align-self: flex-start;
+}
+
+/* ── short frames ──────────────────────────────────────
+   This block is pinned to exactly 100vh and scrolls internally when its
+   content doesn't fit (see .pricing at the top). That valve has to exist,
+   but hitting it is a bad outcome: the first thing to fall below the fold
+   is the row of CTAs, so on a short window the act read as having no buy
+   button at all — the one thing it exists for. In a laptop-height window
+   the deck overflowed by ~120px.
+
+   So compact the rhythm before the valve is ever needed: tighter padding
+   and gaps, smaller numerals, shorter buttons. Everything still fits at
+   ~500 CSS px of height, which covers a small window on a retina screen. */
+@media (max-height: 820px) {
+  .pricing {
+    padding: 2.5vh 5vw;
+    gap: 8px;
+  }
+  .pricing__head {
+    gap: 6px;
+  }
+  .pricing__head .ov__title {
+    font-size: clamp(17px, 3.2vw, 34px);
+  }
+  .spec {
+    gap: 6px;
+  }
+  .board {
+    padding: 6px 10px 7px;
+  }
+  .board__price {
+    font-size: 20px;
+  }
+  .board__specs li {
+    font-size: 10px;
+  }
+  .spec__note {
+    font-size: 10.5px;
+  }
+  .spec__total {
+    padding: 8px 4px;
+  }
+  .spec__total-price {
+    font-size: 22px;
+  }
+  .plan {
+    padding-top: 10px;
+    gap: 5px;
+  }
+  .plan__price {
+    font-size: 22px;
+  }
+  .plan__desc {
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .plan__cta {
+    margin-top: 5px;
+  }
+  .pricing .hud-btn {
+    padding: 7px 14px;
+    font-size: 11px;
+  }
+}
+
+/* Shorter still — a small window on a retina display lands around 500 CSS
+   px of height, which the tier above gets to within a few pixels of. This
+   closes the gap with room to spare rather than leaving it to round off
+   against a scrollbar. */
+@media (max-height: 640px) {
+  .pricing {
+    padding: 1.8vh 5vw;
+    gap: 5px;
+  }
+  .pricing__head .ov__title {
+    font-size: clamp(16px, 2.9vw, 28px);
+  }
+  .board {
+    padding: 4px 10px 6px;
+  }
+  .board__specs li {
+    font-size: 9.5px;
+  }
+  .spec__total {
+    padding: 6px 4px;
+  }
+  .plans {
+    gap: 8px;
+  }
+  .plan {
+    padding-top: 8px;
+    gap: 4px;
+  }
+  .plan__desc {
+    line-height: 1.35;
+  }
+  .plan__features {
+    gap: 3px 14px;
+  }
+  .plan__cta {
+    margin-top: 3px;
+  }
+  .board__specs {
+    gap: 1px;
+  }
+  /* the CTAs are the last thing in the block, so whatever slack is left
+     lands under them — keep enough that they clear the sound toggle in
+     the frame's bottom corner instead of sitting flush on it */
+  .pricing .hud-btn {
+    padding: 6px 13px;
+  }
+}
+
+/* Narrow frames can't hold three boards and two plans side by side, so
+   they stack — taller content, same fixed 100vh block, scrolls inside it
+   (see .pricing's overflow-y above). */
+@media (max-width: 760px) {
+  .pricing {
+    padding: 5vh 5vw;
+    gap: 14px;
+  }
+  .spec__boards {
+    grid-template-columns: 1fr;
+  }
+  .plans {
+    grid-template-columns: 1fr;
+  }
+  .spec__total-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+  /* a phone is held close and the deck is stacked full-bleed — the same
+     lean that reads as depth on a wide frame just skews the copy here */
+  .pricing__deck {
+    transform: rotateX(4deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pricing__deck,
+  .pricing__deck .board,
+  .pricing__deck .plan,
+  .pricing__deck .board:hover,
+  .pricing__deck .plan:hover,
+  .pricing__deck .board.is-active,
+  .pricing__deck .spec__total {
+    transform: none;
+    transition: none;
+  }
+}

@@ -1,0 +1,1623 @@
+/* ============================================================
+   Клод Бот — ЕКРАН ПРИСТРОЮ (окрема сторінка, /screen)
+   Ціль — 2.4" SPI TFT 320×240 на Raspberry Pi 3 у Chromium kiosk.
+
+   Правила, від яких залежить, чи буде це плавним на A53:
+   1) анімуємо ЛИШЕ transform і opacity — жодних filter/blur/box-shadow
+      на рухомому;
+   2) очі краба — canvas (crab.js), а не DOM;
+   3) жодних градієнтів під анімацією, жодних тіней у каруселі;
+   4) затемнення — окремий шар з opacity, не filter: brightness.
+   ============================================================ */
+
+:root {
+  --w: 320px;
+  --h: 240px;
+  --bg: #16181a;
+  --panel: #1e2124;
+  --line: #2f3438;
+  --text: #e8e4dc;
+  --muted: #8e9498;
+  --accent: #d17a58;
+  --ok: #8ca879;
+  --off: #6b7175;
+  --font: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", Menlo, Consolas, ui-monospace, monospace;
+}
+
+:root[data-theme="light"] {
+  --bg: #efe7d9;
+  --panel: #fbf6ec;
+  --line: #ddcdb2;
+  --text: #2f271f;
+  --muted: #7d6d5c;
+  --accent: #b95f3d;
+  --ok: #6f8b5f;
+  --off: #a8998a;
+}
+
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+.hidden { display: none !important; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;              /* поле навколо «пристрою» */
+  font-family: var(--font);
+  color: var(--text);
+  /* Резистивний тач: ні виділення тексту, ні підсвітки тапу, ні callout */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+/* ---------- Сцена 320×240 ---------- */
+
+.stage {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--w);
+  height: var(--h);
+  transform: translate(-50%, -50%);   /* масштаб додає JS (fitStage) */
+  transform-origin: center center;
+  overflow: hidden;
+  background: var(--bg);
+  touch-action: none;                  /* жести обробляємо самі */
+}
+
+/* ---------- Карусель тайлів ---------- */
+
+.rail {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  width: max-content;
+  will-change: transform;
+  transition: transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.tile {
+  position: relative;
+  width: var(--w);
+  height: var(--h);
+  padding: 14px 16px 22px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;                    /* тайл не гортається — принцип Wear OS */
+}
+
+.tile-head {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.tile-foot {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: auto;
+}
+
+/* Одна головна дія на тайл */
+.cta {
+  margin-top: 8px;
+  align-self: flex-start;
+  min-height: 34px;                    /* палець, не курсор */
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 17px;
+  background: transparent;
+  color: var(--accent);
+  font: 600 12px/1 var(--font);
+  cursor: pointer;
+}
+.cta:active { background: var(--accent); color: var(--bg); }
+
+/* Тайл 0 — циферблат */
+.tile-face { padding: 10px 12px 22px; align-items: center; justify-content: center; }
+
+.face-top {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.face-clock { display: block; image-rendering: pixelated; }
+
+.link-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--off);
+}
+.link-dot.on { background: var(--ok); }
+
+.crab {
+  display: block;
+  margin: 0;
+  image-rendering: pixelated;           /* краб має лишатись піксельним */
+}
+
+.face-label {
+  margin-top: 2px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Субтитри розмови на циферблаті. Лежать поверх нижньої частини краба:
+   так краб лишається великим, а текст зʼявляється лише коли є що казати.
+   Фон суцільний (не blur) — на A53 прозорість із розмиттям коштує кадрів. */
+.face-caption {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 16px;
+  /* 84px ≈ 5 рядків. Було 54px (3 рядки) — абзац у них не жив узагалі:
+     видно було лише хвіст, а початок відповіді доводилось шукати пальцем. */
+  max-height: 84px;
+  overflow-y: auto;
+  scroll-behavior: smooth;               /* гортання сторінками, не ривком */
+  scrollbar-width: none;                 /* смуга прокрутки тут зайва */
+  padding: 4px 6px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: center;
+}
+.face-caption::-webkit-scrollbar { display: none; }
+
+/* Лічильник сторінок субтитра. Сидить НАД рамкою, а не в ній: усередині він
+   би їхав разом із текстом і зникав з першою ж прокруткою. */
+.caption-page {
+  position: absolute;
+  right: 10px;
+  bottom: 104px;                         /* 16 (відступ) + 84 (рамка) + 4 */
+  padding: 1px 5px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  pointer-events: none;                  /* тап має діставатись рамки під ним */
+}
+
+/* Картинки з репліки — прямо на циферблаті, над субтитром.
+   object-fit: contain, бо картинку треба показати ПОВНІСТЮ: обрізане фото
+   на 2.4" екрані здебільшого перестає бути впізнаваним. */
+/* Режим «бот показує фото»: ОДНА рамка на майже весь екран, у ній ОДНА
+   картинка, а краб унизу тримає рамку клешнями. Усе зайве (маскот у повний
+   зріст, підпис емоції, субтитр) на цей час зникає — на 320×240 два центри
+   уваги перетворюють екран на кашу. */
+.face-photo {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 34px;
+  bottom: 42px;
+  /* Рамка: один чіткий кант, квадратні кути, тонкий світлий паспарту —
+     як у справжньої фоторамки. Багатошарові тіні тут виглядали брудно. */
+  border: 3px solid var(--accent);
+  box-shadow: inset 0 0 0 2px #f4f1ea;
+  background: #f4f1ea;          /* саме він і дає «білі бари» під contain */
+  overflow: hidden;
+  touch-action: pan-y;
+}
+.face-photo img {
+  width: 100%;
+  height: 100%;
+  /* Картинку НЕ ріжемо: не влазить у рамку — лишаються білі поля */
+  object-fit: contain;
+  display: block;
+  image-rendering: auto;
+}
+
+/* Гортання: стрілки з боків + крапки. З’являються лише коли картинок кілька */
+.photo-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 26px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: rgba(20, 18, 15, 0.42);
+  color: var(--accent);
+  font: 700 15px/1 var(--font);
+  cursor: pointer;
+}
+.photo-nav:active { background: rgba(20, 18, 15, 0.75); }
+.photo-nav.prev { left: 0; }
+.photo-nav.next { right: 0; }
+.face-photo.many .photo-nav { display: flex; }
+
+/* Крапки — у лівому нижньому куті рамки, а НЕ по центру: по центру їх
+   затуляють клешні краба-тримача. */
+.photo-dots {
+  position: absolute;
+  left: 5px;
+  bottom: 4px;
+  display: none;
+  gap: 4px;
+}
+.face-photo.many .photo-dots { display: flex; }
+.photo-dots i {
+  width: 5px;
+  height: 5px;
+  background: rgba(20, 18, 15, 0.35);
+}
+.photo-dots i.on { background: var(--accent); }
+
+/* Краб-тримач сидить у правому нижньому куті, а піднята клешня заходить на
+   ПРАВИЙ кант рамки — тобто він тримає її збоку, а не підпирає знизу. */
+.face-holder {
+  position: absolute;
+  right: 12px;
+  bottom: 16px;
+  image-rendering: pixelated;
+}
+/* Мікрофон на цей час переїжджає ліворуч: інакше він і краб б’ються за той
+   самий куток. */
+.tile-face.photo .face-mic { left: 8px; right: auto; bottom: 12px; }
+
+/* У режимі фото прибираємо все зайве */
+.tile-face.photo .crab,
+.tile-face.photo .face-label,
+.tile-face.photo .face-caption { display: none; }
+
+.say-photo {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.say-photo img {
+  max-height: 96px;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.face-caption.user { color: var(--accent); }
+.face-caption.bot { color: var(--text); }
+
+/* Мікрофон просто на циферблаті */
+.face-mic {
+  position: absolute;
+  right: 8px;
+  bottom: 16px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--accent);
+  border-radius: 17px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.face-mic:disabled { border-color: var(--line); opacity: 0.4; }
+.face-mic.listening { background: var(--line); animation: micPulse 1.4s ease-in-out infinite; }
+
+/* Мікрофон не стрибає: він завжди внизу праворуч, а субтитр просто
+   лишає йому місце. Спроба піднімати кнопку нагору саджала її на годинник. */
+
+/* ---------- Дві колонки, поки бот відповідає ----------
+   Доти текст і краб ділили одну вертикаль: бульбашка тулилась у 5 рядків
+   унизу, а верхня половина екрана стояла порожня під крабом. На 320×240 це
+   найдорожча помилка — місця й так обмаль.
+
+   Коли є відповідь: ЛІВОРУЧ текст на всю висоту тайла, ПРАВОРУЧ краб і
+   мікрофон вузькою колонкою. Режиму фото це не стосується (.photo) — там
+   рамка займає екран цілком і ділити нічого. */
+
+.tile-face.captioned:not(.photo) .face-caption {
+  left: 8px;
+  right: 112px;                          /* ширина правої колонки */
+  top: 30px;                             /* під годинником */
+  bottom: 16px;
+  max-height: none;                      /* висоту тепер задають top/bottom */
+  text-align: left;                      /* абзац читають зліва, не по центру */
+}
+
+/* Краб у своїй колонці. Масштабуємо ЧЕРЕЗ CSS: канвас лишається 300×152,
+   тож малювання емоцій не треба переписувати під новий розмір. */
+.tile-face.captioned:not(.photo) .crab {
+  position: absolute;
+  right: 10px;
+  top: 84px;                             /* між годинником і мікрофоном */
+  width: 92px;
+  height: auto;
+}
+
+/* Лічильник сторінок їде до краба: над текстом він накрив би перший рядок */
+.tile-face.captioned:not(.photo) .caption-page {
+  right: 10px;
+  bottom: 58px;                          /* під крабом, над мікрофоном */
+}
+
+/* Поки фото — стара поведінка: субтитр знизу, лишає місце мікрофону */
+.tile-face.captioned.photo .face-caption { right: 48px; }
+
+/* Тайл 1 — годинник */
+.tile-clock { justify-content: center; align-items: center; }
+
+.clock-pixels {
+  display: block;
+  image-rendering: pixelated;            /* цифри в стилі краба — піксель у піксель */
+}
+
+.clock-date {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Тайл 2 — репліка */
+.say-text {
+  font-size: 15px;
+  line-height: 1.45;
+  /* Глянсова картка: 5 рядків максимум, решта — три крапки */
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Тайл 3 — стан */
+.state-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
+
+.state-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 5px;
+}
+.state-list .k { color: var(--muted); }
+.state-list .v { font-weight: 600; }
+.state-list .v.on { color: var(--ok); }
+.state-list .v.off { color: var(--off); }
+
+/* ---------- Крапки-індикатор ---------- */
+
+.dots {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 7px;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.35;
+  transition: opacity 180ms ease;
+}
+.dots i.on { opacity: 1; background: var(--accent); }
+
+/* Шари поверх каруселі ховають крапки */
+.stage.layered .dots { opacity: 0; }
+
+/* ---------- Шари: стрічка (згори) і швидкі дії (знизу) ---------- */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  /* Знімок фону (JS кладе background-image) розтягуємо на весь шар —
+     апаратне згладжування при масштабуванні саме й дає ефект скла */
+  background-color: var(--panel);
+  background-size: cover;
+  background-position: center;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+  transition: transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* Шухляда піднімається знизу — рівно туди, куди тягне палець */
+.layer-apps {
+  transform: translate3d(0, 100%, 0);
+  visibility: hidden;
+}
+.layer-apps.open { visibility: visible; }
+
+/* Шухляда застосунків: композиція Android 16 — handle зверху, пʼять
+   колонок і круглі іконки без карток навколо. */
+.layer-apps {
+  padding: 8px 10px 11px;
+  background-color: #3d424a;
+}
+.apps-handle {
+  width: 38px;
+  height: 4px;
+  flex: none;
+  align-self: center;
+  margin: 0 auto 5px;
+  border-radius: 3px;
+  background: #f1f2f4;
+  opacity: 0.9;
+}
+.apps-head {
+  margin-bottom: 5px;
+  padding-bottom: 5px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.apps-head .layer-back { font-size: 8px; }
+
+/* Застосунок відкривається так само «з глибини», як і шухляда */
+.layer-app {
+  transform: scale(0.9);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 200ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 160ms ease;
+}
+.layer-app.open { transform: scale(1); opacity: 1; pointer-events: auto; }
+
+.app-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  scrollbar-width: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.app-body::-webkit-scrollbar { display: none; }
+
+.memory-body,
+.chats-body { gap: 7px; }
+.app-toolbar { display: flex; justify-content: flex-end; min-height: 27px; }
+.app-toolbar .settings-test { margin: 0; }
+.app-status { min-height: 13px; text-align: left; }
+.memory-list,
+.session-browser-list { display: flex; flex-direction: column; gap: 4px; }
+.memory-entry,
+.session-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: 600 10px/1.1 var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.memory-entry.on,
+.session-entry.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.memory-path {
+  color: var(--muted);
+  font: 400 9px/1.2 var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.memory-reader,
+.session-reader {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+}
+.memory-reader > strong,
+.session-reader > strong { font-size: 11px; }
+.memory-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font: 400 9px/1.35 var(--mono);
+}
+.session-messages { display: flex; flex-direction: column; gap: 5px; }
+.app-message {
+  padding: 6px 7px;
+  border-left: 2px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+.app-message.user { border-left-color: var(--accent); }
+.app-message-role {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--muted);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.app-message-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+/* Камера */
+.cam-view {
+  flex: 1;
+  min-height: 0;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.cam-view img { max-width: 100%; max-height: 100%; display: block; }
+.cam-note { font-size: 11px; color: var(--muted); text-align: center; padding: 0 8px; }
+
+/* Сервіси */
+.svc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.svc-name { flex: 1; }
+.svc-state { font-size: 10px; color: var(--muted); }
+.svc-state.on { color: var(--ok); }
+
+.settings-body { gap: 8px; }
+.settings-section {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 7px 8px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 75%, transparent);
+}
+.settings-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+  font-size: 11px;
+}
+.settings-section-head span,
+.settings-copy span,
+.settings-inline-value,
+.settings-note {
+  color: var(--muted);
+  font-size: 9px;
+}
+.settings-attribution { padding: 0 3px; }
+.settings-attribution a { color: var(--accent); }
+.settings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 24px;
+}
+.settings-copy {
+  min-width: 86px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-copy strong { font-size: 10px; font-weight: 600; }
+.settings-inline-value { white-space: nowrap; }
+.settings-choices {
+  flex: 1 1 150px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.settings-choices-two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.settings-choice,
+.settings-switch,
+.settings-reset {
+  min-height: 27px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 9px/1.1 var(--font);
+  cursor: pointer;
+}
+.settings-choice { padding: 3px 4px; }
+.settings-choice.on,
+.settings-switch.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+.settings-swatch {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.settings-swatch.on { border-color: var(--text); outline: 1px solid var(--accent); outline-offset: 1px; }
+.settings-swatches { display: flex; gap: 7px; flex-wrap: wrap; }
+.settings-range { flex: 1 1 90px; min-width: 80px; accent-color: var(--accent); }
+.settings-value { width: 31px; color: var(--text); font: 600 9px/1 var(--mono); text-align: right; }
+.settings-switch { min-width: 72px; padding: 3px 7px; }
+.settings-select {
+  min-width: 108px;
+  max-width: 145px;
+  min-height: 27px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 9px/1 var(--font);
+}
+.settings-test { min-height: 27px; margin: 0; padding: 0 10px; font-size: 10px; }
+.settings-reset {
+  width: 100%;
+  padding: 3px 7px;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
+}
+.settings-reset:active { background: var(--accent); color: var(--bg); }
+.settings-note { min-height: 13px; text-align: center; }
+.panel-body { gap: 8px; }
+.panel-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.panel-actions .settings-test { flex: 1 1 82px; }
+
+.apps-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-auto-rows: min-content;
+  gap: 8px 1px;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  scrollbar-width: none;
+  padding: 2px 0 3px;
+}
+.apps-grid::-webkit-scrollbar { display: none; }
+
+.app-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  gap: 3px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: 400 8px/1.1 var(--font);
+  text-align: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.svgicon {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.svgicon-big { width: 24px; height: 24px; }
+
+.pixel-pack-icon {
+  width: 30px;
+  height: 30px;
+  display: block;
+  image-rendering: pixelated;
+  object-fit: contain;
+  user-select: none;
+}
+
+.app-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--line);
+  background: color-mix(in srgb, var(--app-tint, var(--line)) 24%, #25292e);
+  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--app-tint, var(--line)) 30%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.app-tile:active .app-icon {
+  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 40%, #25292e);
+}
+.app-tile.on .app-icon {
+  background: var(--accent);
+  background: color-mix(in srgb, var(--accent) 34%, #25292e);
+}
+.app-tile.on { color: var(--accent); }
+.app-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app-name { width: 100%; max-width: 54px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Панель іде за пальцем: свайп ВГОРУ піднімає шухляду знизу, свайп ВНИЗ
+   опускає шторку швидких дій згори (як на телефоні). */
+.layer-quick { transform: translate3d(0, -100%, 0); }
+.layer.open { transform: translate3d(0, 0, 0); }
+
+/* Півпрозора плівка поверх знімка: без неї текст втопився б у плямах.
+   Це звичайний градієнт, не filter — тобто безкоштовно. */
+.layer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  pointer-events: none;
+}
+
+.layer > * { position: relative; z-index: 1; }
+
+.layer-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 7px;
+  margin-bottom: 8px;
+}
+
+.layer-hint { letter-spacing: 0; text-transform: none; font-size: 10px; opacity: 0.7; }
+
+/* ---------- Швидкі дії: як шторка на телефоні ----------
+   Дрібніші плитки + повзунки. Плитки можна переставляти (режим ✎),
+   порядок живе в localStorage. */
+
+.head-btns { display: flex; gap: 6px; align-items: center; }
+
+.layer-edit {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: transparent;
+  cursor: pointer;
+}
+.layer-edit.on { border-color: var(--accent); }
+
+/* Повзунок: висока доріжка й великий повзунок — під палець, не курсор */
+.qs-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.qs-slider-ico { flex: none; display: flex; }
+
+.qs-slider input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--line);
+  touch-action: pan-x;                  /* тягнемо повзунок, не гортаємо екран */
+}
+
+.qs-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
+.qs-slider input[type="range"]::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
+
+.qs-slider input[type="range"]:disabled { opacity: 0.4; }
+
+.qs-slider-val {
+  flex: none;
+  width: 34px;
+  text-align: right;
+  font: 400 10px/1 var(--mono);
+  color: var(--muted);
+}
+
+.qs-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 1fr;
+  gap: 6px;
+  min-height: 0;
+}
+
+.qs-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font: 400 9px/1 var(--font);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  overflow: hidden;
+}
+.qs-tile:active { border-color: var(--accent); }
+.qs-tile.on { border-color: var(--accent); color: var(--accent); background: var(--line); }
+.qs-tile:disabled { opacity: 0.35; }
+
+/* Режим перестановки: плитки «дихають», обрана підсвічена */
+.layer-quick.editing .qs-tile { border-style: dashed; }
+.layer-quick.editing .qs-tile.picked { border-color: var(--accent); border-style: solid; }
+
+/* Місце під підказку зарезервоване завжди: інакше вхід у режим ✎ підсував
+   сітку вгору й плитки тікали з-під пальця саме тоді, коли в них цілишся. */
+.qs-hint {
+  flex: none;
+  height: 15px;
+  padding-top: 5px;
+  font-size: 9px;
+  color: var(--muted);
+  visibility: hidden;
+}
+.qs-hint.show { visibility: visible; }
+
+.pxicon { display: block; image-rendering: pixelated; }
+
+/* ---------- Затемнення (яскравість + «сон») ---------- */
+
+.dimmer {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;                 /* тап проходить наскрізь і будить */
+  transition: opacity 400ms ease;
+}
+
+/* Повага до системного «менше руху» */
+@media (prefers-reduced-motion: reduce) {
+  .rail, .layer, .dimmer { transition-duration: 1ms; }
+}
+
+/* ---------- Кнопка «назад» у шарах ----------
+   Жест лишається, але не єдиним способом вийти: на резистивному тачі
+   свайп зривається, а підказка текстом — не кнопка. */
+
+.layer-back {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 10px/1 var(--font);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.layer-back:active { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- Тайл «Чат» ---------- */
+
+/* +8px знизу — щоб крапки-індикатор не лягали на поле вводу */
+.tile-chat { padding: 12px 12px 20px; }
+
+.chat-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;                   /* тут гортаємо, а не гортаємо тайли */
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 2px;
+}
+
+.chat-empty { font-size: 12px; color: var(--muted); }
+
+.msg {
+  max-width: 88%;
+  padding: 6px 9px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: var(--line);
+  border-bottom-right-radius: 4px;
+}
+
+.msg.bot {
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+}
+
+.msg.bot.pending { color: var(--muted); font-style: italic; }
+
+/* Markdown зі стріму — тільки те, що читабельне на 320×240 */
+.msg p { margin: 0 0 4px; }
+.msg p:last-child { margin-bottom: 0; }
+.msg h1, .msg h2, .msg h3, .msg h4, .msg h5, .msg h6 {
+  font-size: 13px;
+  margin: 2px 0 4px;
+}
+.msg ul, .msg ol { margin: 0 0 4px 14px; }
+.msg li { margin-bottom: 2px; }
+.msg code {
+  font: 400 11px/1.4 var(--mono);
+  background: var(--line);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.msg pre {
+  background: var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin: 0 0 4px;
+  overflow-x: auto;
+}
+.msg pre code { background: none; padding: 0; }
+.msg a { color: var(--accent); }
+.msg blockquote {
+  margin: 0 0 4px;
+  padding-left: 7px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
+.msg table { border-collapse: collapse; font-size: 11px; }
+.msg td, .msg th { border: 1px solid var(--line); padding: 1px 4px; }
+.msg img { max-width: 100%; max-height: 128px; object-fit: contain; }
+.msg hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
+
+/* ---------- Розмова голосом ---------- */
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  flex: none;
+}
+
+.chat-head-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--muted);
+  font: 400 11px/1 var(--font);
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+}
+.chat-head-btn:active { border-color: var(--accent); color: var(--accent); }
+.chat-head-btn.icon-only { padding: 0 8px; margin-left: auto; flex: none; }
+
+.chat-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ico-slot { display: flex; flex: none; }
+
+/* Живий («стрімовий») текст того, що чуємо просто зараз */
+.chat-live {
+  flex: none;
+  min-height: 0;
+  max-height: 42px;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--accent);
+  padding: 4px 0 0;
+}
+.chat-live:empty { padding: 0; }
+
+.chat-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding-top: 8px;
+  flex: none;
+}
+
+/* Поточний режим розмови — видно завжди, тап відкриває вибір */
+.mode-chip {
+  flex: none;
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--muted);
+  font: 400 10px/1 var(--font);
+  cursor: pointer;
+}
+.mode-chip:active { border-color: var(--accent); color: var(--accent); }
+
+.mic-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 18px;
+  border: 1px solid var(--accent);
+  border-radius: 18px;
+  background: transparent;
+  color: var(--accent);
+  font: 600 12px/1 var(--font);
+  cursor: pointer;
+}
+.mic-btn:disabled { opacity: 0.4; border-color: var(--line); color: var(--muted); }
+
+/* Слухає: кільце «дихає». Анімуємо лише transform/opacity — на A53 це
+   єдине, що не коштує перемальовування. */
+.mic-btn.listening {
+  border-color: var(--accent);
+  background: var(--line);
+  animation: micPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes micPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.04); opacity: 0.82; }
+}
+
+.mic-btn.busy { opacity: 0.55; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-btn.listening { animation: none; }
+}
+
+/* ---------- Список розмов ---------- */
+
+.sessions {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  z-index: 3;
+}
+
+.sessions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 7px;
+  margin-bottom: 6px;
+}
+
+.sessions-list {
+  flex: 1;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.session-row {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 4px;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  font: 400 12px/1.3 var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+.session-row.on { color: var(--accent); }
+.session-row .s-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-row .s-meta { flex: none; font: 400 10px/1 var(--mono); color: var(--muted); }
+
+/* ---------- Кнопка «назад» у шарах ----------
+   Жест лишається, але не єдиним способом вийти: на резистивному тачі
+   свайп зривається, а підказка текстом — не кнопка. */
+
+.layer-back {
+  min-height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 10px/1 var(--font);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.layer-back:active { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- Тайл «Чат» ---------- */
+
+/* +8px знизу — щоб крапки-індикатор не лягали на поле вводу */
+.tile-chat { padding: 12px 12px 20px; }
+
+.chat-log {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;                   /* тут гортаємо, а не гортаємо тайли */
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 2px;
+}
+
+.chat-empty { font-size: 12px; color: var(--muted); }
+
+.msg {
+  max-width: 88%;
+  padding: 6px 9px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: var(--line);
+  border-bottom-right-radius: 4px;
+}
+
+.msg.bot {
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+}
+
+.msg.bot.pending { color: var(--muted); font-style: italic; }
+
+/* Markdown зі стріму — тільки те, що читабельне на 320×240 */
+.msg p { margin: 0 0 4px; }
+.msg p:last-child { margin-bottom: 0; }
+.msg h1, .msg h2, .msg h3, .msg h4, .msg h5, .msg h6 {
+  font-size: 13px;
+  margin: 2px 0 4px;
+}
+.msg ul, .msg ol { margin: 0 0 4px 14px; }
+.msg li { margin-bottom: 2px; }
+.msg code {
+  font: 400 11px/1.4 var(--mono);
+  background: var(--line);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.msg pre {
+  background: var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  margin: 0 0 4px;
+  overflow-x: auto;
+}
+.msg pre code { background: none; padding: 0; }
+.msg a { color: var(--accent); }
+.msg blockquote {
+  margin: 0 0 4px;
+  padding-left: 7px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+}
+.msg table { border-collapse: collapse; font-size: 11px; }
+.msg td, .msg th { border: 1px solid var(--line); padding: 1px 4px; }
+.msg img { max-width: 100%; max-height: 128px; object-fit: contain; }
+.msg hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
+
+.chat-bar {
+  display: flex;
+  gap: 6px;
+  padding-top: 8px;
+  flex: none;
+}
+
+.chat-input {
+  flex: 1;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--text);
+  font: 400 12px/1 var(--font);
+}
+.chat-input:focus { outline: none; border-color: var(--accent); }
+.chat-input::placeholder { color: var(--muted); }
+
+.chat-send {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--accent);
+  font: 600 14px/1 var(--font);
+  cursor: pointer;
+}
+.chat-send:active { background: var(--accent); color: var(--bg); }
+.chat-send:disabled { opacity: 0.4; }
+
+
+/* ---------- Вибір режиму розмови ---------- */
+
+.mode-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.mode-card {
+  width: 100%;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.mode-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.mode-row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 7px 9px;
+  margin-bottom: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.mode-row:last-child { margin-bottom: 0; }
+.mode-row.on { border-color: var(--accent); background: var(--line); }
+.mode-row.on .mode-name { color: var(--accent); }
+
+.mode-name { font: 600 12px/1.2 var(--font); }
+.mode-hint { font: 400 10px/1.25 var(--font); color: var(--muted); }
+
+/* ---------- Now Playing: музика внизу екрана ----------
+   Бар з'являється, лише коли є що грати (екран 240px заввишки — постійний
+   бар з'їв би чверть тайла). Коли він є, він ЗАМІНЮЄ крапки-індикатори,
+   а тайли піднімають свій вміст, щоб кнопки не сховались під баром. */
+
+.nowplaying {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border-top: 1px solid var(--line);
+}
+
+.np-progress {
+  height: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.np-progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+}
+
+.np-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 6px;
+}
+
+.np-btn {
+  flex: none;
+  width: 24px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.np-btn:active { color: var(--accent); }
+
+/* Назва трека: одна стрічка в ряд; довга — біжить, як рекламна стрічка
+   над магазином (дві копії тексту + translateX(-50%) = безшовне коло) */
+.np-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: 500 11px/26px var(--font);
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+.np-track {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+.np-text { padding-right: 26px; }
+.nowplaying.rolling .np-track {
+  animation: np-scroll var(--np-dur, 9s) linear infinite;
+}
+@keyframes np-scroll {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+/* Бар на екрані → крапки не потрібні, вміст тайлів піднімаємо */
+.stage.np .dots { opacity: 0; }
+.stage.np .tile { padding-bottom: 48px; }
+.stage.np.layered .nowplaying { opacity: 0; transition: opacity 150ms ease; }
+
+/* ---------- Шіт плеєра ---------- */
+
+.music-card {
+  max-height: 218px;
+  display: flex;
+  flex-direction: column;
+}
+
+.np-providers {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+.np-provider-chip {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: 600 11px/1 var(--font);
+  cursor: pointer;
+}
+.np-provider-chip.on { border-color: var(--accent); color: var(--accent); }
+
+.np-now {
+  min-width: 0;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+.np-now .np-text { padding-right: 26px; }
+.np-now.rolling .np-track {
+  animation: np-scroll var(--np-dur, 9s) linear infinite;
+}
+.np-sub {
+  display: block;
+  font: 400 10px/1.3 var(--font);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.np-seek {
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+.np-seek:disabled { opacity: 0.3; }
+.np-times {
+  display: flex;
+  justify-content: space-between;
+  font: 400 9px/1 var(--mono);
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.np-controls {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+.np-controls .np-btn { width: 34px; height: 28px; }
+.np-controls .np-big { width: 44px; height: 28px; }
+.np-controls .np-btn:disabled { opacity: 0.3; }
+
+.np-list {
+  flex: 1;
+  min-height: 40px;
+  overflow-y: auto;
+  touch-action: pan-y;
+  border-top: 1px solid var(--line);
+  padding-top: 5px;
+}
+.np-row-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-align: left;
+  padding: 4px 2px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: 400 11px/1.3 var(--font);
+  cursor: pointer;
+}
+.np-row-item.on { color: var(--accent); }
+.np-row-item .np-item-sub { color: var(--muted); font-size: 9px; flex: none; }
+.np-hint {
+  font: 400 10px/1.35 var(--font);
+  color: var(--muted);
+  padding: 2px 0;
+}
+
+/* ---------- Магазин ---------- */
+
+.store-tabs {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.store-tab {
+  flex: 1;
+  min-height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: 600 10px/1 var(--font);
+  cursor: pointer;
+}
+.store-tab.on { border-color: var(--accent); color: var(--accent); }
+
+.store-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--line);
+}
+.store-row:last-child { border-bottom: none; }
+.store-info { flex: 1; min-width: 0; }
+.store-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 11px/1.25 var(--font);
+}
+.store-desc {
+  font: 400 9px/1.3 var(--font);
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.store-badge {
+  flex: none;
+  font: 600 8px/1 var(--font);
+  color: var(--ok);
+  border: 1px solid var(--ok);
+  border-radius: 6px;
+  padding: 2px 4px;
+}
+.store-actions { flex: none; display: flex; gap: 4px; }
+.store-actions .cta { min-height: 22px; padding: 0 8px; font-size: 10px; margin: 0; }
+.store-actions .cta.quiet { background: transparent; color: var(--muted); border-color: var(--line); }
+
+/* Скіни: превʼю — три крапки кольорами теми */
+.skin-dots { flex: none; display: flex; gap: 3px; }
+.skin-dots i { width: 9px; height: 9px; border-radius: 50%; }
+
+/* Встановлений store-застосунок: iframe на весь вміст шару */
+.storeapp-body { padding: 0; gap: 0; }
+.storeapp-frame {
+  flex: 1;
+  width: 100%;
+  border: none;
+  background: var(--bg);
+}
+
+/* Коли назва влазить — друга (роликова) копія тексту зайва */
+.np-track.single .np-text:nth-child(2) { display: none; }

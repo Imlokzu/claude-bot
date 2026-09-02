@@ -1,0 +1,11 @@
+{
+  "id": "youtube",
+  "type": "app",
+  "label": "YouTube",
+  "icon": "youtube",
+  "tint": "#d95a5a",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Клієнт YouTube: пошук відео, тап — грає в Now Playing знизу.",
+  "entry": "index.html"
+}

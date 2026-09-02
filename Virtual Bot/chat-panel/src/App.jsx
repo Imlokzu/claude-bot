@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bubble, Sender } from '@ant-design/x';
-import { ConfigProvider, theme, Button, Card } from 'antd';
+import { ConfigProvider, theme, Button, Card, Modal, Drawer, Tooltip, message } from 'antd';
 import {
   PlusOutlined,
   CloudOutlined,
@@ -9,9 +9,209 @@ import {
   SearchOutlined,
   DownOutlined,
   UpOutlined,
+  FileTextOutlined,
+  FolderOpenOutlined,
+  ToolOutlined,
+  MenuOutlined,
+  PictureOutlined,
 } from '@ant-design/icons';
 import { XMarkdown } from '@ant-design/x-markdown';
+import { TopbarAuth } from './AuthGate.jsx';
+import { authFetch, authEventSourceUrlAsync } from './auth.js';
 import BlurTypingInput from './BlurTypingInput.jsx';
+import CodeEditor from './CodeEditor.jsx';
+import MicButton from './MicButton.jsx';
+import SessionList from './SessionList.jsx';
+import ImageGallery from './ImageGallery.jsx';
+import FilePreview from './FilePreview.jsx';
+import CodeActions from './CodeActions.jsx';
+import SidePreview from './SidePreview.jsx';
+import UiElement from './UiElements.jsx';
+import ProjectModal from './ProjectModal.jsx';
+import VoiceMode from './VoiceMode.jsx';
+
+
+/* Розділи дашборда всередині шухляди чату. Список і перехід дає app.js
+   (window.dashboardNav) — React-панель навмисно не знає про вкладки сама,
+   інакше довелося б тримати їхній перелік у двох місцях. */
+function DrawerSections({ onGo }) {
+  const nav = typeof window !== 'undefined' ? window.dashboardNav : null;
+  if (!nav || !nav.sections?.length) return null;
+  const current = nav.current();
+  return (
+    <nav className="drawer-sections" aria-label="Розділи">
+      <div className="drawer-sections-title">Розділи</div>
+      {nav.sections.map((sec) => (
+        <button
+          key={sec.id}
+          type="button"
+          className={`drawer-section${sec.id === current ? ' active' : ''}`}
+          aria-current={sec.id === current ? 'page' : undefined}
+          onClick={() => { nav.go(sec.id); onGo?.(); }}
+        >
+          {/* Іконки приходять готовою розміткою з реєстру static/icons.js */}
+          <span className="drawer-section-ico" aria-hidden="true"
+                dangerouslySetInnerHTML={{ __html: sec.svg }} />
+          <span>{sec.label}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+/* Підпис моделі без префікса провайдера: «opencode-go/kimi-k3» → «kimi-k3».
+   У закритому пікері провайдер однаковий майже в усіх пунктах і лише
+   з'їдає ширину; у відкритому списку та в title повний id лишається. */
+function shortModel(name) {
+  const text = String(name || '');
+  const slash = text.lastIndexOf('/');
+  return slash === -1 ? text : text.slice(slash + 1);
+}
+
+/* Картинки з відповіді виносимо в карусель: markdown-рендер лишає текст,
+   а самі зображення показуємо однією великою з навігацією. */
+/* Розкладає відповідь на блоки в тому порядку, в якому все відбувалось:
+   шматок тексту, під ним виклик інструмента, далі наступний шматок. Позицію
+   виклику дає step.at — довжина тексту на той момент. */
+function buildBlocks(content, steps) {
+  const text = String(content || '');
+  const ordered = [...(steps || [])].sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  const blocks = [];
+  let cursor = 0;
+  ordered.forEach((step) => {
+    const at = Math.min(Math.max(step.at ?? text.length, 0), text.length);
+    if (at > cursor) blocks.push({ kind: 'text', text: text.slice(cursor, at) });
+    blocks.push({ kind: step.type === 'ui' ? 'ui' : 'tool', step });
+    cursor = at;
+  });
+  if (cursor < text.length || blocks.length === 0) {
+    blocks.push({ kind: 'text', text: text.slice(cursor) });
+  }
+  return blocks;
+}
+
+/* Відповідь бота як хронологічна стрічка: текст, під ним інструмент, далі
+   решта тексту. Картинки кожного шматка збираються в карусель під ним. */
+function BotAnswer({ content, steps, streaming, sessionId, project, onExpand, onAnswer, disabled, children }) {
+  const bodyRef = React.useRef(null);
+  const blocks = buildBlocks(content, steps);
+  const lastToolIndex = blocks.map((b) => b.kind).lastIndexOf('tool');
+  /* Останній запис файлу лишається розгорнутим, навіть якщо після нього бот
+     ще щось читав: саме результат роботи хочеться бачити одразу. */
+  const lastWriteIndex = blocks.reduce(
+    (acc, b, i) => (b.kind === 'tool' && b.step.tool === 'workspace_write' ? i : acc),
+    -1
+  );
+  const lastTextIndex = blocks.map((b) => b.kind).lastIndexOf('text');
+
+  return (
+    <div className={`markdown-body${streaming ? ' is-streaming' : ''}`} ref={bodyRef}>
+      {/* Кнопки «копіювати/редагувати» на блоках коду: команду з відповіді
+          часто треба трохи підправити перед запуском. */}
+      <CodeActions containerRef={bodyRef} deps={[content, streaming]} />
+      {blocks.map((block, i) => {
+        if (block.kind === 'tool') {
+          return (
+            <ToolBlock
+              key={`t-${block.step.id}-${i}`}
+              step={block.step}
+              isLatest={i === lastToolIndex}
+              isLatestWrite={i === lastWriteIndex}
+              onExpand={onExpand}
+            />
+          );
+        }
+        if (block.kind === 'ui') {
+          return (
+            <UiElement
+              key={`u-${block.step.id}-${i}`}
+              step={block.step}
+              onAnswer={onAnswer}
+              disabled={disabled}
+            />
+          );
+        }
+        const { text: noEmbeds, embeds } = splitEmbeds(block.text);
+        const { text, images } = splitImages(noEmbeds);
+        if (!text && images.length === 0 && embeds.length === 0) return null;
+        return (
+          <React.Fragment key={`x-${i}`}>
+            {text && (
+              <XMarkdown
+                streaming={
+                  streaming && i === lastTextIndex
+                    ? { ...STREAM_ANIMATION, hasNextChunk: true }
+                    : STREAM_DONE
+                }
+              >
+                {text}
+              </XMarkdown>
+            )}
+            {images.length > 0 && <ImageGallery images={images} sessionId={sessionId} project={project} />}
+            {embeds.map((path) => (
+              <FilePreview key={path} path={path} onExpand={onExpand} />
+            ))}
+          </React.Fragment>
+        );
+      })}
+      {children}
+    </div>
+  );
+}
+
+/* OpenClaw-агент любить вставляти власну розмітку [embed url="…"] замість
+   виклику тулза. Розпізнаємо її й показуємо той самий файл із робочої теки —
+   інакше користувач бачив би сирий текст замість сторінки. */
+const EMBED_RE = /\[embed\s+url="([^"]+)"[^\]]*\]/gi;
+
+function splitEmbeds(markdown) {
+  const embeds = [];
+  const text = String(markdown || '').replace(EMBED_RE, (_m, url) => {
+    const path = String(url)
+      .replace(/^.*\/documents\//, '')
+      .replace(/^\/?preview\//, '')
+      .replace(/^\//, '');
+    if (path) embeds.push(path);
+    return '';
+  });
+  return { text, embeds };
+}
+
+function splitImages(markdown) {
+  const images = [];
+  const text = String(markdown || '').replace(
+    /!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g,
+    (_m, alt, src) => {
+      images.push({ alt, src });
+      return '';
+    }
+  );
+  return { text: text.replace(/\n{3,}/g, '\n\n').trim(), images };
+}
+
+/* Хвиля — символ розмови голосом (кнопка біля мікрофона) */
+function VoiceWave() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <path d="M4 11v2M8 8v8M12 5v14M16 8v8M20 11v2" />
+    </svg>
+  );
+}
+
+/* Знак у стилі Клода — восьмипроменева зірка. Використовуємо там, де раніше
+   були емодзі (заголовок чату, аватар бота): вона масштабується, фарбується
+   від currentColor і не залежить від емодзі-шрифту системи. */
+function ClaudeMark({ size = 16, className = '' }) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M12 2.2c.35 0 .64.27.67.62l.42 4.6 3.1-3.42a.67.67 0 0 1 1.13.66l-1.4 4.4 4.2-1.98a.67.67 0 0 1 .8 1.03l-2.94 3.56 4.6.42a.67.67 0 0 1 0 1.34l-4.6.42 2.93 3.56a.67.67 0 0 1-.79 1.03l-4.2-1.98 1.4 4.4a.67.67 0 0 1-1.13.66l-3.1-3.42-.42 4.6a.67.67 0 0 1-1.34 0l-.42-4.6-3.1 3.42a.67.67 0 0 1-1.13-.66l1.4-4.4-4.2 1.98a.67.67 0 0 1-.8-1.03l2.94-3.56-4.6-.42a.67.67 0 0 1 0-1.34l4.6-.42-2.94-3.56a.67.67 0 0 1 .8-1.03l4.2 1.98-1.4-4.4a.67.67 0 0 1 1.13-.66l3.1 3.42.42-4.6c.03-.35.32-.62.67-.62z"
+      />
+    </svg>
+  );
+}
 
 /* Налаштування появи тексту під час стрімінгу відповіді бота:
    кожен новий фрагмент проявляється з блюру (див. .x-markdown span у styles.css),
@@ -26,8 +226,16 @@ const STREAM_ANIMATION = {
    інакше готовий текст «блимав» би при кожному ре-рендері. */
 const STREAM_DONE = { hasNextChunk: false };
 
+const REASONING_LABELS = {
+  none: 'Авто',
+  low: 'Швидко',
+  medium: 'Збалансовано',
+  high: 'Глибоко',
+};
+const REASONING_LEVELS = Object.keys(REASONING_LABELS);
+
 const api = async (path, options = {}) => {
-  const res = await fetch(path, options);
+  const res = await authFetch(path, options);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`HTTP ${res.status}: ${text}`);
@@ -38,27 +246,162 @@ const api = async (path, options = {}) => {
 };
 
 const SESSION_KEY = 'virtual_bot_session_id';
+/* Кодинг — окремий простір розмов: свій список на бекенді (code-chats/), свої
+   назви, свій живий процес omp. Тому й останню відкриту розмову памʼятаємо
+   окремо, інакше перемикання режиму відкривало б чужу історію. */
+const CODE_SESSION_KEY = 'virtual_bot_code_session_id';
+const sessionKeyFor = (isCode) => (isCode ? CODE_SESSION_KEY : SESSION_KEY);
+/* Тека агента — шлях, а не назва: у кодингу важить, КУДИ пишуть. */
+const codePath = (project, root) => (project ? `${root}/${project}` : root);
+const withKind = (path, isCode) =>
+  `${path}${path.includes('?') ? '&' : '?'}kind=${isCode ? 'code' : 'chat'}`;
+const readStoredSession = (isCode) => {
+  try {
+    return localStorage.getItem(sessionKeyFor(isCode)) || '';
+  } catch {
+    return '';
+  }
+};
+
+/* Скільки чекати наступний шматок відповіді, перш ніж вважати стрім мертвим */
+const STREAM_STALL_MS = 120000;
 
 const toolIcons = {
   weather: <CloudOutlined />,
   currency: <DollarOutlined />,
   facts: <BookOutlined />,
   web_search: <SearchOutlined />,
+  image_search: <PictureOutlined />,
+  workspace_list: <FolderOpenOutlined />,
+  workspace_read: <FileTextOutlined />,
+  workspace_write: <FileTextOutlined />,
+  workspace_mkdir: <FolderOpenOutlined />,
+  workspace_delete: <FolderOpenOutlined />,
+  workspace_info: <FolderOpenOutlined />,
 };
+
+/* Ці тули не показуємо згорнутим рядком «tool_start/tool_done» — вони самі
+   малюють себе живою карткою (question/todo/choice), див. UiElements.jsx. */
+const UI_TOOL_NAMES = new Set(['ask_question', 'todo_list', 'show_choice']);
 
 const toolTitles = {
   weather: 'Погода',
   currency: 'Курс валют',
   facts: 'Факт',
   web_search: 'Пошук в інтернеті',
+  image_search: 'Пошук картинок',
+  workspace_info: 'Робоча тека',
+  workspace_list: 'Дивиться теку',
+  workspace_read: 'Читає файл',
+  workspace_write: 'Пише файл',
+  workspace_mkdir: 'Створює теку',
+  workspace_delete: 'Прибирає в кошик',
+  create_brain_file: 'Записує в памʼять',
+  create_brain_directory: 'Створює розділ памʼяті',
+  list_brain_navigation: 'Переглядає памʼять',
 };
 
-const QUICK_ACTIONS = [
-  { icon: '🌤', label: 'Погода', prompt: 'Яка погода у Києві?' },
-  { icon: '💱', label: 'Курс', prompt: 'Курс USD до UAH' },
-  { icon: '📖', label: 'Факт', prompt: 'Розкажи факт про ' },
-  { icon: '🔍', label: 'Пошук', prompt: 'Знайди в інтернеті ' },
-];
+/* Що саме бот зараз робить: не просто «викликаю інструмент», а конкретика —
+   який запит шукає, яке місто, який файл пише. Аргументи приходять у
+   payload.input події tool_start. */
+function toolDetail(tool, input) {
+  const args = input && typeof input === 'object' ? input : {};
+  switch (tool) {
+    case 'web_search':
+    case 'image_search':
+    case 'facts':
+      return args.query ? `«${args.query}»` : '';
+    case 'weather':
+      return args.city || '';
+    case 'currency':
+      return args.base ? `${args.base} → ${args.target || 'UAH'}` : '';
+    case 'workspace_list':
+      return args.path || 'корінь';
+    case 'workspace_read':
+    case 'workspace_write':
+    case 'workspace_mkdir':
+    case 'workspace_delete':
+    case 'create_brain_file':
+    case 'create_brain_directory':
+      return args.path || '';
+    default: {
+      const first = Object.values(args).find((v) => typeof v === 'string' && v.length < 120);
+      return first || '';
+    }
+  }
+}
+
+/* Один виклик інструмента: згорнутий рядок, який можна розгорнути.
+   Сам розкривається лише поки працює І якщо він найновіший — тоді видно
+   деталі саме поточної дії, а історія не захаращує відповідь. */
+function ToolBlock({ step, isLatest, isLatestWrite, onExpand }) {
+  const running = step.type !== 'done';
+  const writesFile = step.tool === 'workspace_write';
+  const [open, setOpen] = useState(false);
+  /* Розгорнутим лишається те, що зараз працює, і запис файлу — саме його
+     результат хочеться бачити, а не рядок «готово». */
+  const expanded = open || (running && isLatest) || (writesFile && isLatestWrite);
+
+  const toolName = toolTitles[step.tool] || step.tool;
+  const icon = toolIcons[step.tool] || null;
+  const detail = step.detail || toolDetail(step.tool, step.input);
+  const hasError = step.type === 'done' && step.result?.error;
+  const state = running ? 'tool-step-running' : hasError ? 'tool-step-error' : 'tool-step-done';
+
+  return (
+    <div className={`tool-block ${state}${expanded ? ' tool-block-open' : ''}`}>
+      <button type="button" className="tool-block-head" onClick={() => setOpen((v) => !v)}>
+        <span className="tool-step-icon">{icon}</span>
+        <span className="tool-step-name">{toolName}</span>
+        {detail && <span className="tool-step-detail">{detail}</span>}
+        <span className="tool-step-state">
+          {running ? 'працюю…' : hasError ? 'помилка' : 'готово'}
+        </span>
+        <span className="tool-block-chevron">{expanded ? <UpOutlined /> : <DownOutlined />}</span>
+      </button>
+      {expanded && (
+        <div className="tool-block-body">
+          {hasError && <div className="tool-block-error">{step.result.error}</div>}
+          {/* Пише файл — показуємо його прямо тут: код, що росте, а для
+              сторінки ще й те, як вона виглядає. */}
+          {step.tool === 'workspace_write' && detail ? (
+            <FilePreview path={detail} live={running} onExpand={onExpand} />
+          ) : (
+            detail && <div className="tool-block-arg">{detail}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Кроки інструментів із живим прогресом фетча (видно, що саме бот тягне з мережі).
+   Спінер малює CSS через .tool-step-running::before. */
+function ToolSteps({ steps }) {
+  if (!steps || steps.length === 0) return null;
+  return (
+    <ul className="tool-steps tool-steps-inline">
+      {steps.map((s) => {
+        const toolName = toolTitles[s.tool] || s.tool;
+        const icon = toolIcons[s.tool] || null;
+        const detail = s.detail || toolDetail(s.tool, s.input);
+        const hasError = s.type === 'done' && s.result?.error;
+        const state =
+          s.type === 'done' ? (hasError ? 'tool-step-error' : 'tool-step-done') : 'tool-step-running';
+        return (
+          <li key={s.id} className={`tool-step ${state}`}>
+            <span className="tool-step-icon">{icon}</span>
+            <span className="tool-step-name">{toolName}</span>
+            {detail && <span className="tool-step-detail">{detail}</span>}
+            <span className="tool-step-state">
+              {s.type === 'done' ? (hasError ? s.result.error : 'готово') : 'працюю…'}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 function looksLikeToolQuery(text) {
   const lowered = (text || '').toLowerCase();
@@ -115,9 +458,7 @@ function ToolCard({ tool, input, result }) {
       onClick={() => !error && setExpanded((v) => !v)}
       style={{
         marginTop: 12,
-        borderRadius: 10,
-        background: '#FDF8F2',
-        border: '1px solid #E4E1D6',
+        borderRadius: 20,
         cursor: error ? 'default' : 'pointer',
       }}
     >
@@ -209,10 +550,24 @@ function ToolCard({ tool, input, result }) {
 
 function App() {
   const [models, setModels] = useState([]);
+  /* Кодинг-режим: код пише окремий харнес (omp) над текою code/ проєкту.
+     Це НЕ ще одна модель у селекторі — у нього власний цикл інструментів,
+     тому і перемикач окремий, і адреса запиту інша. */
+  const [codeMode, setCodeMode] = useState(false);
+  const [codeAvailable, setCodeAvailable] = useState(false);
+  const [codeModel, setCodeModel] = useState('');
+  const [codeModels, setCodeModels] = useState([]);
+  const [codeRoot, setCodeRoot] = useState('');
+  const [codeProject, setCodeProject] = useState('');
+  const [codeProjects, setCodeProjects] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [files, setFiles] = useState([]);
+  /* Довгі вставки не заливають поле вводу: вони стають вкладенням-чіпом,
+     який відкривається як файл у міні-редакторі (див. handlePaste). */
+  const [pastes, setPastes] = useState([]);
+  const [editing, setEditing] = useState(null); // {uid, name, content, readOnly}
   const [messages, setMessages] = useState([]);
   const [sessionId, setSessionId] = useState(() => {
     try {
@@ -221,57 +576,532 @@ function App() {
       return '';
     }
   });
+  /* Список збережених чатів: розмови живуть на диску (chat_store.py), тож
+     після перезавантаження сторінки чи рестарту панелі до них можна вернутись. */
+  const [sessions, setSessions] = useState([]);
+  /* Проєкти — тека, яка завжди зверху списку чатів, зі своєю бібліотекою. */
+  const [projects, setProjects] = useState([]);
+  const [projectModal, setProjectModal] = useState(''); // id відкритого проєкту, або ''
+  /* Коли новий чат стартує «зсередини» проєкту, id сесії стає відомим лише
+     після першої відповіді (SSE-подія done) — доти прив'язку тримаємо тут. */
+  const [pendingChatProject, setPendingChatProject] = useState('');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  /* Велике прев'ю збоку: сюди бот сам відкриває файл (workspace_show) або
+     ти тиснеш «розгорнути» на міні-прев'ю в відповіді. */
+  const [previewFile, setPreviewFile] = useState('');
+  const [previewWidth, setPreviewWidth] = useState(420);
+  /* Фулскрін-режим прев'ю: панель висувається знизу на всю ширину, список
+     чатів ховається, а зверху зʼявляється кнопка «назад до чату». */
+  const [previewFullscreen, setPreviewFullscreen] = useState(false);
+  const [reasoningEffort, setReasoningEffort] = useState('none');
+  /* Модель, якою РЕАЛЬНО відповіли (мозки перемикаються самі при збоях) */
+  const [activeModel, setActiveModel] = useState('');
+  const [activeBrain, setActiveBrain] = useState('');
+  const [voiceModeOpen, setVoiceModeOpen] = useState(false);
   const abortRef = useRef(null);
 
   useEffect(() => {
+    const className = 'chat-preview-fullscreen-active';
+    document.body.classList.toggle(className, Boolean(previewFile && previewFullscreen));
+    if (!(previewFile && previewFullscreen)) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setPreviewFullscreen(false);
+    };
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.classList.remove(className);
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [previewFile, previewFullscreen]);
+
+  const refreshSessions = () =>
+    api(withKind('/api/sessions', codeMode))
+      .then((r) => setSessions(r.sessions || []))
+      .catch(() => {});
+
+  const refreshProjects = () =>
+    api('/api/projects')
+      .then((r) => setProjects(r.projects || []))
+      .catch(() => {});
+
+  useEffect(() => {
+    refreshSessions();
+    refreshProjects();
+    // Перемикання режиму = інший список розмов, тож перечитуємо його.
+  }, [codeMode]);
+
+  const createProject = async (name) => {
+    const created = await api('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    await refreshProjects();
+    return created;
+  };
+
+  const moveChatToProject = async (sessionId, projectId) => {
+    try {
+      await api(withKind(`/api/sessions/${encodeURIComponent(sessionId)}/project`, codeMode), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: projectId }),
+      });
+      await refreshSessions();
+    } catch (e) {
+      message.error(`Не вдалося перемістити чат: ${e.message}`);
+    }
+  };
+
+  /* «+ Новий чат тут» у модалці проєкту: новий чат стартує як завжди, а щойно
+     бекенд поверне його справжній session_id — прив'яжемо до проєкту. */
+  const newChatInProject = (projectId) => {
+    newSession();
+    setPendingChatProject(projectId);
+  };
+
+  /* Тули, які виконує ЗОВНІШНІЙ мозок (OpenClaw через MCP), не проходять через
+     стрім чату — вони прилітають окремим потоком подій /api/events. Підшиваємо
+     їх до останнього повідомлення бота, щоб у баблі було видно кроки роботи:
+     «шукає в мережі», «пише файл games/site/index.html». */
+  useEffect(() => {
+    let source = null;
+    let closed = false;
+    (async () => {
+      const url = await authEventSourceUrlAsync('/api/events');
+      if (closed) return;
+      source = new EventSource(url);
+      source.onmessage = (event) => {
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (payload && payload.type === 'preview' && payload.path) {
+        setPreviewFile(payload.path);
+        return;
+      }
+      if (payload && payload.type === 'ui') {
+        setMessages((prev) => {
+          const next = [...prev];
+          let index = next.length - 1;
+          while (index >= 0 && next[index].role !== 'ai') index -= 1;
+          if (index < 0 || !next[index].streaming) return prev;
+          const steps = [...(next[index].toolSteps || [])];
+          const id = payload.data?.id || `ui-${payload.kind}-${steps.length}`;
+          if (steps.some((s) => s.id === id)) return prev; // вже додано
+          steps.push({
+            id,
+            type: 'ui',
+            kind: payload.kind,
+            data: payload.data || {},
+            at: (next[index].content || '').length,
+          });
+          next[index] = { ...next[index], toolSteps: steps };
+          return next;
+        });
+        return;
+      }
+      if (!payload || payload.type !== 'tool') return;
+      setMessages((prev) => {
+        const next = [...prev];
+        let index = next.length - 1;
+        while (index >= 0 && next[index].role !== 'ai') index -= 1;
+        // Чіпляємо кроки лише до відповіді, яка ЗАРАЗ пишеться: інакше після
+        // перезавантаження сторінки вони б осіли на старому повідомленні.
+        if (index < 0 || !next[index].streaming) return prev;
+        const steps = [...(next[index].toolSteps || [])];
+        const id = `${payload.tool}-${payload.detail || ''}`;
+        const existing = steps.findIndex((s) => s.id === id && s.type === 'start');
+        if (payload.state === 'done' && existing >= 0) {
+          steps[existing] = { ...steps[existing], type: 'done', result: {} };
+        } else if (payload.state === 'start' && existing < 0) {
+          /* `at` — довжина тексту на момент виклику: за нею блоки шикуються
+             в тому порядку, в якому все відбувалось насправді. */
+          steps.push({
+            id,
+            type: 'start',
+            tool: payload.tool,
+            detail: payload.detail || '',
+            at: (next[index].content || '').length,
+          });
+        }
+        next[index] = { ...next[index], toolSteps: steps };
+        return next;
+      });
+      };
+    })();
+    return () => { closed = true; if (source) source.close(); };
+  }, []);
+
+  /* Відновлюємо останню відкриту розмову при завантаженні панелі */
+  useEffect(() => {
+    if (!sessionId || messages.length > 0) return;
+    api(withKind(`/api/sessions/${encodeURIComponent(sessionId)}`, codeMode))
+      .then((data) => {
+        const restored = (data.messages || []).map((m) => ({
+          role: m.role === 'assistant' ? 'ai' : 'user',
+          content: m.content,
+          streaming: false,
+          toolResults: [],
+          toolSteps: m.steps || [],
+          attachments: [],
+          imageAttachments: (m.attachments || []).filter((a) => a.type?.startsWith('image/')),
+        }));
+        if (restored.length) setMessages(restored);
+      })
+      .catch(() => {});
+  }, [sessionId, codeMode]);
+
+  const openSession = async (sid) => {
+    try {
+      const data = await api(withKind(`/api/sessions/${encodeURIComponent(sid)}`, codeMode));
+      setMessages(
+        (data.messages || []).map((m) => ({
+          role: m.role === 'assistant' ? 'ai' : 'user',
+          content: m.content,
+          streaming: false,
+          toolResults: [],
+          toolSteps: m.steps || [],
+          attachments: [],
+          imageAttachments: (m.attachments || []).filter((a) => a.type?.startsWith('image/')),
+        }))
+      );
+      setSessionId(sid);
+      try {
+        localStorage.setItem(sessionKeyFor(codeMode), sid);
+      } catch {}
+    } catch (e) {
+      message.error(e.message);
+    }
+  };
+
+  /* Перемикання Чат ⇄ Код — це зміна ПРОСТОРУ розмов, а не лише адреси
+     запиту: у кожного режиму власний список, власна відкрита розмова і
+     власний живий процес на бекенді. Тому запамʼятовуємо, де ми були, і
+     відновлюємо те, що було відкрито в новому режимі. */
+  /* Плейсхолдер поля вводу залежить від ширини: повний текст на 390px
+     не влазить у рядок між кнопками й переносився на другий, через що
+     однорядкове поле виглядало зламаним ще до першого символу. */
+  const [narrow, setNarrow] = useState(
+    typeof window !== 'undefined' ? window.innerWidth <= 680 : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 680px)');
+    const on = (e) => setNarrow(e.matches);
+    setNarrow(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+
+  /* Вибір моделі кодингу. Бекенд гасить живі процеси omp сам: модель
+     передається аргументом --model під час запуску, тож уже піднятий
+     процес далі працював би старою. */
+  const selectCodeModel = async (value) => {
+    if (!value || value === codeModel) return;
+    const previous = codeModel;
+    setCodeModel(value);   // оптимістично, щоб вибір не «залипав»
+    try {
+      const r = await api('/api/code/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: value }),
+      });
+      if (r?.selected) setCodeModel(r.selected);
+    } catch (e) {
+      setCodeModel(previous);
+      message.error(e.message);
+    }
+  };
+
+  const switchMode = (nextCode) => {
+    if (nextCode === codeMode || loading) return;
+    try {
+      if (sessionId) localStorage.setItem(sessionKeyFor(codeMode), sessionId);
+    } catch {}
+    setCodeMode(nextCode);
+    setMessages([]);
+    setSessionId(readStoredSession(nextCode));
+  };
+
+  const newSession = () => {
+    setMessages([]);
+    setSessionId('');
+    // Звичайний «+» не мав би тягнути за собою стару прив'язку до проєкту,
+    // якщо перед цим хтось натиснув «новий чат тут» у модалці проєкту.
+    setPendingChatProject('');
+    try {
+      localStorage.removeItem(sessionKeyFor(codeMode));
+    } catch {}
+    refreshSessions();
+  };
+
+  const pinSession = async (sid, pinned) => {
+    try {
+      await api(withKind(`/api/sessions/${encodeURIComponent(sid)}/pin`, codeMode), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned }),
+      });
+      await refreshSessions();
+    } catch (e) {
+      message.error(e.message);
+    }
+  };
+
+  /* Список моделей + та, якою реально відповіли. Шапка має показувати
+     ПРАВДУ: раніше там висіло «Claude Sonnet 5» із конфігу, хоча відповідав
+     OpenClaw своєю моделлю. */
+  const loadModels = () =>
     api('/api/models')
       .then((r) => {
         const list = (r.models || []).map((m) => ({
           value: m.id,
           label: m.label || m.id,
+          reasoning: m.reasoning || { supported: false, levels: ['none'], default: 'none' },
         }));
         setModels(list);
         if (r.selected) setSelectedModel(r.selected);
+        if (r.active) setActiveModel(r.active);
+        if (r.brain) setActiveBrain(r.brain);
       })
-      .catch(() => setModels([]));
+      .catch(() => {
+        setModels([]);
+        return null;
+      });
+
+  /* Кодинг-режим питаємо окремо від моделей: це інший харнес, і його
+     недоступність не має впливати на селектор моделей чату (і навпаки). */
+  useEffect(() => {
+    let cancelled = false;
+    api('/api/code/status')
+      .then((r) => {
+        if (cancelled) return;
+        setCodeAvailable(!!r.available);
+        setCodeModel(r.model || '');
+        setCodeModels(Array.isArray(r.models) ? r.models : []);
+        setCodeRoot(r.root || '');
+      })
+      .catch(() => !cancelled && setCodeAvailable(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* Список проєктів оновлюємо на КОЖНОМУ вході в кодинг-режим: проєкт могли
+     створити щойно, у бічній панелі, і вимагати перезавантаження сторінки
+     заради нього — так собі досвід. */
+  useEffect(() => {
+    if (!codeMode) return undefined;
+    let cancelled = false;
+    api('/api/projects')
+      .then((r) => !cancelled && setCodeProjects(Array.isArray(r.projects) ? r.projects : []))
+      .catch(() => !cancelled && setCodeProjects([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [codeMode]);
+
+  useEffect(() => {
+    /* Панель може завантажитись, поки бекенд ще піднімається — тоді в шапці
+       залипало «— недоступно —». Повторюємо кілька разів. */
+    let tries = 0;
+    let timer = 0;
+    let cancelled = false;
+    const tick = () => {
+      loadModels().then(() => {
+        if (cancelled) return;
+        tries += 1;
+        if (tries < 5) timer = window.setTimeout(() => {
+          if (!document.querySelector('.chat-panel-model option[value]:not([value=""])')) tick();
+        }, 3000);
+      });
+    };
+    tick();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   useEffect(() => {
     if (!selectedModel) return;
-    fetch('/api/model', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: selectedModel }),
-    }).catch(() => {});
+    (async () => {
+      const headers = { 'Content-Type': 'application/json', ...(await import('./auth.js').then(m => m.authHeaders()).catch(() => ({}))) };
+      // authHeaders already includes Authorization; avoid double import race — just use authFetch
+      const { authFetch: _af } = await import('./auth.js');
+      _af('/api/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: selectedModel }),
+      }).catch(() => {});
+    })();
   }, [selectedModel]);
+
+  const selectedModelInfo = models.find((model) => model.value === selectedModel);
+  const reasoningCapability = selectedModelInfo?.reasoning;
+  const reasoningLevels = Array.isArray(reasoningCapability?.levels)
+    ? reasoningCapability.levels.filter((level) => REASONING_LEVELS.includes(level))
+    : ['none'];
+  const supportedReasoningLevels = reasoningLevels.filter((level) => level !== 'none');
+  const supportsReasoning = Boolean(reasoningCapability?.supported && supportedReasoningLevels.length);
+  const defaultReasoningEffort = reasoningLevels.includes(reasoningCapability?.default)
+    ? reasoningCapability.default
+    : 'none';
+  const effectiveReasoningEffort = reasoningLevels.includes(reasoningEffort)
+    ? reasoningEffort
+    : defaultReasoningEffort;
+
+  /* Вставка «стіни тексту» (лог, код, стаття) не має перетворювати поле вводу
+     на портянку: якщо вставлене довше за поріг — згортаємо його у вкладення,
+     як це робить claude.ai. Текст нікуди не дівається: він іде в повідомлення
+     цілком, а в панелі його видно як файл, що відкривається в редакторі. */
+  const PASTE_CHARS = 800;
+  const PASTE_LINES = 10;
+
+  const handlePaste = (event) => {
+    const text = event.clipboardData?.getData('text/plain') || '';
+    if (!text) return;
+    const lineCount = text.split('\n').length;
+    if (text.length < PASTE_CHARS && lineCount < PASTE_LINES) return;
+    event.preventDefault();
+    setPastes((prev) => [
+      ...prev,
+      {
+        uid: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        name: `Вставлений текст ${prev.length + 1}.txt`,
+        content: text,
+      },
+    ]);
+  };
+
+  /* Кроки інструментів живуть у стані панелі; після відповіді відправляємо
+     їх у сесію, щоб історія відновлювалась цілком. */
+  const saveSteps = (index) => {
+    setMessages((prev) => {
+      const steps = prev[index]?.toolSteps || [];
+      const sid = (() => {
+        try {
+          return readStoredSession(codeMode);
+        } catch {
+          return '';
+        }
+      })();
+      if (steps.length && sid) {
+        (async () => {
+          const { authFetch: _af2 } = await import('./auth.js');
+          _af2(withKind(`/api/sessions/${encodeURIComponent(sid)}/steps`, codeMode), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ steps }),
+          }).catch(() => {});
+        })();
+      }
+      return prev;
+    });
+  };
+
+  /* Розпізнане голосом дописуємо до вже набраного, а не затираємо його. */
+  const appendVoiceText = (text) => {
+    setInput((prev) => (prev ? `${prev.replace(/\s+$/, '')} ${text}` : text));
+  };
+
+  const handleVoiceExchange = (userText, assistantText, emotion) => {
+    if (!userText && !assistantText) return;
+    setMessages((prev) => [
+      ...prev,
+      ...(userText ? [{ role: 'user', content: userText }] : []),
+      ...(assistantText
+        ? [{ role: 'ai', content: assistantText, streaming: false, emotion, toolResults: [], toolSteps: [] }]
+        : []),
+    ]);
+    refreshSessions();
+  };
 
   const handleSubmit = async (value) => {
     const text = value.trim();
-    if (!text && files.length === 0) return;
+    if (!text && files.length === 0 && pastes.length === 0) return;
 
     const fileLinks = files
-      .filter((f) => f.status === 'done' && f.url)
+      .filter((f) => f.status === 'done' && f.url && !f.type?.startsWith('image/'))
       .map((f) => `[${f.name}](${f.url})`)
       .join('\n');
 
-    const userContent = [text, fileLinks].filter(Boolean).join('\n\n');
+    /* Моделі віддаємо вставки повністю (у рамці з іменем), а в баблі
+       користувача лишається тільки те, що він реально набрав, + чіпи. */
+    const pasteBlocks = pastes
+      .map((p) => `--- ${p.name} ---\n${p.content}`)
+      .join('\n\n');
+
+    const userContent = [text, pasteBlocks, fileLinks].filter(Boolean).join('\n\n');
+    const imageAttachments = files
+      .filter((f) => f.status === 'done' && f.url && f.type?.startsWith('image/'))
+      .map((f) => ({ url: f.url, name: f.name, type: f.type }));
+    files.forEach((f) => f.previewUrl && URL.revokeObjectURL(f.previewUrl));
+    const attachments = pastes.map((p) => ({ ...p }));
+    const requestMessage = userContent || 'Опиши прикріплене зображення.';
 
       setInput('');
       setFiles([]);
+      setPastes([]);
       setLoading(true);
 
       const botIndex = messages.length + 1;
       setMessages((prev) => [
         ...prev,
-        { role: 'user', content: userContent },
+        { role: 'user', content: text || fileLinks, attachments, imageAttachments },
         { role: 'ai', content: '', streaming: true, toolResults: [], mode: '', toolSteps: [] },
       ]);
 
+      /* Оголошені ДО try: catch показує помилку разом із кроками, і якщо
+         запит упав ще до створення цих змінних (мережа, 401), звертання до
+         них у catch не має саме́ кидати ReferenceError і ковтати помилку. */
+      let toolResults = [];
+      let mode = '';
+      let toolSteps = [];
+
       try {
-        const res = await fetch('/api/chat', {
+        /* Сторожовий таймер: якщо бекенд помер посеред стріму, читання може
+           не завершитись НІКОЛИ — і кнопка назавжди лишалась «стоп», а нове
+           повідомлення вже не надіслати. Кожен чанк перезапускає відлік. */
+        const controller = new AbortController();
+        let watchdog = 0;
+        const armWatchdog = () => {
+          clearTimeout(watchdog);
+          watchdog = setTimeout(() => controller.abort(), STREAM_STALL_MS);
+        };
+        armWatchdog();
+
+        const _headers = { 'Content-Type': 'application/json', ...(await import('./auth.js').then(m => m.authHeaders()).catch(() => ({}))) };
+        // authHeaders already did getToken, reuse it — but we need it here, so ask again cleanly:
+        const _tok = await import('./auth.js').then(m => m.getAuthToken()).catch(() => "");
+        if (_tok) _headers.Authorization = `Bearer ${_tok}`;
+        /* Кодинг-режим ходить іншою адресою, але ТИМ САМИМ SSE-контрактом
+           (delta / tool_start / tool_done / done) — тому весь розбір потоку
+           нижче спільний і дублювати його не треба. */
+        const res = await fetch(codeMode ? '/api/code/chat' : '/api/chat', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: userContent, stream: true, session_id: sessionId }),
+          headers: _headers,
+          body: JSON.stringify(
+            codeMode
+              ? {
+                  message: requestMessage,
+                  session_id: sessionId,
+                  project: codeProject,
+                }
+              : {
+                  message: requestMessage,
+                  stream: true,
+                  session_id: sessionId,
+                  reasoning_effort: effectiveReasoningEffort,
+                  attachments: imageAttachments,
+                }
+          ),
+          signal: controller.signal,
         });
         if (!res.ok) {
           const errText = await res.text();
@@ -283,14 +1113,12 @@ function App() {
         let buffer = '';
         let fullReply = '';
         let emotion = 'idle';
-        let toolResults = [];
-        let mode = '';
-        let toolSteps = [];
-        abortRef.current = { abort: () => reader.cancel() };
+        abortRef.current = { abort: () => { clearTimeout(watchdog); controller.abort(); } };
 
         while (true) {
           const { done, value: chunk } = await reader.read();
           if (done) break;
+          armWatchdog();
           buffer += decoder.decode(chunk, { stream: true });
           const lines = buffer.split('\n');
           buffer = lines.pop();
@@ -309,37 +1137,61 @@ function App() {
                   } else if (eventType === 'emotion') {
                     emotion = payload.emotion || emotion;
                   } else if (eventType === 'tool_start') {
-                    toolSteps = [
-                      ...toolSteps,
-                      {
-                        type: 'start',
-                        tool: payload.tool,
-                        input: payload.input,
-                        id: `${payload.tool}-${toolSteps.length}`,
-                      },
-                    ];
-                    updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps);
+                    // ask_question/todo_list/show_choice малюють себе самі
+                    // карткою (подія /api/events типу "ui") — генерований
+                    // тут згорнутий рядок був би просто дублем.
+                    if (!UI_TOOL_NAMES.has(payload.tool)) {
+                      toolSteps = [
+                        ...toolSteps,
+                        {
+                          type: 'start',
+                          tool: payload.tool,
+                          input: payload.input,
+                          id: `${payload.tool}-${toolSteps.length}`,
+                          at: fullReply.length,
+                        },
+                      ];
+                      updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps);
+                    }
                   } else if (eventType === 'tool_done') {
-                    toolSteps = toolSteps.map((s) =>
-                      s.tool === payload.tool && s.type === 'start'
-                        ? { ...s, type: 'done', result: payload.result }
-                        : s
-                    );
-                    updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps);
+                    if (!UI_TOOL_NAMES.has(payload.tool)) {
+                      toolSteps = toolSteps.map((s) =>
+                        s.tool === payload.tool && s.type === 'start'
+                          ? { ...s, type: 'done', result: payload.result }
+                          : s
+                      );
+                      updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps);
+                    }
                   } else if (eventType === 'done') {
                     fullReply = payload.reply || fullReply;
                     emotion = payload.emotion || emotion;
                     toolResults = Array.isArray(payload.tool_results)
                       ? payload.tool_results.filter(
-                          (tr) => tr && typeof tr === 'object' && typeof tr.tool === 'string' && tr.tool && tr.result && typeof tr.result === 'object'
+                          (tr) =>
+                            tr &&
+                            typeof tr === 'object' &&
+                            typeof tr.tool === 'string' &&
+                            tr.tool &&
+                            !UI_TOOL_NAMES.has(tr.tool) &&
+                            tr.result &&
+                            typeof tr.result === 'object'
                         )
                       : [];
                     mode = payload.mode || '';
+                    toolSteps = toolSteps.map((step) =>
+                      step.type === 'start' ? { ...step, type: 'done', result: step.result || {} } : step
+                    );
+                    if (payload.model) setActiveModel(payload.model);
+                    if (payload.mode) setActiveBrain(payload.mode);
                     if (payload.session_id && payload.session_id !== sessionId) {
                       setSessionId(payload.session_id);
                       try {
-                        localStorage.setItem(SESSION_KEY, payload.session_id);
+                        localStorage.setItem(sessionKeyFor(codeMode), payload.session_id);
                       } catch {}
+                      if (pendingChatProject) {
+                        moveChatToProject(payload.session_id, pendingChatProject);
+                        setPendingChatProject('');
+                      }
                     }
                     updateBotMessage(botIndex, fullReply, false, toolResults, mode, toolSteps);
                   } else if (eventType === 'error') {
@@ -353,12 +1205,29 @@ function App() {
             }
           }
         }
+        clearTimeout(watchdog);
         updateBotMessage(botIndex, fullReply || '(порожня відповідь)', false, toolResults, mode, toolSteps);
+        /* Кроки зберігаємо на диск разом із відповіддю — інакше при поверненні
+           до чату лишався б сам текст, без того, що бот робив. */
+        saveSteps(botIndex);
       } catch (err) {
-        updateBotMessage(botIndex, `Помилка: ${err.message}`, false, [], mode, []);
+        const text =
+          err.name === 'AbortError'
+            ? 'Звʼязок із ботом обірвався — спробуй ще раз.'
+            : `Помилка: ${err.message}`;
+        const finishedSteps = toolSteps.map((step) =>
+          step.type === 'start'
+            ? { ...step, type: 'done', result: { error: 'Запит завершився раніше' } }
+            : step
+        );
+        updateBotMessage(botIndex, text, false, [], mode, finishedSteps);
       } finally {
         abortRef.current = null;
         setLoading(false);
+        // Назву новому чату бот придумує у фоні — перепитуємо список трохи
+        // згодом, інакше в боковій панелі лишався б заголовок-заглушка.
+        refreshSessions();
+        setTimeout(refreshSessions, 4000);
       }
     };
 
@@ -372,7 +1241,17 @@ function App() {
           streaming,
           toolResults: toolResults || next[index].toolResults || [],
           mode: mode || next[index].mode || '',
-          toolSteps: toolSteps || next[index].toolSteps || [],
+          /* Порожній список НЕ затирає кроки: коли тули виконує зовнішній мозок,
+             вони приходять окремим потоком /api/events, а стрім чату шле [] —
+             і раніше фінальна подія done стирала все, що встигло показатись. */
+          toolSteps: (() => {
+            const current = toolSteps && toolSteps.length ? toolSteps : next[index].toolSteps || [];
+            return streaming
+              ? current
+              : current.map((step) =>
+                  step.type === 'start' ? { ...step, type: 'done', result: step.result || {} } : step
+                );
+          })(),
         };
       }
       return next;
@@ -400,14 +1279,20 @@ function App() {
         name: file.name,
         status: 'uploading',
         url: '',
+        type: file.type || 'application/octet-stream',
+        previewUrl: file.type?.startsWith('image/') ? URL.createObjectURL(file) : '',
       };
       setFiles((prev) => [...prev, uploadingFile]);
 
       try {
         const formData = new FormData();
         formData.append('file', file);
+        const _tokUp = await import('./auth.js').then(m => m.getAuthToken()).catch(() => "");
+        const _hUp = {};
+        if (_tokUp) _hUp.Authorization = `Bearer ${_tokUp}`;
         const r = await fetch('/api/chat/upload', {
           method: 'POST',
+          headers: _hUp,
           body: formData,
         });
         if (!r.ok) throw new Error(`Upload failed: ${r.status}`);
@@ -415,7 +1300,7 @@ function App() {
         setFiles((prev) =>
           prev.map((f) =>
             f.uid === uid
-              ? { ...f, status: 'done', url: data.url, name: data.name }
+              ? { ...f, status: 'done', url: data.url, name: data.name, type: data.type || f.type }
               : f
           )
         );
@@ -434,13 +1319,23 @@ function App() {
   };
 
   const removeFile = (uid) => {
-    setFiles((prev) => prev.filter((f) => f.uid !== uid));
+    setFiles((prev) => {
+      const removed = prev.find((f) => f.uid === uid);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      return prev.filter((f) => f.uid !== uid);
+    });
   };
+
+  /* Проєкт поточного чату — «додати в бібліотеку» з каруселі падає саме туди,
+     а не в загальну бібліотеку сесії, коли чат прив'язаний до проєкту. */
+  const activeProjectSlug = sessions.find((s) => s.id === sessionId)?.project || '';
 
   const items = useMemo(
     () =>
       messages.map((msg, index) => {
         const toolResults = msg.toolResults || [];
+        const attachments = msg.attachments || [];
+        const imageAttachments = msg.imageAttachments || attachments.filter((a) => a.type?.startsWith('image/'));
         return {
           key: index,
           role: msg.role,
@@ -448,23 +1343,55 @@ function App() {
           streaming: msg.streaming,
           toolResults,
           toolSteps: msg.toolSteps || [],
+          imageAttachments,
           mode: msg.mode || '',
           /* Увага: Bubble НЕ передає `info.streaming` (у його API є лише
              status/key/extraInfo), тому беремо ознаку стрімінгу з власного
              стану повідомлення (msg.streaming), який ставить updateBotMessage. */
           contentRender:
-            msg.role === 'ai'
-              ? (content) => (
-                  <div className={`markdown-body${msg.streaming ? ' is-streaming' : ''}`}>
-                    <XMarkdown
-                      streaming={
-                        msg.streaming
-                          ? { ...STREAM_ANIMATION, hasNextChunk: true }
-                          : STREAM_DONE
-                      }
-                    >
+            msg.role === 'user'
+              ? attachments.length > 0 || imageAttachments.length > 0
+                ? (content) => (
+                    <div className="user-content" style={{ whiteSpace: 'pre-wrap' }}>
                       {content}
-                    </XMarkdown>
+                      <div className="paste-chips">
+                        {attachments.map((att) => (
+                          <button
+                            key={att.uid}
+                            type="button"
+                            className="paste-chip"
+                            onClick={() => setEditing({ ...att, readOnly: true })}
+                            title="Відкрити в редакторі"
+                          >
+                            <FileTextOutlined /> {att.name}
+                            <span className="paste-chip-size">
+                              {att.content.split('\n').length} рядк.
+                            </span>
+                          </button>
+                        ))}
+                        {imageAttachments.length > 0 && (
+                          <div className="sent-image-grid">
+                            {imageAttachments.map((att) => (
+                              <img key={att.url} src={att.url} alt={att.name || 'Зображення'} className="sent-image" />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                : undefined
+              : msg.role === 'ai'
+              ? (content) => (
+                  <BotAnswer
+                    content={content}
+                    steps={msg.toolSteps}
+                    streaming={msg.streaming}
+                    sessionId={sessionId}
+                    project={activeProjectSlug}
+                    onExpand={setPreviewFile}
+                    onAnswer={handleSubmit}
+                    disabled={loading}
+                  >
                     {toolResults.map((tr) => (
                       <ToolCard
                         key={`${tr.tool}-${JSON.stringify(tr.input || {})}`}
@@ -473,23 +1400,23 @@ function App() {
                         result={tr.result}
                       />
                     ))}
-                  </div>
+                  </BotAnswer>
                 )
               : undefined,
         };
       }),
-    [messages]
+    [messages, sessionId]
   );
 
   const roles = {
     user: {
       placement: 'end',
       variant: 'filled',
-      avatar: { icon: 'Ти', style: { background: '#5A5750', color: '#fff' } },
+      avatar: { icon: 'Ти', style: { background: 'var(--blue)', color: '#fff' } },
       style: {
-        background: '#F5E6D3',
-        color: '#2B2A26',
-        border: '1px solid #EAD5BC',
+        background: 'color-mix(in srgb, var(--green) 14%, var(--bg-panel))',
+        color: 'var(--text)',
+        border: '1px solid var(--border)',
       },
       contentRender: (content) => (
         <div className="user-content" style={{ whiteSpace: 'pre-wrap' }}>
@@ -500,11 +1427,11 @@ function App() {
     ai: {
       placement: 'start',
       variant: 'filled',
-      avatar: { icon: '🦀', style: { background: '#C96442', color: '#fff' } },
+      avatar: { icon: <ClaudeMark size={15} />, style: { background: 'var(--green)', color: '#fff' } },
       style: {
-        background: '#FFFFFF',
-        color: '#2B2A26',
-        border: '1px solid #E4E1D6',
+        background: 'var(--bg-panel)',
+        color: 'var(--text)',
+        border: '1px solid var(--border)',
       },
       loadingRender: (props) => {
         const item = items[props.index] || items.find((candidate) => candidate.streaming) || {};
@@ -517,33 +1444,10 @@ function App() {
           <div className="chat-loading">
             {toolInProgress ? (
               <div>
-                <div>🔧 використовую інструменти…</div>
-                {steps.length > 0 && (
-                  <ul className="tool-steps">
-                    {steps.map((s) => {
-                      const toolName = toolTitles[s.tool] || s.tool;
-                      if (s.type === 'start') {
-                        return (
-                          <li key={s.id} className="tool-step tool-step-running">
-                            ⏳ {toolName}: викликаю…
-                          </li>
-                        );
-                      }
-                      if (s.type === 'done') {
-                        const hasError = s.result?.error;
-                        return (
-                          <li
-                            key={s.id}
-                            className={`tool-step ${hasError ? 'tool-step-error' : 'tool-step-done'}`}
-                          >
-                            {hasError ? '⚠️' : '✅'} {toolName}: {hasError ? s.result.error : 'готово'}
-                          </li>
-                        );
-                      }
-                      return null;
-                    })}
-                  </ul>
-                )}
+                <div className="chat-loading-title">
+                  <ToolOutlined /> використовую інструменти…
+                </div>
+                <ToolSteps steps={steps} />
               </div>
             ) : (
               'бот думає…'
@@ -556,50 +1460,300 @@ function App() {
         const item = items.find((it) => String(it.key) === String(info?.key));
         const isStreaming = !!item?.streaming;
         return (
-          <div className={`markdown-body${isStreaming ? ' is-streaming' : ''}`}>
-            <XMarkdown
-              streaming={
-                isStreaming ? { ...STREAM_ANIMATION, hasNextChunk: true } : STREAM_DONE
-              }
-            >
-              {content}
-            </XMarkdown>
-          </div>
+          <BotAnswer
+            content={content}
+            steps={item?.toolSteps}
+            streaming={isStreaming}
+            sessionId={sessionId}
+            project={activeProjectSlug}
+            onExpand={setPreviewFile}
+            onAnswer={handleSubmit}
+            disabled={loading}
+          />
         );
       },
     },
   };
 
+  /* Модель відповіді не з нашого списку → показуємо її окремим пунктом */
+  const activeIsExternal = !!activeModel && !models.some((m) => m.value === activeModel);
+
+  const sessionList = (
+    <SessionList
+      sessions={sessions}
+      activeId={sessionId}
+      onOpen={(sid) => {
+        openSession(sid);
+        setDrawerOpen(false);
+      }}
+      onNew={() => {
+        newSession();
+        setDrawerOpen(false);
+      }}
+      onPin={pinSession}
+      projects={projects}
+      onOpenProject={(id) => {
+        setProjectModal(id);
+        setDrawerOpen(false);
+      }}
+      onCreateProject={createProject}
+      onMoveToProject={moveChatToProject}
+    />
+  );
+
   return (
-    <div className="chat-panel">
-      <div className="chat-panel-header">
-        <span className="chat-panel-title">💬 Чат із Клодом Ботом</span>
-        <label className="chat-panel-model">
-          <span>Модель:</span>
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value)}
-            disabled={models.length === 0}
-          >
-            {models.length === 0 && <option value="">— недоступно —</option>}
-            {models.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
+    <div className={`chat-layout${previewFile && previewFullscreen ? ' chat-layout-preview-full' : ''}`}>
+      {/* На широкому екрані список чатів завжди збоку, на вузькому —
+          ховається під кнопку зліва й виїжджає шухлядою. */}
+      <aside className="chat-sidebar">{sessionList}</aside>
+
+      <Drawer
+        open={drawerOpen}
+        placement="left"
+        width={300}
+        onClose={() => setDrawerOpen(false)}
+        styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' } }}
+        title="Чати"
+        destroyOnClose
+      >
+        {drawerOpen ? sessionList : null}
+        {/* На телефоні чат займає весь екран і нижньої смуги там немає —
+            інакше вона накривала б поле вводу й ділила екран навпіл. Тому
+            решта розділів доступна звідси: одна шухляда замість двох
+            конкурентних навігацій. */}
+        {drawerOpen && <DrawerSections onGo={() => setDrawerOpen(false)} />}
+      </Drawer>
+
+      {previewFile && (
+        <SidePreview
+          path={previewFile}
+          width={previewWidth}
+          onWidth={setPreviewWidth}
+          fullscreen={previewFullscreen}
+          onToggleFullscreen={() => setPreviewFullscreen((v) => !v)}
+          onClose={() => {
+            setPreviewFile('');
+            setPreviewFullscreen(false);
+          }}
+        />
+      )}
+
+      <div className="chat-panel">
+        <div className="chat-panel-header">
+          <Button
+            className="chat-sidebar-toggle"
+            type="text"
+            icon={<MenuOutlined />}
+            onClick={() => setDrawerOpen(true)}
+            title="Мої чати"
+          />
+
+          {/* Перемикач Чат / Код — сегментована кнопка Material 3.
+              Обраний сегмент має не лише колір, а й галочку: у чорно-білому
+              режимі та для дальтоніків заливка сама по собі нічого не каже.
+              Ролі tablist тут НЕ ставимо — це вибір режиму, а не вкладки:
+              панелі під ним не змінюються, змінюється простір розмов.
+              Кодинг-режим ховаємо цілком, якщо omp не встановлено —
+              мертва кнопка гірша за її відсутність. */}
+          {codeAvailable && (
+            <div className="chat-mode-wrap">
+              <div className="m3-segmented chat-mode-switch" role="group" aria-label="Режим розмови">
+                <button
+                  type="button"
+                  className={codeMode ? '' : 'active'}
+                  onClick={() => switchMode(false)}
+                  onKeyDown={(e) => { if (e.key === 'ArrowRight') { e.preventDefault(); switchMode(true); } }}
+                  disabled={loading}
+                  aria-pressed={!codeMode}
+                  title="Звичайна розмова"
+                >
+                  <span className="seg-check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="m5 12.6 4.6 4.4L19 6.8" /></svg>
+                  </span>
+                  <span>Чат</span>
+                </button>
+                <button
+                  type="button"
+                  className={codeMode ? 'active' : ''}
+                  onClick={() => switchMode(true)}
+                  onKeyDown={(e) => { if (e.key === 'ArrowLeft') { e.preventDefault(); switchMode(false); } }}
+                  disabled={loading}
+                  aria-pressed={codeMode}
+                  title={`Код пише omp (${codeModel})`}
+                >
+                  <span className="seg-check" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="m5 12.6 4.6 4.4L19 6.8" /></svg>
+                  </span>
+                  <span>Код</span>
+                </button>
+              </div>
+              {codeMode && (
+                <select
+                  className="chat-mode-project"
+                  value={codeProject}
+                  onChange={(e) => setCodeProject(e.target.value)}
+                  aria-label="Тека, у якій працює omp"
+                  title={codeRoot ? `omp працює в: ${codePath(codeProject, codeRoot)}` : 'Тека, у якій працюватиме omp'}
+                >
+                  <option value="">code/</option>
+                  {codeProjects.map((pr) => (
+                    <option key={pr.id} value={pr.id}>
+                      {`code/${pr.id}/`}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+
+          <div className="chat-panel-model">
+            {codeMode ? (
+              /* Селектор вище керує мозком ЧАТУ — у режимі коду він показував
+                 би неправду, тому тут окремий селектор моделі САМОГО omp.
+                 Раніше на цьому місці стояла незмінна підпис-табличка:
+                 модель було видно, а змінити нічим.
+
+                 У закритому вигляді підпис БЕЗ префікса провайдера:
+                 «opencode-go/» однакове майже в усіх пунктах і лише з'їдає
+                 ширину; повний id лишається в title. */
+              <select
+                className="chat-code-model"
+                value={codeModel}
+                onChange={(e) => selectCodeModel(e.target.value)}
+                disabled={loading || codeModels.length === 0}
+                aria-label="Модель кодинг-агента"
+                title={`Кодом займається omp, модель ${codeModel}`}
+              >
+                {codeModels.length === 0 && <option value="">— недоступно —</option>}
+                {codeModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {shortModel(m.label || m.id)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={models.length === 0}
+                title="Модель Omni"
+              >
+                {models.length === 0 && <option value="">— недоступно —</option>}
+                {models.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {/* Правда про те, хто РЕАЛЬНО відповів, — окремим бейджем, а не
+                підміною значення селектора: інакше вибір моделі «стрибав
+                назад», щойно приходила відповідь від запасного мозку. */}
+            {!codeMode && activeBrain && (
+              <span
+                className="chat-model-live"
+                title={
+                  activeIsExternal
+                    ? `Востаннє відповів ${activeBrain}: ${activeModel} (запасний мозок)`
+                    : 'Мозок, який реально відповів'
+                }
+              >
+                {activeIsExternal ? `${activeBrain}: ${activeModel}` : activeBrain}
+              </span>
+            )}
+            {supportsReasoning && (
+              <label className="reasoning-control">
+                <span>Міркування</span>
+                <select
+                  value={effectiveReasoningEffort}
+                  onChange={(event) => setReasoningEffort(event.target.value)}
+                  title="Рівень міркування для наступної відповіді"
+                >
+                  {reasoningLevels.map((level) => (
+                    <option key={level} value={level}>
+                      {REASONING_LABELS[level] || level}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+
+          {/* Клас замість інлайн-стилю: третя колонка шапки має вміти
+              стискатися на вузькому екрані, а інлайн-стиль не дає це
+              перевизначити з медіа-запиту. */}
+          <div className="chat-panel-actions">
+            <TopbarAuth />
+            <Button
+              type="text"
+              className="chat-new-btn"
+              icon={<PlusOutlined />}
+              onClick={newSession}
+              title="Новий чат"
+            />
+          </div>
+        </div>
+
+        <div className="chat-body" onPasteCapture={handlePaste}>
+          <div className="chat-messages">
+            {items.length === 0 ? (
+              /* Порожня розмова — це не помилка, а запрошення. Порожня біла
+                 коробка на пів екрана читалась як «щось не завантажилось»,
+                 тому кажемо прямо, що зараз відбувається і що робити. */
+              <div className="chat-empty-state">
+                <div className="chat-empty-mark" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M20 14.5A2.5 2.5 0 0 1 17.5 17H9l-4 3.5V6.5A2.5 2.5 0 0 1 7.5 4h10A2.5 2.5 0 0 1 20 6.5z" />
+                  </svg>
+                </div>
+                <h2 className="chat-empty-title">
+                  {codeMode ? 'Задача для omp' : 'Про що поговоримо?'}
+                </h2>
+                <p className="chat-empty-lead">
+                  {codeMode
+                    ? `Опиши, що зробити з кодом — omp працює в теці ${codeProject ? `code/${codeProject}/` : 'code/'}.`
+                    : 'Напиши повідомлення внизу, прикріпи файл або натисни мікрофон, щоб продиктувати.'}
+                </p>
+              </div>
+            ) : (
+              <Bubble.List items={items} roles={roles} autoScroll />
+            )}
+          </div>
+
+          <div className="chat-input-area">
+        {pastes.length > 0 && (
+          <div className="paste-chips">
+            {pastes.map((p) => (
+              <div key={p.uid} className="paste-chip-wrap">
+                <button
+                  type="button"
+                  className="paste-chip"
+                  onClick={() => setEditing({ ...p, readOnly: false })}
+                  title="Відкрити в редакторі"
+                >
+                  <FileTextOutlined /> {p.name}
+                  <span className="paste-chip-size">{p.content.split('\n').length} рядк.</span>
+                </button>
+                <button
+                  type="button"
+                  className="paste-chip-remove"
+                  onClick={() => setPastes((prev) => prev.filter((x) => x.uid !== p.uid))}
+                  title="Прибрати"
+                >
+                  ×
+                </button>
+              </div>
             ))}
-          </select>
-        </label>
-      </div>
+          </div>
+        )}
 
-      <div className="chat-messages">
-        <Bubble.List items={items} roles={roles} autoScroll />
-      </div>
-
-      <div className="chat-input-area">
         {files.length > 0 && (
           <div className="attached-files">
             {files.map((f) => (
               <div key={f.uid} className={`attached-file ${f.status}`}>
+                {f.previewUrl && (
+                  <img src={f.previewUrl} alt={f.name} className="attached-file-image" />
+                )}
                 <span className="attached-file-name">{f.name}</span>
                 {f.status === 'uploading' && (
                   <span className="attached-file-status">завантаження…</span>
@@ -608,7 +1762,16 @@ function App() {
                   <span className="attached-file-status">помилка</span>
                 )}
                 {f.status === 'done' && (
-                  <button type="button" className="attached-file-remove" onClick={() => removeFile(f.uid)}>
+                  /* aria-label обов'язковий: єдиний вміст кнопки — гліф «×»,
+                     і скрін-рідер оголошував би її як «times» без жодного
+                     натяку, що саме вона прибирає. */
+                  <button
+                    type="button"
+                    className="attached-file-remove"
+                    onClick={() => removeFile(f.uid)}
+                    title={`Прибрати ${f.name}`}
+                    aria-label={`Прибрати файл ${f.name}`}
+                  >
                     ×
                   </button>
                 )}
@@ -622,33 +1785,44 @@ function App() {
           ref={fileInputRef}
           style={{ display: 'none' }}
           onChange={handleFileSelect}
+          aria-label="Прикріпити файл до повідомлення"
           multiple
         />
-
-        <div className="quick-actions">
-          {QUICK_ACTIONS.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              className="quick-action-chip"
-              onClick={() => setInput(action.prompt)}
-              title={action.prompt}
-              disabled={loading}
-            >
-              <span className="quick-action-icon">{action.icon}</span>
-              <span>{action.label}</span>
-            </button>
-          ))}
-        </div>
 
         <Sender
           value={input}
           onChange={(v) => setInput(v)}
           onSubmit={handleSubmit}
           loading={loading}
-          placeholder="Повідомлення для бота…"
+          placeholder={
+            codeMode
+              ? (narrow ? 'Задача для omp…' : `Задача для omp — ${codeProject ? `code/${codeProject}/` : 'code/'}`)
+              : (narrow ? 'Повідомлення…' : 'Повідомлення для бота…')
+          }
           allowSpeech={false}
           components={{ input: BlurTypingInput }}
+          /* Один рядок, що росте: так текст стоїть на одній висоті з кнопками
+             «+» і «відправити», а комфортну висоту поля дає падінг картки. */
+          autoSize={{ minRows: 1, maxRows: 10 }}
+          /* suffix — це «хвіст» смуги вводу, де живе кнопка відправки
+             (у Sender v2 немає props actions). Ставимо мікрофон перед нею. */
+          suffix={(oriNode) => (
+            <span className="sender-actions">
+              {/* Голосовий режим переїхав сюди — поруч із мікрофоном, бо це
+                  про ту саму розмову голосом, а не про налаштування панелі. */}
+              <Tooltip title="Розмова голосом">
+                <Button
+                  type="text"
+                  className="voice-mode-btn"
+                  icon={<VoiceWave />}
+                  onClick={() => setVoiceModeOpen(true)}
+                  aria-label="Відкрити голосову розмову"
+                />
+              </Tooltip>
+              <MicButton onText={appendVoiceText} disabled={loading} />
+              {oriNode}
+            </span>
+          )}
           prefix={
             <Button
               type="text"
@@ -658,23 +1832,114 @@ function App() {
             />
           }
         />
+          </div>
+        </div>
+
+      {/* Міні-редактор вставленого тексту: вставку видно й можна правити
+          до відправки; у вже надісланому повідомленні — лише читання. */}
+      <Modal
+        open={!!editing}
+        title={editing?.name}
+        onCancel={() => setEditing(null)}
+        width="min(900px, 92vw)"
+        footer={
+          editing?.readOnly ? (
+            <Button onClick={() => setEditing(null)}>Закрити</Button>
+          ) : (
+            [
+              <Button key="cancel" onClick={() => setEditing(null)}>
+                Скасувати
+              </Button>,
+              <Button
+                key="save"
+                type="primary"
+                onClick={() => {
+                  setPastes((prev) =>
+                    prev.map((p) => (p.uid === editing.uid ? { ...p, content: editing.content } : p))
+                  );
+                  setEditing(null);
+                }}
+              >
+                Зберегти
+              </Button>,
+            ]
+          )
+        }
+      >
+        {editing && (
+          <CodeEditor
+            value={editing.content}
+            filename={editing.name}
+            readOnly={editing.readOnly}
+            onChange={(val) => setEditing((prev) => (prev ? { ...prev, content: val } : prev))}
+          />
+        )}
+        </Modal>
+
+        {/* Проєкт: чати цього проєкту + бібліотека (картинки й файли). */}
+        <ProjectModal
+          open={!!projectModal}
+          project={projects.find((p) => p.id === projectModal) || null}
+          sessions={sessions}
+          onClose={() => setProjectModal('')}
+          onOpenChat={openSession}
+          onNewChatInProject={newChatInProject}
+          onExpand={setPreviewFile}
+          onRenamed={() => refreshProjects()}
+          onDeleted={() => {
+            refreshProjects();
+            refreshSessions();
+          }}
+        />
+
+        <VoiceMode
+          open={voiceModeOpen}
+          onClose={() => setVoiceModeOpen(false)}
+          sessionId={sessionId}
+          reasoningEffort={effectiveReasoningEffort}
+          onSessionChange={(nextSessionId) => {
+            setSessionId(nextSessionId);
+            try { localStorage.setItem(sessionKeyFor(codeMode), nextSessionId); } catch {}
+          }}
+          onExchange={handleVoiceExchange}
+        />
       </div>
     </div>
   );
 }
 
 export default function WrappedApp() {
+  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark');
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setDark(document.documentElement.dataset.theme === 'dark');
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+
+  const palette = dark
+    ? {
+        colorPrimary: '#d17a58', colorBgContainer: '#222426', colorBorder: '#3a3e41',
+        colorText: '#e8e4dc', colorTextSecondary: '#9a9da0',
+      }
+    : {
+        colorPrimary: '#b95f3d', colorBgContainer: '#fffaf1', colorBorder: '#dbc9ad',
+        colorText: '#30271f', colorTextSecondary: '#887563',
+      };
+
   return (
     <ConfigProvider
       theme={{
-        algorithm: theme.defaultAlgorithm,
+        algorithm: dark ? theme.darkAlgorithm : theme.defaultAlgorithm,
         token: {
-          colorPrimary: '#C96442',
-          colorBgContainer: '#FBFAF7',
-          colorBorder: '#E4E1D6',
-          colorText: '#2B2A26',
-          colorTextSecondary: '#83817A',
-          borderRadius: 10,
+          ...palette,
+          /* Шрифт задаємо токеном antd: його власний reset інакше перебиває
+             body-стиль сторінки, і панель лишалась на дефолтному ui-sans-serif. */
+          fontFamily:
+            '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, ui-sans-serif, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          borderRadius: 20,
         },
       }}
     >

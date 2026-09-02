@@ -1,0 +1,23 @@
+{
+  "name": "claude-bot-app",
+  "private": true,
+  "version": "0.1.0",
+  "description": "«Клод Бот» — застосунок: один UI на React Native → веб, iOS, Android, Electron",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "web": "npm run web -w @claude-bot/app",
+    "ios": "npm run ios -w @claude-bot/app",
+    "android": "npm run android -w @claude-bot/app",
+    "start": "npm run start -w @claude-bot/app",
+    "build:web": "npm run build:web -w @claude-bot/app",
+    "desktop": "npm run dev -w @claude-bot/desktop",
+    "build:desktop": "npm run build -w @claude-bot/desktop",
+    "typecheck": "tsc -b packages/core"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

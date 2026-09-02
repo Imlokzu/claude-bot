@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Клод Бот",
+    "slug": "claude-bot",
+    "version": "0.1.0",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "scheme": "claudebot",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#eee4d2"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.imlokzu.claudebot"
+    },
+    "android": {
+      "package": "com.imlokzu.claudebot",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#eee4d2"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/favicon.png",
+      "name": "Клод Бот",
+      "shortName": "Клод Бот",
+      "lang": "uk",
+      "themeColor": "#b95f3d",
+      "backgroundColor": "#eee4d2"
+    }
+  }
+}

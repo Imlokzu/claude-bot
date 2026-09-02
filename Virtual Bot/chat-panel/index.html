@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Клод Бот — Чат</title>
+    <!-- Спільний шар Material 3. Панель вбудовується в дашборд, який його
+         підключає сам, але у standalone-режимі (vite dev) його не було:
+         перемикач Чат/Код лишався без оболонки .m3-segmented, а галочка
+         .seg-check без fill:none малювалась чорною плямою на обох сегментах. -->
+    <link rel="stylesheet" href="/static/m3.css" />
   </head>
   <body>
     <div id="chat-panel-root"></div>

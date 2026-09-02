@@ -1,0 +1,20 @@
+{
+  "id": "skin-sunset",
+  "type": "skin",
+  "label": "Захід",
+  "icon": "sun",
+  "tint": "#c96f3b",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Теплий вечірній: персиковий фон і теракотовий акцент.",
+  "vars": {
+    "--bg": "#2a1d18",
+    "--panel": "#3a2a20",
+    "--line": "#553b2c",
+    "--text": "#f5e3d3",
+    "--muted": "#b59a86",
+    "--accent": "#e8825a",
+    "--ok": "#a8b879",
+    "--off": "#8a7364"
+  }
+}

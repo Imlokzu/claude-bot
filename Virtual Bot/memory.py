@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 from typing import BinaryIO, Iterator, Optional
 from urllib.parse import quote, unquote, urlsplit
 
-from app_config import BRAIN_DIR
+from brain_context import BRAIN_DIR, get_active_brain_root
 
 # Максимум символів однієї нотатки, що йде в системний промпт
 _NOTE_SNIPPET_LIMIT = 1500
@@ -57,14 +57,14 @@ class BrainWriteError(OSError):
 
 
 def _ensure_brain_dir() -> Path:
-    root = BRAIN_DIR
+    root = get_active_brain_root()
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()
 
 
 def try_acquire_brain_mutation_lock(root: Optional[Path] = None) -> Optional[BinaryIO]:
     """Try once to acquire the brain lock, returning immediately on contention."""
-    lock_root = (root or BRAIN_DIR).resolve()
+    lock_root = (root or get_active_brain_root()).resolve()
     lock_root.mkdir(parents=True, exist_ok=True)
     handle = open(lock_root / ".brain_mutation.lock", "a+b")
     try:
@@ -442,10 +442,16 @@ def _tokenize(text: str) -> list[str]:
 _USER_PROFILE_PATH = "people/user.md"
 
 
-def load_user_profile() -> str:
+def load_user_profile(root: Optional[Path] = None) -> str:
     """Повертає вміст brain/people/user.md або порожній рядок."""
     try:
-        return read_note(_USER_PROFILE_PATH)
+        if root is None:
+            return read_note(_USER_PROFILE_PATH)
+        resolved_root = root.resolve()
+        profile_path = (resolved_root / _USER_PROFILE_PATH).resolve()
+        if not profile_path.is_relative_to(resolved_root) or not profile_path.is_file():
+            return ""
+        return profile_path.read_text(encoding="utf-8", errors="replace")
     except (BrainPathError, FileNotFoundError, OSError):
         return ""
 
@@ -462,6 +468,9 @@ def append_user_profile(addition: str) -> None:
         except (BrainPathError, FileNotFoundError, OSError):
             pass
         lines = [ln for ln in current.splitlines() if ln.strip()]
+        normalized_addition = " ".join(addition.casefold().split())
+        if any(" ".join(line.lstrip("- ").casefold().split()) == normalized_addition for line in lines):
+            return
         if not lines or not lines[0].strip().startswith("#"):
             current = "# Профіль користувача\n\n" + current
         if current and not current.endswith("\n"):
@@ -548,7 +557,11 @@ def _linked_note_path(root: Path, source: Path, raw_target: str) -> Optional[Pat
     return resolved
 
 
-def find_relevant_notes(query: str, top_n: int = 3) -> list[dict[str, str]]:
+def find_relevant_notes(
+    query: str,
+    top_n: int = 3,
+    root: Optional[Path] = None,
+) -> list[dict[str, str]]:
     """
     Топ-N нотаток за збігом ключових слів запиту з текстом нотатки.
     Повертає [{"path", "title", "snippet"}] тільки з ненульовим скором.
@@ -557,7 +570,9 @@ def find_relevant_notes(query: str, top_n: int = 3) -> list[dict[str, str]]:
     if not tokens:
         return []
 
-    root = _ensure_brain_dir()
+    root = root.resolve() if root is not None else _ensure_brain_dir()
+    if not root.is_dir():
+        return []
     scored: list[tuple[int, str, str, str, Path]] = []
     for path in _durable_note_paths(root):
         try:

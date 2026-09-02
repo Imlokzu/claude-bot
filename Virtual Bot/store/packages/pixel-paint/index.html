@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg, #16181a); color: var(--text, #e8e4dc);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent; }
+  .wrap { display: flex; flex-direction: column; height: 100%; padding: 8px; gap: 6px; }
+  canvas { border: 1px solid var(--line, #2f3438); border-radius: 6px;
+    image-rendering: pixelated; touch-action: none; align-self: center; }
+  .pal { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; }
+  .sw { width: 22px; height: 22px; border-radius: 5px; border: 2px solid transparent; }
+  .sw.on { border-color: var(--text, #e8e4dc); }
+  .row { display: flex; gap: 6px; justify-content: center; }
+  button { background: var(--panel, #1e2124); color: var(--text, #e8e4dc);
+    border: 1px solid var(--line, #2f3438); border-radius: 8px; padding: 5px 10px; font-size: 13px; }
+  button:active { background: var(--accent, #d17a58); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="cv" width="192" height="192"></canvas>
+  <div class="pal" id="pal"></div>
+  <div class="row">
+    <button id="eraser">Гумка</button>
+    <button id="fill">Залити</button>
+    <button id="clear">Стерти все</button>
+  </div>
+</div>
+<script>
+  // Піксельний пейнт 16×16: одна канва, білд-у-пікселі 12×12.
+  const $ = (id) => document.getElementById(id);
+  const cv = $("cv"), ctx = cv.getContext("2d");
+  const N = 16, CELL = cv.width / N;
+  const PALETTE = ["#e8e4dc", "#d17a58", "#d98263", "#d7a65b", "#8ca879",
+    "#5fb0a8", "#5b9bd5", "#b48ad8", "#e74c3c", "#16181a"];
+  let color = PALETTE[1];
+  let grid = [];
+  const KEY = "pixelPaint.grid";
+
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (Array.isArray(saved) && saved.length === N * N) grid = saved;
+  } catch (e) { /* зіпсований запис — почнемо з чистого полотна */ }
+  if (grid.length !== N * N) grid = new Array(N * N).fill(null);
+
+  function draw() {
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) {
+        const c = grid[y * N + x];
+        if (c) {
+          ctx.fillStyle = c;
+          ctx.fillRect(x * CELL, y * CELL, CELL, CELL);
+        }
+      }
+    }
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(grid)); } catch (e) {}
+  }
+  function paint(e) {
+    const rect = cv.getBoundingClientRect();
+    const k = cv.width / rect.width;
+    const x = Math.floor((e.clientX - rect.left) * k / CELL);
+    const y = Math.floor((e.clientY - rect.top) * k / CELL);
+    if (x < 0 || y < 0 || x >= N || y >= N) return;
+    grid[y * N + x] = color;
+    draw();
+    save();
+  }
+  let drawing = false;
+  cv.addEventListener("pointerdown", (e) => { drawing = true; paint(e); });
+  cv.addEventListener("pointermove", (e) => { if (drawing) paint(e); });
+  window.addEventListener("pointerup", () => { drawing = false; });
+
+  const pal = $("pal");
+  PALETTE.forEach((c, i) => {
+    const sw = document.createElement("button");
+    sw.className = "sw" + (c === color ? " on" : "");
+    sw.style.background = c;
+    sw.setAttribute("aria-label", "Колір " + (i + 1));
+    sw.addEventListener("click", () => {
+      color = c;
+      pal.querySelectorAll(".sw").forEach((el) => el.classList.remove("on"));
+      sw.classList.add("on");
+    });
+    pal.appendChild(sw);
+  });
+  $("eraser").addEventListener("click", () => { color = null; pal.querySelectorAll(".sw").forEach((el) => el.classList.remove("on")); });
+  $("fill").addEventListener("click", () => { grid = grid.map(() => color); draw(); save(); });
+  $("clear").addEventListener("click", () => { grid = new Array(N * N).fill(null); draw(); save(); });
+  draw();
+
+  // Скін екрана приходить від батька повідомленням (CSS-змінні крізь iframe
+  // не проходять) — застосовуємо до :root, рамка й кнопки підфарбуються
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "botSkin" && e.data.vars) {
+      for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
+    }
+  });
+</script>
+</body>
+</html>

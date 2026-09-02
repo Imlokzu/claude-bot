@@ -1,0 +1,219 @@
+/* ============================================================
+   Клод Бот — окрема консоль спостереження (/console)
+   Темна, щільна, моноширинна: це вікно тримають збоку під час
+   розмови, тому головне — щоб рядок читався краєм ока.
+   ============================================================ */
+
+:root {
+  --bg: #14130F;
+  --bg-panel: #1B1A16;
+  --bg-card: #211F1A;
+  --bg-inset: #100F0C;
+  --border: #2E2B24;
+  --border-bright: #423E34;
+  --text: #EDEAE0;
+  --text-muted: #8C877B;
+  --coral: #E08160;        /* акцент Клода */
+  --ok: #7FB069;
+  --warn: #D9A441;
+  --err: #D96A5C;
+  --info: #6FA8A6;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", ui-sans-serif,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Mono", Menlo, Consolas, ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+/* ── Верхня смуга ─────────────────────────────────────────── */
+.bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 8px 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 5;
+}
+.bar-title { display: flex; align-items: center; gap: 8px; }
+.bar-title b { font-size: 14px; letter-spacing: .01em; }
+.bar-sub { color: var(--text-muted); font-size: 12px; font-family: var(--font-mono); }
+.bar-actions { display: flex; align-items: center; gap: 8px; }
+
+.live-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--text-muted); flex: none;
+  transition: background .2s;
+}
+.live-dot[data-on="1"] { background: var(--ok); box-shadow: 0 0 0 3px rgba(127,176,105,.18); }
+.live-dot[data-on="0"] { background: var(--err); box-shadow: 0 0 0 3px rgba(217,106,92,.18); }
+
+.btn {
+  font: inherit; color: var(--text); cursor: pointer;
+  background: var(--bg-card); border: 1px solid var(--border-bright);
+  border-radius: 8px; padding: 4px 10px;
+}
+.btn:hover { border-color: var(--coral); color: var(--coral); }
+.btn[data-paused="1"] { background: var(--warn); border-color: var(--warn); color: #16150F; }
+
+.chk { display: flex; align-items: center; gap: 5px; color: var(--text-muted); cursor: pointer; }
+.chk input { accent-color: var(--coral); }
+
+.inp {
+  font: inherit; font-family: var(--font-mono); color: var(--text);
+  background: var(--bg-inset); border: 1px solid var(--border);
+  border-radius: 8px; padding: 3px 8px; width: 150px;
+}
+.inp:focus { outline: none; border-color: var(--coral); }
+
+/* ── Сітка ────────────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 1px;
+  background: var(--border);
+  height: calc(100vh - 41px);
+}
+.col { background: var(--bg); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.col-procs { overflow-y: auto; }
+.col-flow { display: grid; grid-template-rows: auto minmax(0, 1.6fr) auto minmax(0, 1fr); }
+
+.col-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 8px 12px 6px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.col-head h2 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .09em;
+  color: var(--text-muted); font-weight: 600;
+}
+.col-note { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
+.logs-head { border-top: 1px solid var(--border); }
+.log-filters { display: flex; align-items: center; gap: 8px; }
+
+/* ── Процеси ──────────────────────────────────────────────── */
+.procs { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+
+.proc {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 8px; align-items: center;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-left-width: 3px; border-radius: 8px; padding: 7px 9px;
+}
+.proc[data-state="ok"]   { border-left-color: var(--ok); }
+.proc[data-state="warn"] { border-left-color: var(--warn); }
+.proc[data-state="off"]  { border-left-color: #3A3630; }
+.proc[data-state="cloud"]{ border-left-color: var(--info); }
+
+.proc .dot { width: 8px; height: 8px; border-radius: 50%; background: #3A3630; }
+.proc[data-state="ok"]   .dot { background: var(--ok); }
+.proc[data-state="warn"] .dot { background: var(--warn); }
+.proc[data-state="cloud"] .dot { background: var(--info); }
+
+.proc-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.proc-name b { font-size: 12.5px; font-weight: 600; }
+.proc-chain {
+  font-family: var(--font-mono); font-size: 10px; color: var(--coral);
+  border: 1px solid var(--border-bright); border-radius: 4px; padding: 0 4px;
+}
+.proc-role, .proc-meta {
+  font-size: 11px; color: var(--text-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.proc-meta { font-family: var(--font-mono); }
+.proc-right { text-align: right; font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.proc-right b { display: block; color: var(--text); font-weight: 500; }
+
+.brainbox { padding: 8px 12px 14px; font-family: var(--font-mono); font-size: 11.5px; }
+.brainbox div { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.brainbox span:first-child { color: var(--text-muted); }
+.brainbox .hot { color: var(--warn); }
+
+/* ── Хід розмови ──────────────────────────────────────────── */
+.flow { overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.empty { color: var(--text-muted); padding: 14px; text-align: center; }
+
+.turn {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 10px; overflow: hidden;
+}
+.turn[data-live="1"] { border-color: var(--coral); }
+
+.turn-head {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 7px 10px; background: var(--bg-inset);
+  border-bottom: 1px solid var(--border);
+}
+.turn-src {
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--coral);
+  border: 1px solid var(--border-bright); border-radius: 4px; padding: 1px 5px; flex: none;
+}
+.turn-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-time { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); flex: none; }
+
+.steps { list-style: none; padding: 4px 0; }
+.step {
+  display: grid; grid-template-columns: 16px 104px minmax(0, 1fr) auto;
+  gap: 8px; align-items: baseline; padding: 3px 10px;
+  font-family: var(--font-mono); font-size: 11.5px;
+}
+.step-mark { text-align: center; }
+.step[data-state="ok"]    .step-mark { color: var(--ok); }
+.step[data-state="fail"]  .step-mark { color: var(--err); }
+.step[data-state="skip"]  .step-mark { color: var(--text-muted); }
+.step[data-state="start"] .step-mark { color: var(--warn); }
+.step-name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step[data-state="skip"] .step-name { color: var(--text-muted); }
+.step-detail { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.step[data-state="fail"] .step-detail { color: var(--err); }
+.step-ms { color: var(--text-muted); text-align: right; }
+
+.turn-foot {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 10px; border-top: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-muted);
+}
+.turn-foot b { color: var(--ok); font-weight: 600; }
+.turn-foot.err b { color: var(--err); }
+
+/* Вільний крок поза ходом (тул від зовнішнього мозку, розпізнавання голосу) */
+.loose {
+  display: grid; grid-template-columns: 60px 16px 104px minmax(0, 1fr) auto;
+  gap: 8px; align-items: baseline;
+  font-family: var(--font-mono); font-size: 11.5px;
+  padding: 4px 10px; border-left: 3px solid var(--border-bright);
+  background: var(--bg-panel); border-radius: 8px; color: var(--text-muted);
+}
+.loose b {
+  color: var(--text); font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.loose[data-state="fail"] { border-left-color: var(--err); }
+.loose[data-state="ok"] { border-left-color: var(--info); }
+
+/* ── Логи ─────────────────────────────────────────────────── */
+.logs {
+  overflow-y: auto; padding: 6px 10px 12px;
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.5;
+  background: var(--bg-inset);
+}
+.log-line { display: grid; grid-template-columns: 62px 128px minmax(0, 1fr); gap: 8px; }
+.log-line:hover { background: rgba(255,255,255,.03); }
+.log-t { color: #5E5A51; }
+.log-name { color: var(--info); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-msg { white-space: pre-wrap; word-break: break-word; color: #B9B4A8; }
+.log-line[data-level="WARNING"] .log-msg { color: var(--warn); }
+.log-line[data-level="ERROR"] .log-msg,
+.log-line[data-level="CRITICAL"] .log-msg { color: var(--err); }
+
+@media (max-width: 860px) {
+  .grid { grid-template-columns: 1fr; height: auto; }
+  .col-flow { grid-template-rows: auto 50vh auto 40vh; }
+}

@@ -1,0 +1,309 @@
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+@import "@fontsource/ibm-plex-mono/700.css";
+
+:root {
+  --bg: #05070b;
+  --bg-soft: #0a0e15;
+  --ink: #c3ccda;
+  --ink-dim: #6b7789;
+  --ink-faint: #3a4553;
+  --line: #1b232f;
+  --rim: #9fb6d6;
+  --accent: #7fd0ff;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden; /* scroll is owned by drei ScrollControls */
+}
+
+#root {
+  position: relative;
+}
+
+::selection {
+  background: rgba(127, 208, 255, 0.25);
+  color: #fff;
+}
+
+/* ── Typographic helpers ───────────────────────────── */
+.tag {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+.slash {
+  color: var(--ink-faint);
+}
+.big {
+  font-weight: 600;
+  line-height: 0.98;
+  letter-spacing: -0.01em;
+}
+
+/* Glowing display type. igloo's headline reads *dense*: the letterforms
+   are heavy, tightly tracked, and the glow sits close and bright rather
+   than as a wide soft haze. Layered shadows from tight to wide give the
+   phosphor bloom without turning the text to mush. */
+.glow-text {
+  color: rgba(240, 246, 252, 0.94);
+  font-weight: 700;
+  /* dimmer, closer glow — reads as lit phosphor, not a bright sign */
+  text-shadow:
+    0 0 1px rgba(255, 255, 255, 0.55),
+    0 0 4px rgba(214, 232, 250, 0.4),
+    0 0 12px rgba(159, 200, 245, 0.28),
+    0 0 30px rgba(127, 208, 255, 0.16);
+}
+.glow-text--accent {
+  color: var(--accent);
+  text-shadow:
+    0 0 6px rgba(127, 208, 255, 0.7),
+    0 0 26px rgba(127, 208, 255, 0.45),
+    0 0 64px rgba(127, 208, 255, 0.22);
+}
+
+/* ── HUD bracket button — igloo's "[X] ↑" / "CLICK TO EXPLORE" style ── */
+.hud-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 20px;
+  background: transparent;
+  /* The whole button reads as a button at rest. It used to be drawn by
+     the two 9px corner brackets alone, so three quarters of its outline
+     simply weren't there until you hovered — you had to already know a
+     button was there to find it. The full frame is always visible now,
+     dim; the brackets stay on top as the bright corner accents, and hover
+     brightens the frame instead of revealing it. */
+  border: 1px solid rgba(127, 208, 255, 0.6);
+  /* A faint fill as well as the frame. On a black starfield, run through
+     the vignette and the CRT grade, a hairline outline alone still didn't
+     register as a solid thing you could click — the button has to hold a
+     shape of its own at rest, not just an edge. */
+  background: rgba(127, 208, 255, 0.07);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px rgba(127, 208, 255, 0.55);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: color 0.2s ease, text-shadow 0.2s ease, border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.hud-btn::before,
+.hud-btn::after {
+  content: "";
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  border-color: currentColor;
+  opacity: 0.9;
+  transition: width 0.2s ease, height 0.2s ease;
+}
+/* -1px so the bracket lands exactly on top of the frame's own line rather
+   than just inside it, which would read as a doubled border */
+.hud-btn::before {
+  top: -1px;
+  left: -1px;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+.hud-btn::after {
+  bottom: -1px;
+  right: -1px;
+  border-bottom: 1px solid;
+  border-right: 1px solid;
+}
+.hud-btn:hover {
+  color: #fff;
+  text-shadow: 0 0 12px rgba(127, 208, 255, 0.85);
+  border-color: rgba(127, 208, 255, 0.75);
+  box-shadow: 0 0 18px -6px rgba(127, 208, 255, 0.6);
+}
+.hud-btn:hover::before,
+.hud-btn:hover::after {
+  width: 16px;
+  height: 16px;
+}
+
+/* underlined HUD text-link, e.g. "D 01.02.2020 / CLICK TO EXPLORE" */
+.hud-link {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-shadow: 0 0 8px rgba(159, 182, 214, 0.4);
+  border-bottom: 1px solid rgba(159, 182, 214, 0.4);
+  padding-bottom: 6px;
+}
+
+/* ── Film grain overlay (fights flat gradients) ───── */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ── Cold vignette ────────────────────────────────── */
+.vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  background: radial-gradient(
+    120% 90% at 50% 40%,
+    transparent 55%,
+    rgba(2, 4, 8, 0.65) 100%
+  );
+}
+
+/* ── Whole-viewport "old camera recording" grade ──── */
+.tv-grade {
+  position: fixed;
+  inset: 0;
+  filter: url(#crt-chromab) saturate(1.1) contrast(1.06) brightness(1.02);
+}
+
+/* every readout on the page — floating labels, carved stone, the boot
+   terminal — renders through this filter, so the desktop-tuned channel
+   split reads as outright blur on a phone; see the lighter #crt-chromab
+   -mobile defined alongside #crt-chromab in App.jsx */
+@media (max-width: 720px) {
+  .tv-grade {
+    filter: url(#crt-chromab-mobile) saturate(1.05) contrast(1.04) brightness(1.02);
+  }
+}
+
+.tv-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  mix-blend-mode: normal;
+}
+
+.tv-overlay__scan {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.16) 3px,
+    rgba(0, 0, 0, 0.16) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+.tv-overlay__vig {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 12vw rgba(0, 0, 0, 0.75), inset 0 0 3vw rgba(0, 0, 0, 0.55);
+}
+
+.tv-overlay__roll {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 14%;
+  top: -14%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(200, 220, 255, 0.035) 45%,
+    rgba(200, 220, 255, 0.06) 50%,
+    rgba(200, 220, 255, 0.035) 55%,
+    transparent
+  );
+  animation: tvRoll 9s linear infinite;
+}
+@keyframes tvRoll {
+  to {
+    top: 120%;
+  }
+}
+
+.tv-overlay__flicker {
+  position: absolute;
+  inset: 0;
+  background: #cfe4ff;
+  opacity: 0;
+  animation: tvFlicker 6.5s steps(40) infinite;
+}
+@keyframes tvFlicker {
+  0%, 91%, 100% { opacity: 0; }
+  92% { opacity: 0.05; }
+  92.5% { opacity: 0; }
+  94% { opacity: 0.03; }
+  94.4% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-overlay__roll,
+  .tv-overlay__flicker {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+/* ── Rain (thin cold streaks drifting on wind) ────── */
+.rain {
+  position: fixed;
+  inset: -20% -10% -20% -10%;
+  z-index: 45;
+  pointer-events: none;
+  overflow: hidden;
+}
+.rain i {
+  position: absolute;
+  top: -12%;
+  width: 1px;
+  height: 90px;
+  background: linear-gradient(to bottom, transparent, rgba(159, 182, 214, 0.35));
+  transform: rotate(9deg);
+  animation: fall linear infinite;
+}
+@keyframes fall {
+  to {
+    transform: translateY(130vh) rotate(9deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rain i {
+    animation: none;
+    opacity: 0.2;
+  }
+}

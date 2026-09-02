@@ -1,0 +1,183 @@
+/* ── Old CRT monitor, filmed on a handheld camera ───────────── */
+
+.crt {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #010402;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  overflow: hidden;
+  transition: opacity 0.85s ease;
+}
+
+/* the whole rig drifts + jitters like someone holding a camera */
+.crt__cam {
+  width: min(1200px, 94vw);
+  height: min(760px, 82vh);
+  animation: handheld 7s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes handheld {
+  0%   { transform: translate(0px, 0px) rotate(-0.15deg); }
+  15%  { transform: translate(-3px, 2px) rotate(0.12deg); }
+  30%  { transform: translate(2px, -2px) rotate(-0.08deg); }
+  45%  { transform: translate(-2px, 3px) rotate(0.16deg); }
+  60%  { transform: translate(3px, 1px) rotate(-0.12deg); }
+  75%  { transform: translate(-1px, -3px) rotate(0.1deg); }
+  100% { transform: translate(0px, 0px) rotate(-0.15deg); }
+}
+
+/* the physical screen: bulged glass, dark bezel, curvature vignette */
+.crt__screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 42px / 34px;
+  background: radial-gradient(120% 120% at 50% 45%, #071a0d 0%, #020c06 60%, #010402 100%);
+  box-shadow:
+    inset 0 0 120px rgba(0, 0, 0, 0.95),
+    inset 0 0 40px rgba(0, 255, 120, 0.06),
+    0 0 0 12px #0a0d0b,
+    0 0 0 15px #05070680,
+    0 40px 120px rgba(0, 0, 0, 0.8);
+  overflow: hidden;
+  animation: powerflick 5.5s steps(80) infinite;
+}
+@keyframes powerflick {
+  0%, 96%, 100% { filter: brightness(1); }
+  97% { filter: brightness(1.28); }
+  98% { filter: brightness(0.82); }
+  99% { filter: brightness(1.12); }
+}
+
+/* barrel-curved content layer + slight chromatic split */
+.crt__glass {
+  position: absolute;
+  inset: 5% 4%;
+  transform: perspective(1400px) rotateX(0.4deg);
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.crt__scroll {
+  position: absolute;
+  inset: 0;
+  padding: 26px 30px;
+  overflow: hidden;
+}
+
+.crt__pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.5;
+  color: #43ff86;
+  text-shadow:
+    0 0 6px rgba(60, 255, 130, 0.65),
+    -0.6px 0 rgba(255, 60, 60, 0.35),
+    0.6px 0 rgba(60, 120, 255, 0.35);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.crt__ln { opacity: 0.92; }
+.crt__ln--kern { color: #7dffae; opacity: 0.72; }
+.crt__ln--ok { color: #43ff86; }
+.crt__ln--svc { color: #b7ffcf; opacity: 0.85; }
+.crt__ts { color: #2fae63; opacity: 0.8; }
+
+.crt__cmd { color: #d6ffe6; margin-top: 4px; }
+.crt__user { color: #43ff86; }
+.crt__path { color: #7dffae; }
+.crt__punc { color: #2fae63; }
+
+.crt__cur {
+  color: #b6ffd0;
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* fine scanlines */
+.crt__scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.28) 3px,
+    rgba(0, 0, 0, 0.28) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* bright horizontal roll-bar sweeping down the tube */
+.crt__roll {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 22%;
+  top: -22%;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(120, 255, 170, 0.06) 40%,
+    rgba(120, 255, 170, 0.1) 50%,
+    rgba(120, 255, 170, 0.06) 60%,
+    transparent
+  );
+  animation: roll 6s linear infinite;
+}
+@keyframes roll {
+  to { top: 120%; }
+}
+
+/* soft phosphor bloom hugging the glass edges */
+.crt__glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 90px rgba(30, 255, 120, 0.1);
+  background: radial-gradient(130% 110% at 50% 50%, transparent 62%, rgba(0, 0, 0, 0.7) 100%);
+}
+
+.crt__hint {
+  position: absolute;
+  bottom: 22px;
+  right: 34px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: #2fae63;
+  text-shadow: 0 0 6px rgba(60, 255, 130, 0.5);
+  opacity: 0.7;
+  animation: blink 2.4s steps(1) infinite;
+}
+
+/* power-off: the classic CRT collapse to a line then a dot */
+.crt--off .crt__screen {
+  animation: crtOff 0.85s ease forwards;
+}
+@keyframes crtOff {
+  0%   { transform: scale(1, 1); filter: brightness(1); }
+  55%  { transform: scale(1.02, 0.006); filter: brightness(3); }
+  75%  { transform: scale(0.4, 0.004); filter: brightness(4); }
+  100% { transform: scale(0.0, 0.0); filter: brightness(6); opacity: 0; }
+}
+.crt--off { opacity: 1; }
+.crt--off .crt__cam { animation: none; }
+
+@media (max-width: 620px) {
+  .crt__pre { font-size: 11px; }
+  .crt__screen { border-radius: 26px / 22px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crt__cam,
+  .crt__screen,
+  .crt__roll { animation: none; }
+}

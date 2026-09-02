@@ -1,0 +1,270 @@
+
+
+/* ============================================================
+   Теми дашборда
+   Світло — тепла пустеля; темно — нічний графіт із срібним текстом.
+   React-панелі використовують ці самі змінні через document.documentElement.
+   ============================================================ */
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #eee4d2;
+  --bg-panel: #fffaf1;
+  --bg-inset: #e5d5bc;
+  --bg-card: #f7eddd;
+  --border: #dbc9ad;
+  --border-bright: #c8ae8c;
+  --text: #30271f;
+  --text-muted: #887563;
+  --green: #b95f3d;
+  --ok: #718b62;
+  --blue: #756451;
+  --cyan: #4f8580;
+  --yellow: #a9742d;
+  --red: #a84f45;
+  --pink: #bc7285;
+  --glow-green: rgba(185, 95, 61, 0.2);
+  --glow-blue: rgba(92, 75, 58, 0.12);
+  --shadow-panel: 0 12px 32px rgba(83, 57, 34, 0.1);
+  --shadow-float: 0 18px 46px rgba(83, 57, 34, 0.15);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #171819;
+  --bg-panel: #222426;
+  --bg-inset: #2c2f31;
+  --bg-card: #292c2e;
+  --border: #3a3e41;
+  --border-bright: #5a6064;
+  --text: #e8e4dc;
+  --text-muted: #9a9da0;
+  --green: #d17a58;
+  --ok: #8ca879;
+  --blue: #b8b1a5;
+  --cyan: #76b5b0;
+  --yellow: #d7a65b;
+  --red: #d87869;
+  --pink: #dd91a4;
+  --glow-green: rgba(209, 122, 88, 0.22);
+  --glow-blue: rgba(184, 177, 165, 0.14);
+  --shadow-panel: 0 14px 36px rgba(0, 0, 0, 0.25);
+  --shadow-float: 0 22px 54px rgba(0, 0, 0, 0.38);
+}
+
+html {
+  background: var(--bg);
+  transition: background-color 220ms ease, color 220ms ease;
+}
+
+body,
+.topbar,
+.dashboard-tabs,
+.panel,
+.setup-rail,
+.setup-main,
+.voice-modal,
+.service-row,
+.vision-view,
+input[type="text"],
+input[type="password"],
+textarea,
+select,
+.btn {
+  transition: background-color 220ms ease, border-color 220ms ease, color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+body {
+  background:
+    radial-gradient(circle at 10% -10%, color-mix(in srgb, var(--green) 10%, transparent), transparent 34rem),
+    radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--yellow) 9%, transparent), transparent 30rem),
+    var(--bg);
+}
+
+.topbar {
+  background: color-mix(in srgb, var(--bg-panel) 88%, transparent);
+  border-bottom-color: var(--border);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.topbar-right {
+  gap: 10px;
+}
+
+.dashboard-tabs {
+  background: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  border-bottom-color: var(--border);
+}
+
+/* Оформлення вкладок цілком живе в m3.css (primary tabs: смуга-індикатор
+   + state layer). Тут раніше лишалися заокруглена плашка й власний фон
+   на hover/active — вони накладалися на новий вигляд: активна вкладка
+   мала І залиту пігулку, І підкреслення, а на наведенні спрацьовували
+   два ефекти підряд. */
+
+.panel {
+  border-color: var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-panel);
+}
+
+.panel-title,
+.panel-head {
+  border-color: var(--border);
+}
+
+.btn,
+input[type="text"],
+input[type="password"],
+textarea,
+select {
+  border-radius: 15px;
+}
+
+.btn {
+  background: var(--bg-card);
+  border-color: var(--border-bright);
+}
+
+input[type="text"],
+input[type="password"],
+textarea,
+select {
+  background: var(--bg-inset);
+  border-color: var(--border-bright);
+}
+
+/* Кільце фокуса — одне на весь інтерфейс, у m3.css (акцентний колір).
+   Тут воно було бірюзовим і за специфічністю перемагало для .btn,
+   .dashboard-tab, .accent-swatch і .setup-nav li: клавіатурна навігація
+   міняла колір обведення залежно від того, на що ти потрапив. */
+
+.service-row,
+.vision-view,
+.json-out,
+.console-log,
+.wz-svc,
+.voice-convo {
+  border-radius: 18px;
+}
+
+.message {
+  border-radius: 18px;
+}
+
+.message.user {
+  border-bottom-right-radius: 6px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+.message.bot {
+  border-bottom-left-radius: 6px;
+  background: color-mix(in srgb, var(--green) 13%, transparent);
+  border-color: color-mix(in srgb, var(--green) 36%, var(--border));
+}
+
+:root[data-theme="dark"] .face-screen {
+  background: radial-gradient(circle at 50% 40%, #34383b 0%, #1c1f21 78%);
+  border-color: #4b5155;
+}
+
+:root[data-theme="dark"] .topbar,
+:root[data-theme="dark"] .dashboard-tabs {
+  backdrop-filter: blur(16px);
+}
+
+/* ============================================================
+   Акцент інтерфейсу (Налаштування → Вигляд, data-accent на <html>)
+   Кожен акцент має два тони: денний і нічний. Правила стоять ПІСЛЯ
+   базових тем, а нічні мають вищу вагу за рахунок [data-theme="dark"],
+   тож порядок «тема → акцент → нічний акцент» тримається сам.
+   terracotta = історичний колір панелі, тому він і є типовим.
+   ============================================================ */
+
+:root[data-accent="terracotta"] {
+  --green: #b95f3d;
+  --glow-green: rgba(185, 95, 61, 0.2);
+}
+:root[data-theme="dark"][data-accent="terracotta"] {
+  --green: #d17a58;
+  --glow-green: rgba(209, 122, 88, 0.22);
+}
+
+:root[data-accent="sage"] {
+  --green: #6f8b5f;
+  --glow-green: rgba(111, 139, 95, 0.2);
+}
+:root[data-theme="dark"][data-accent="sage"] {
+  --green: #94b47f;
+  --glow-green: rgba(148, 180, 127, 0.22);
+}
+
+:root[data-accent="teal"] {
+  --green: #3f7f7a;
+  --glow-green: rgba(63, 127, 122, 0.2);
+}
+:root[data-theme="dark"][data-accent="teal"] {
+  --green: #6ab3ad;
+  --glow-green: rgba(106, 179, 173, 0.22);
+}
+
+:root[data-accent="amber"] {
+  --green: #a9742d;
+  --glow-green: rgba(169, 116, 45, 0.2);
+}
+:root[data-theme="dark"][data-accent="amber"] {
+  --green: #d7a65b;
+  --glow-green: rgba(215, 166, 91, 0.22);
+}
+
+/* ============================================================
+   Акцент для ЗАЛИТИХ поверхонь (--m3-primary-strong)
+   ------------------------------------------------------------
+   На залитій кнопці лежить світлий текст (--m3-on-primary). У світлій
+   темі середньотонові акценти давали контраст 3.65–4.46 — нижче за
+   WCAG AA 4.5:1 для звичайного тексту (13px/600 великим не рахується).
+   Тому в СВІТЛІЙ темі заливка бере трохи темніший тон, а сам акцент
+   (рамки, іконки, підкреслення вкладок) лишається брендовим.
+
+   У ТЕМНІЙ темі акцент світлий, а текст на ньому темний — контраст
+   там уже 4.92–7.04, тож затемнювати не треба й шкідливо: це зменшило б
+   різницю з темним текстом. Тому в темряві strong = сам акцент.
+
+   Значення пораховані під фактичний --m3-on-primary кожної теми,
+   а не «на око»: світла 4.52–4.56, темна 4.92–7.04.
+   ============================================================ */
+
+:root[data-accent="terracotta"] {
+  --m3-primary-strong: #b25b3b;
+}
+:root[data-theme="dark"][data-accent="terracotta"] {
+  --m3-primary-strong: #d17a58;
+}
+
+:root[data-accent="sage"] {
+  --m3-primary-strong: #627a54;
+}
+:root[data-theme="dark"][data-accent="sage"] {
+  --m3-primary-strong: #94b47f;
+}
+
+:root[data-accent="teal"] {
+  --m3-primary-strong: #3e7e79;
+}
+:root[data-theme="dark"][data-accent="teal"] {
+  --m3-primary-strong: #6ab3ad;
+}
+
+:root[data-accent="amber"] {
+  --m3-primary-strong: #9a6a29;
+}
+:root[data-theme="dark"][data-accent="amber"] {
+  --m3-primary-strong: #d7a65b;
+}
+
+/* Поки app.js не виставив data-accent (перший кадр) — типова теракота */
+:root { --m3-primary-strong: #b25b3b; }
+:root[data-theme="dark"] { --m3-primary-strong: #d17a58; }

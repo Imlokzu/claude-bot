@@ -9,9 +9,12 @@ from typing import Awaitable, Callable
 
 from tools.currency import get_common_rates, get_rate
 from tools.facts import get_fact
+from tools.images import search_images
+from tools import music_tools, screen_tools, ui_tools, workspace_tools
 from tools.search import search_web
 from tools.weather import get_weather
 import memory
+import brain_context
 
 log = logging.getLogger("virtual_bot.tools.registry")
 
@@ -32,6 +35,20 @@ _TOOL_SCHEMAS: list[dict] = [
                     },
                 },
                 "required": ["city"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "memory_search",
+            "description": "Знайти раніше збережені факти про користувача та релевантні нотатки памʼяті.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Факт або тема для пошуку в памʼяті."},
+                },
+                "required": ["query"],
             },
         },
     },
@@ -94,9 +111,34 @@ _TOOL_SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "image_search",
+            "description": (
+                "Знайти картинки в інтернеті. Повертає прямі https-посилання. "
+                "ОБОВʼЯЗКОВО вставляй знайдене у відповідь як ![підпис](посилання) — інакше користувач побачить лише текст. У квадратних дужках пиши КОРОТКИЙ ЗМІСТОВНИЙ підпис саме цієї картинки (напр. «Porsche 911 Carrera», «краб-привид на піску»), а не загальний запит: коли картинок кілька, підпис — єдине, з чого видно, що на кожній."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Що показати, напр. 'піксельний краб'."},
+                    "count": {"type": "integer", "description": "Скільки картинок (1-6), типово 3."},
+                },
+                "required": ["query"],
+            },
+        },
+    },
     {"type": "function", "function": {"name": "create_brain_directory", "description": "Create a directory inside brain/ only.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "create_brain_file", "description": "Create a file inside brain/ only.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}, "overwrite": {"type": "boolean"}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "list_brain_navigation", "description": "Regenerate and return brain navigation.", "parameters": {"type": "object", "properties": {}}}},
+    # Власна тека бота на диску: файли, проєкти, ігри, тека сесії
+    *workspace_tools.SCHEMAS,
+    # Елементи інтерфейсу: питання кнопками, чеклісти, картки вибору
+    *ui_tools.SCHEMAS,
+    *screen_tools.SCHEMAS,
+    # Музика й відео: Now Playing на екрані + транскрайб YouTube
+    *music_tools.SCHEMAS,
 ]
 
 async def _currency_handler(base: str, target: str = "UAH") -> dict:
@@ -120,14 +162,54 @@ async def _list_brain_navigation() -> dict:
     return {"ok": True, "path": "_navigation.md", "content": memory.regenerate_brain_navigation()}
 
 
+async def _memory_search(query: str) -> dict:
+    query = (query or "").strip()
+    if not query:
+        return {"error": "Вкажи, що шукати в памʼяті"}
+    owner_root = brain_context.init_user_brain(None)
+    profile = memory.load_user_profile()
+    owner_profile = memory.load_user_profile(owner_root)
+    if owner_profile and owner_profile not in profile:
+        profile = f"{profile}\n{owner_profile}".strip()
+    return {
+        "profile": profile,
+        "notes": _merge_memory_notes(
+            memory.find_relevant_notes(query, top_n=3, root=owner_root),
+            memory.find_relevant_notes(query, top_n=3),
+        ),
+    }
+
+
+def _merge_memory_notes(*groups: list[dict]) -> list[dict]:
+    """Merge session and canonical owner results without duplicate paths."""
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for group in groups:
+        for note in group:
+            path = note.get("path", "")
+            if path in seen:
+                continue
+            seen.add(path)
+            merged.append(note)
+            if len(merged) == 3:
+                return merged
+    return merged
+
+
 _HANDLERS: dict[str, ToolHandler] = {
     "weather": get_weather,
     "currency": _currency_handler,
     "facts": get_fact,
+    "memory_search": _memory_search,
     "web_search": search_web,
+    "image_search": search_images,
     "create_brain_directory": _create_brain_directory,
     "create_brain_file": _create_brain_file,
     "list_brain_navigation": _list_brain_navigation,
+    **workspace_tools.HANDLERS,
+    **ui_tools.HANDLERS,
+    **screen_tools.HANDLERS,
+    **music_tools.HANDLERS,
 }
 
 

@@ -138,6 +138,10 @@ class PixelCrab {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
     this.labelEl = labelEl || null;
+    // Підписи емоцій можна підмінити своїм набором (екран має дві мови);
+    // null = типові українські з EMOTION_LABELS
+    this.labels = opts.labels || null;
+    this.defeatLabel = opts.defeatLabel || null;
     this.screenEl = screenEl || null;
 
     // Палітра за замовчуванням — рудий краб з PixelClaw
@@ -270,7 +274,7 @@ class PixelCrab {
     this.airY = 0;
     this.walking = false;
     this.particles = [];
-    if (this.labelEl) this.labelEl.textContent = DEFEAT_LABEL;
+    if (this.labelEl) this.labelEl.textContent = this.defeatLabel || DEFEAT_LABEL;
     if (this.screenEl) this.screenEl.dataset.emotion = "defeat";
   }
 
@@ -279,7 +283,8 @@ class PixelCrab {
   _applyLabel() {
     if (this.defeatActive) return;
     if (this.labelEl) {
-      this.labelEl.textContent = EMOTION_LABELS[this.emotion] || this.emotion;
+      const labels = this.labels || EMOTION_LABELS;
+      this.labelEl.textContent = labels[this.emotion] || this.emotion;
     }
     if (this.screenEl) this.screenEl.dataset.emotion = this.emotion;
   }

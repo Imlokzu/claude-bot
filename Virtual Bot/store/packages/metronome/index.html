@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<style>
+  /* Застосунок екрана: батько — iframe 320×240. Беремо теми з CSS-змінних,
+     які скін/тема екрана прокидають через :root (успадковуються в iframe
+     того ж origin) — так пакет не виглядає чужорідним. */
+  :root { color-scheme: dark light; }
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    background: var(--bg, #16181a); color: var(--text, #e8e4dc);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; }
+  .wrap { display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; gap: 10px; }
+  .beat { width: 44px; height: 44px; border-radius: 50%;
+    background: var(--line, #2f3438); transition: background-color 60ms; }
+  .beat.on { background: var(--accent, #d17a58); }
+  .bpm { font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .bpm small { font-size: 14px; color: var(--muted, #8e9498); font-weight: 400; }
+  .row { display: flex; gap: 8px; align-items: center; }
+  button { background: var(--panel, #1e2124); color: var(--text, #e8e4dc);
+    border: 1px solid var(--line, #2f3438); border-radius: 10px;
+    padding: 8px 14px; font-size: 16px; }
+  button:active { background: var(--accent, #d17a58); }
+  input[type=range] { width: 180px; accent-color: var(--accent, #d17a58); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="beat" id="beat"></div>
+    <div class="bpm"><span id="val">100</span> <small>BPM</small></div>
+    <input type="range" id="range" min="40" max="208" value="100" aria-label="Темп">
+    <div class="row">
+      <button id="minus" aria-label="Повільніше">−</button>
+      <button id="start">Старт</button>
+      <button id="plus" aria-label="Швидше">+</button>
+    </div>
+  </div>
+<script>
+  // Метроном на WebAudio: плануємо «клац» заздалегідь (lookahead), бо
+  // setTimeout на слабкому пристрої плаває на десятки мілісекунд.
+  const $ = (id) => document.getElementById(id);
+  const beatEl = $("beat"), valEl = $("val"), range = $("range"), startBtn = $("start");
+  let bpm = Number(localStorage.getItem("metronome.bpm") || 100);
+  let running = false, nextAt = 0, beatNo = 0, timer = 0, ctx = null;
+
+  function draw() {
+    valEl.textContent = String(bpm);
+    range.value = String(bpm);
+  }
+  function click(strong) {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const t = ctx.currentTime;
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.frequency.value = strong ? 1200 : 800;
+    gain.gain.setValueAtTime(0.5, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.06);
+    beatEl.classList.toggle("on", true);
+    setTimeout(() => beatEl.classList.remove("on"), 90);
+  }
+  function tick() {
+    const ahead = ctx.currentTime + 0.12;
+    while (nextAt < ahead) {
+      const delay = Math.max(0, (nextAt - ctx.currentTime) * 1000);
+      const strong = beatNo % 4 === 0;
+      setTimeout(() => click(strong), delay);
+      nextAt += 60 / bpm;
+      beatNo += 1;
+    }
+  }
+  function start() {
+    if (running) {
+      running = false;
+      clearInterval(timer);
+      startBtn.textContent = "Старт";
+      return;
+    }
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume();
+    running = true;
+    startBtn.textContent = "Стоп";
+    nextAt = ctx.currentTime + 0.1;
+    beatNo = 0;
+    tick();
+    timer = setInterval(tick, 60);
+  }
+  startBtn.addEventListener("click", start);
+  range.addEventListener("input", () => {
+    bpm = Number(range.value);
+    localStorage.setItem("metronome.bpm", String(bpm));
+    draw();
+  });
+  $("minus").addEventListener("click", () => { bpm = Math.max(40, bpm - 1); localStorage.setItem("metronome.bpm", String(bpm)); draw(); });
+  $("plus").addEventListener("click", () => { bpm = Math.min(208, bpm + 1); localStorage.setItem("metronome.bpm", String(bpm)); draw(); });
+  draw();
+
+  // Скін екрана приходить від батька повідомленням (CSS-змінні крізь iframe
+  // не проходять) — застосовуємо до :root, кнопки й повзунок підфарбуються
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "botSkin" && e.data.vars) {
+      for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
+    }
+  });
+</script>
+</body>
+</html>

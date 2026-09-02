@@ -2,11 +2,14 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import FileList from './components/FileList'
 import Editor from './components/Editor'
 import MemoryMap from './components/MemoryMap'
+import { getActiveSessionId, memoryRequestPath } from './session'
+import { TopbarAuth } from './AuthGate.jsx'
+import { authFetch } from './auth.js'
 
 const API_BASE = '/api'
 
 async function api(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, options)
+  const res = await authFetch(`${API_BASE}${path}`, options)
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     let msg = data.error || data.detail || data.message || `HTTP ${res.status}`
@@ -32,7 +35,7 @@ function App() {
 
   const refreshFiles = useCallback(async () => {
     try {
-      const data = await api('/memory/list')
+      const data = await api(memoryRequestPath('/memory/list'))
       setFiles(data.files || [])
       setError(null)
     } catch (err) {
@@ -58,7 +61,7 @@ function App() {
     openRequestRef.current = { id: requestId, controller }
     setIsLoading(true)
     try {
-      const data = await api(`/memory/file?path=${encodeURIComponent(path)}`, {
+      const data = await api(memoryRequestPath('/memory/file', { path }), {
         signal: controller.signal
       })
       if (openRequestRef.current.id !== requestId) return
@@ -103,7 +106,11 @@ function App() {
       await api('/memory/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: savedPath, content: savedText })
+        body: JSON.stringify({
+          path: savedPath,
+          content: savedText,
+          session_id: getActiveSessionId()
+        })
       })
       const current = documentRef.current
       if (current === document) {
@@ -173,6 +180,9 @@ function App() {
 
   return (
     <div className="memory-app">
+      <div className="memory-authbar">
+        <TopbarAuth />
+      </div>
       <div className="memory-sidebar">
         <div className="memory-tabs" role="tablist" aria-label="Розділи пам'яті">
           <button

@@ -1,0 +1,161 @@
+/* Corner-anchored typographic chrome, igloo-style: no bar, no panel,
+   no pills — just copy sitting in the frame's corners. */
+
+.chrome {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+  font-family: var(--mono);
+}
+
+.chrome button {
+  pointer-events: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+/* ── top-left masthead ─────────────────────────────── */
+.chrome__masthead {
+  position: absolute;
+  top: 30px;
+  left: 34px;
+}
+
+.chrome__wordmark {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: #fff;
+  text-shadow:
+    0 0 2px rgba(255, 255, 255, 0.85),
+    0 0 10px rgba(200, 226, 250, 0.6),
+    0 0 32px rgba(127, 208, 255, 0.3);
+}
+
+.chrome__meta {
+  margin-top: 14px;
+  font-size: 11px;
+  line-height: 1.6;
+  letter-spacing: 0.06em;
+  color: rgba(210, 222, 236, 0.72);
+}
+.chrome__meta--dim {
+  margin-top: 12px;
+  color: rgba(159, 182, 214, 0.5);
+}
+
+.chrome__slash {
+  color: rgba(127, 208, 255, 0.75);
+}
+
+/* ── top-right: mascot + section list ──────────────── */
+.chrome__right {
+  position: absolute;
+  top: 26px;
+  right: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+/* The crab walks to whichever section you point at (see Nav.jsx) — it
+   overshoots slightly and settles, so it reads as something with weight
+   arriving rather than a value being tweened. */
+.chrome__mark {
+  filter: drop-shadow(0 0 10px rgba(217, 130, 99, 0.45));
+  transition: transform 0.55s cubic-bezier(0.22, 1.35, 0.36, 1),
+    filter 0.35s ease;
+  will-change: transform;
+}
+
+.chrome__mark.is-aimed {
+  filter: drop-shadow(0 0 16px rgba(217, 130, 99, 0.85))
+    drop-shadow(0 0 34px rgba(127, 208, 255, 0.3));
+}
+
+.chrome__sections {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+}
+
+.chrome__section {
+  padding: 0;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(210, 222, 236, 0.62);
+  transition: color 0.18s ease, text-shadow 0.18s ease;
+}
+.chrome__section:hover {
+  color: #fff;
+  text-shadow: 0 0 12px rgba(127, 208, 255, 0.6);
+}
+
+/* ── bottom-left sound toggle ──────────────────────── */
+.chrome__sound {
+  position: absolute;
+  bottom: 30px;
+  left: 34px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: rgba(210, 222, 236, 0.6);
+  transition: color 0.18s ease;
+}
+.chrome__sound:hover {
+  color: #fff;
+}
+
+/* On a short frame the pricing deck fills the block right down to its
+   CTAs, and the bottom-left corner is exactly where the first one lands —
+   the sound toggle sat on top of "Get the blueprints". The bottom-right
+   corner stays clear at every size, so the toggle moves there instead. */
+@media (max-height: 640px) {
+  .chrome__sound {
+    left: auto;
+    right: 34px;
+  }
+  /* the copyright stack runs straight down the first pricing column at
+     this height — the wordmark alone carries the corner */
+  .chrome__meta {
+    display: none;
+  }
+  .chrome__wordmark {
+    font-size: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome__mark {
+    transition: filter 0.2s ease;
+    transform: none !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .chrome__masthead {
+    top: 20px;
+    left: 20px;
+  }
+  .chrome__wordmark {
+    font-size: 20px;
+  }
+  .chrome__meta--dim {
+    display: none;
+  }
+  .chrome__right {
+    top: 18px;
+    right: 20px;
+    gap: 10px;
+  }
+  .chrome__sound {
+    bottom: 20px;
+    left: 20px;
+  }
+}

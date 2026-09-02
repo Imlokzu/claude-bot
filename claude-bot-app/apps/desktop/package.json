@@ -1,0 +1,50 @@
+{
+  "name": "@claude-bot/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron-обгортка: та сама веб-збірка Expo як застосунок для macOS, Windows, Linux",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "npm run build:web -w @claude-bot/app && node scripts/launch.js",
+    "start": "node scripts/launch.js",
+    "build": "npm run build:web -w @claude-bot/app && electron-builder"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.imlokzu.claudebot",
+    "productName": "Клод Бот",
+    "files": [
+      "src/**",
+      "scripts/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../app/dist",
+        "to": "web"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    }
+  }
+}

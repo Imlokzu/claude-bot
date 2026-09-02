@@ -94,6 +94,76 @@ def publish_say(text: str, emotion: str) -> None:
     publish({"type": "say", "text": text, "emotion": emotion})
 
 
+def publish_reply(text: str, emotion: str) -> None:
+    """
+    Бот ВІДПОВІВ у чаті. Потрібно екрану пристрою (/screen), який показує
+    останню репліку, але не бере участі в самому чаті.
+
+    Навмисно окремий тип, а не "say": на "say" панель додає бульбашку
+    «бот сказав сам», і відповідь чату там задвоїлася б.
+    """
+    if emotion not in ALLOWED_EMOTIONS:
+        emotion = "speaking"
+    # 2000 символів різали довгу відповідь просто посеред слова — і саме цим
+    # хвостом екран її й показував. Лишаємо стелю (SSE-подія не має возити
+    # мегабайти), але таку, що реальна репліка в неї вміщається.
+    publish({"type": "reply", "text": str(text)[:16000], "emotion": emotion})
+
+
+def publish_tool(tool: str, detail: str = "", state: str = "start") -> None:
+    """
+    Бот скористався інструментом. Потрібно, коли тули виконує НЕ панель, а
+    зовнішній мозок (OpenClaw через tools_mcp) — інакше в панелі не було б
+    видно ні що він шукає, ні що взагалі щось робить.
+    """
+    publish({
+        "type": "tool",
+        "tool": str(tool)[:60],
+        "detail": str(detail)[:160],
+        "state": "done" if state == "done" else "start",
+    })
+
+
+def publish_screen(screen: str) -> None:
+    """
+    Перемкнути екран пристрою (/screen). Шле мозок через тул open_screen —
+    щоб «покажи годинник» справді щось робило, а не лише описувалось словами.
+    """
+    publish({"type": "screen", "screen": str(screen)[:20]})
+
+
+def publish_music(track: dict, action: str = "play") -> None:
+    """
+    Керувати Now Playing на екрані пристрою: почати грати трек (play) або
+    зупинити (stop). Тул play_music шле мозок — екран підхоплює і грає
+    через /api/music/stream. Трек: {provider, id, title, uploader, duration,
+    url?} — url потрібен лише для живих радіо-потоків.
+    """
+    clean = dict(track or {})
+    publish({
+        "type": "music",
+        "action": "stop" if action == "stop" else "play",
+        "track": clean,
+    })
+
+
+def publish_ui(kind: str, data: dict) -> None:
+    """
+    Елемент інтерфейсу від бота: питання з кнопками, чекліст, картки вибору.
+
+    Панель домальовує його прямо у відповідь — щоб бот міг ПОКАЗАТИ, а не
+    описувати текстом «оберіть варіант 1 або 2».
+    """
+    publish({"type": "ui", "kind": str(kind)[:20], "data": data or {}})
+
+
+def publish_preview(path: str) -> None:
+    """Бот просить ПОКАЗАТИ файл: панель відкриє його у великому прев'ю.
+
+    Без цього єдине, що бот міг — продиктувати команду `open …` у термінал."""
+    publish({"type": "preview", "path": str(path)[:512]})
+
+
 def publish_vision(event: str, faces: int) -> None:
     """Подія зору: face_appeared | face_gone | motion."""
     publish({"type": "vision", "event": event, "faces": int(faces)})

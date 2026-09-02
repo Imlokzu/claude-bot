@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import brain_context
 import memory
 import main
 
@@ -14,7 +15,8 @@ class BrainCreationTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
-        self.patch = patch.object(memory, "BRAIN_DIR", self.root)
+        # memory.BRAIN_DIR re-exports brain_context.BRAIN_DIR; patch the canonical root
+        self.patch = patch.object(brain_context, "BRAIN_DIR", self.root)
         self.patch.start()
 
     def tearDown(self) -> None:
