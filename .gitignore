@@ -67,3 +67,10 @@ Virtual Bot/workspace/
 Virtual Bot/code/
 # Встановлені пакети магазину екрана — runtime-копії з store/packages/
 Virtual Bot/store/installed/
+
+# ---- Runtime-стан агентів (МІСТИТЬ credential-и: opencode account.json) ----
+Virtual Bot/runtime/
+
+# ---- Внутрішній стан AI-інструментів (не джерело проєкту) ----
+.crab/
+.zcode/
