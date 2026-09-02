@@ -246,11 +246,19 @@ const api = async (path, options = {}) => {
 };
 
 const SESSION_KEY = 'virtual_bot_session_id';
+const ACTIVE_KIND_KEY = 'virtual_bot_active_session_kind';
 /* Кодинг — окремий простір розмов: свій список на бекенді (code-chats/), свої
    назви, свій живий процес omp. Тому й останню відкриту розмову памʼятаємо
    окремо, інакше перемикання режиму відкривало б чужу історію. */
 const CODE_SESSION_KEY = 'virtual_bot_code_session_id';
 const sessionKeyFor = (isCode) => (isCode ? CODE_SESSION_KEY : SESSION_KEY);
+const initialCodeMode = () => {
+  try {
+    return localStorage.getItem(ACTIVE_KIND_KEY) === 'code';
+  } catch {
+    return false;
+  }
+};
 /* Тека агента — шлях, а не назва: у кодингу важить, КУДИ пишуть. */
 const codePath = (project, root) => (project ? `${root}/${project}` : root);
 const withKind = (path, isCode) =>
@@ -261,6 +269,14 @@ const readStoredSession = (isCode) => {
   } catch {
     return '';
   }
+};
+const createSessionId = () => {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID().replaceAll('-', '').slice(0, 32);
+    }
+  } catch {}
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
 };
 
 /* Скільки чекати наступний шматок відповіді, перш ніж вважати стрім мертвим */
@@ -553,7 +569,7 @@ function App() {
   /* Кодинг-режим: код пише окремий харнес (omp) над текою code/ проєкту.
      Це НЕ ще одна модель у селекторі — у нього власний цикл інструментів,
      тому і перемикач окремий, і адреса запиту інша. */
-  const [codeMode, setCodeMode] = useState(false);
+  const [codeMode, setCodeMode] = useState(initialCodeMode);
   const [codeAvailable, setCodeAvailable] = useState(false);
   const [codeModel, setCodeModel] = useState('');
   const [codeModels, setCodeModels] = useState([]);
@@ -570,11 +586,7 @@ function App() {
   const [editing, setEditing] = useState(null); // {uid, name, content, readOnly}
   const [messages, setMessages] = useState([]);
   const [sessionId, setSessionId] = useState(() => {
-    try {
-      return localStorage.getItem(SESSION_KEY) || '';
-    } catch {
-      return '';
-    }
+    return readStoredSession(initialCodeMode());
   });
   /* Список збережених чатів: розмови живуть на диску (chat_store.py), тож
      після перезавантаження сторінки чи рестарту панелі до них можна вернутись. */
@@ -599,6 +611,24 @@ function App() {
   const [activeBrain, setActiveBrain] = useState('');
   const [voiceModeOpen, setVoiceModeOpen] = useState(false);
   const abortRef = useRef(null);
+  /* Номер видимого діалогу. Старий fetch/стрім може завершитись після «+»;
+     тоді його результат не має права повернути історію чи дописати в новий
+     чат. */
+  const conversationVersionRef = useRef(0);
+
+  const invalidateConversation = () => {
+    conversationVersionRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setLoading(false);
+    return conversationVersionRef.current;
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ACTIVE_KIND_KEY, codeMode ? 'code' : 'chat');
+    } catch {}
+  }, [codeMode]);
 
   useEffect(() => {
     const className = 'chat-preview-fullscreen-active';
@@ -617,9 +647,13 @@ function App() {
     };
   }, [previewFile, previewFullscreen]);
 
-  const refreshSessions = () =>
-    api(withKind('/api/sessions', codeMode))
-      .then((r) => setSessions(r.sessions || []))
+  const refreshSessions = (isCode = codeMode, expectedVersion = null) =>
+    api(withKind('/api/sessions', isCode))
+      .then((r) => {
+        if (expectedVersion !== null && expectedVersion !== conversationVersionRef.current) return;
+        if (isCode !== codeMode) return;
+        setSessions(r.sessions || []);
+      })
       .catch(() => {});
 
   const refreshProjects = () =>
@@ -741,8 +775,11 @@ function App() {
   /* Відновлюємо останню відкриту розмову при завантаженні панелі */
   useEffect(() => {
     if (!sessionId || messages.length > 0) return;
+    const version = conversationVersionRef.current;
+    const requestedSessionId = sessionId;
     api(withKind(`/api/sessions/${encodeURIComponent(sessionId)}`, codeMode))
       .then((data) => {
+        if (version !== conversationVersionRef.current || requestedSessionId !== readStoredSession(codeMode)) return;
         const restored = (data.messages || []).map((m) => ({
           role: m.role === 'assistant' ? 'ai' : 'user',
           content: m.content,
@@ -758,8 +795,11 @@ function App() {
   }, [sessionId, codeMode]);
 
   const openSession = async (sid) => {
+    const version = invalidateConversation();
+    setLoading(true);
     try {
       const data = await api(withKind(`/api/sessions/${encodeURIComponent(sid)}`, codeMode));
+      if (version !== conversationVersionRef.current) return;
       setMessages(
         (data.messages || []).map((m) => ({
           role: m.role === 'assistant' ? 'ai' : 'user',
@@ -776,7 +816,9 @@ function App() {
         localStorage.setItem(sessionKeyFor(codeMode), sid);
       } catch {}
     } catch (e) {
-      message.error(e.message);
+      if (version === conversationVersionRef.current) message.error(e.message);
+    } finally {
+      if (version === conversationVersionRef.current) setLoading(false);
     }
   };
 
@@ -820,22 +862,29 @@ function App() {
 
   const switchMode = (nextCode) => {
     if (nextCode === codeMode || loading) return;
+    invalidateConversation();
     try {
       if (sessionId) localStorage.setItem(sessionKeyFor(codeMode), sessionId);
     } catch {}
     setCodeMode(nextCode);
     setMessages([]);
-    setSessionId(readStoredSession(nextCode));
+    const nextSessionId = readStoredSession(nextCode) || createSessionId();
+    setSessionId(nextSessionId);
+    try {
+      localStorage.setItem(sessionKeyFor(nextCode), nextSessionId);
+    } catch {}
   };
 
   const newSession = () => {
+    invalidateConversation();
     setMessages([]);
-    setSessionId('');
+    const freshSessionId = createSessionId();
+    setSessionId(freshSessionId);
     // Звичайний «+» не мав би тягнути за собою стару прив'язку до проєкту,
     // якщо перед цим хтось натиснув «новий чат тут» у модалці проєкту.
     setPendingChatProject('');
     try {
-      localStorage.removeItem(sessionKeyFor(codeMode));
+      localStorage.setItem(sessionKeyFor(codeMode), freshSessionId);
     } catch {}
     refreshSessions();
   };
@@ -981,8 +1030,9 @@ function App() {
 
   /* Кроки інструментів живуть у стані панелі; після відповіді відправляємо
      їх у сесію, щоб історія відновлювалась цілком. */
-  const saveSteps = (index) => {
+  const saveSteps = (index, version = conversationVersionRef.current) => {
     setMessages((prev) => {
+      if (version !== conversationVersionRef.current) return prev;
       const steps = prev[index]?.toolSteps || [];
       const sid = (() => {
         try {
@@ -1044,6 +1094,12 @@ function App() {
     files.forEach((f) => f.previewUrl && URL.revokeObjectURL(f.previewUrl));
     const attachments = pastes.map((p) => ({ ...p }));
     const requestMessage = userContent || 'Опиши прикріплене зображення.';
+    const requestVersion = conversationVersionRef.current;
+    const requestSessionId = sessionId || createSessionId();
+    if (!sessionId) {
+      setSessionId(requestSessionId);
+      try { localStorage.setItem(sessionKeyFor(codeMode), requestSessionId); } catch {}
+    }
 
       setInput('');
       setFiles([]);
@@ -1090,13 +1146,13 @@ function App() {
             codeMode
               ? {
                   message: requestMessage,
-                  session_id: sessionId,
+                  session_id: requestSessionId,
                   project: codeProject,
                 }
               : {
                   message: requestMessage,
                   stream: true,
-                  session_id: sessionId,
+                  session_id: requestSessionId,
                   reasoning_effort: effectiveReasoningEffort,
                   attachments: imageAttachments,
                 }
@@ -1113,7 +1169,10 @@ function App() {
         let buffer = '';
         let fullReply = '';
         let emotion = 'idle';
-        abortRef.current = { abort: () => { clearTimeout(watchdog); controller.abort(); } };
+        abortRef.current = {
+          version: requestVersion,
+          abort: () => { clearTimeout(watchdog); controller.abort(); },
+        };
 
         while (true) {
           const { done, value: chunk } = await reader.read();
@@ -1133,7 +1192,7 @@ function App() {
                   const payload = JSON.parse(dataLine);
                   if (eventType === 'delta') {
                     fullReply += payload.chunk || '';
-                    updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps);
+                    updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps, requestVersion);
                   } else if (eventType === 'emotion') {
                     emotion = payload.emotion || emotion;
                   } else if (eventType === 'tool_start') {
@@ -1151,7 +1210,7 @@ function App() {
                           at: fullReply.length,
                         },
                       ];
-                      updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps);
+                      updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps, requestVersion);
                     }
                   } else if (eventType === 'tool_done') {
                     if (!UI_TOOL_NAMES.has(payload.tool)) {
@@ -1160,7 +1219,7 @@ function App() {
                           ? { ...s, type: 'done', result: payload.result }
                           : s
                       );
-                      updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps);
+                      updateBotMessage(botIndex, fullReply, true, toolResults, mode, toolSteps, requestVersion);
                     }
                   } else if (eventType === 'done') {
                     fullReply = payload.reply || fullReply;
@@ -1183,7 +1242,7 @@ function App() {
                     );
                     if (payload.model) setActiveModel(payload.model);
                     if (payload.mode) setActiveBrain(payload.mode);
-                    if (payload.session_id && payload.session_id !== sessionId) {
+                    if (payload.session_id && payload.session_id !== requestSessionId) {
                       setSessionId(payload.session_id);
                       try {
                         localStorage.setItem(sessionKeyFor(codeMode), payload.session_id);
@@ -1193,12 +1252,12 @@ function App() {
                         setPendingChatProject('');
                       }
                     }
-                    updateBotMessage(botIndex, fullReply, false, toolResults, mode, toolSteps);
+                    updateBotMessage(botIndex, fullReply, false, toolResults, mode, toolSteps, requestVersion);
                   } else if (eventType === 'error') {
                     throw new Error(payload.error || 'Streaming error');
                   }
                 } catch (e) {
-                  updateBotMessage(botIndex, `Помилка: ${e.message}`, false, toolResults, mode, toolSteps);
+                  updateBotMessage(botIndex, `Помилка: ${e.message}`, false, toolResults, mode, toolSteps, requestVersion);
                 }
                 eventType = null;
               }
@@ -1206,10 +1265,10 @@ function App() {
           }
         }
         clearTimeout(watchdog);
-        updateBotMessage(botIndex, fullReply || '(порожня відповідь)', false, toolResults, mode, toolSteps);
+        updateBotMessage(botIndex, fullReply || '(порожня відповідь)', false, toolResults, mode, toolSteps, requestVersion);
         /* Кроки зберігаємо на диск разом із відповіддю — інакше при поверненні
            до чату лишався б сам текст, без того, що бот робив. */
-        saveSteps(botIndex);
+        saveSteps(botIndex, requestVersion);
       } catch (err) {
         const text =
           err.name === 'AbortError'
@@ -1220,19 +1279,28 @@ function App() {
             ? { ...step, type: 'done', result: { error: 'Запит завершився раніше' } }
             : step
         );
-        updateBotMessage(botIndex, text, false, [], mode, finishedSteps);
+        updateBotMessage(botIndex, text, false, [], mode, finishedSteps, requestVersion);
       } finally {
-        abortRef.current = null;
-        setLoading(false);
+        if (abortRef.current?.version === requestVersion) abortRef.current = null;
+        if (conversationVersionRef.current === requestVersion) setLoading(false);
         // Назву новому чату бот придумує у фоні — перепитуємо список трохи
         // згодом, інакше в боковій панелі лишався б заголовок-заглушка.
-        refreshSessions();
-        setTimeout(refreshSessions, 4000);
+        refreshSessions(codeMode, requestVersion);
+        setTimeout(() => refreshSessions(codeMode, requestVersion), 4000);
       }
     };
 
-  const updateBotMessage = (index, content, streaming, toolResults, mode, toolSteps) => {
+  const updateBotMessage = (
+    index,
+    content,
+    streaming,
+    toolResults,
+    mode,
+    toolSteps,
+    version = conversationVersionRef.current,
+  ) => {
     setMessages((prev) => {
+      if (version !== conversationVersionRef.current) return prev;
       const next = [...prev];
       if (next[index]) {
         next[index] = {
@@ -1893,6 +1961,7 @@ function App() {
         />
 
         <VoiceMode
+          key={`${codeMode ? 'code' : 'chat'}-${conversationVersionRef.current}`}
           open={voiceModeOpen}
           onClose={() => setVoiceModeOpen(false)}
           sessionId={sessionId}

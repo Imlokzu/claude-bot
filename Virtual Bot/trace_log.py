@@ -16,7 +16,8 @@
 Крок: {"t":<unix>,"stage":"brain|tool|asr|tts","name":str,
        "state":"start|ok|fail|skip","detail":str,"ms":float|null}
 
-Історія для щойно відкритої консолі — GET /api/trace.
+Історія для щойно відкритої консолі — GET /api/trace; параметр `session_id`
+обмежує відповідь поточною розмовою.
 
 Кроки БЕЗ активного ходу (тул, який смикнув зовнішній мозок окремим HTTP-
 запитом; розпізнавання голосу до відправки репліки) не губляться: вони йдуть
@@ -116,6 +117,12 @@ def current_id() -> str:
     return turn["id"] if turn else ""
 
 
+def current_session() -> str:
+    """Сесія поточного ходу для привʼязки службових логів до Watch."""
+    turn = _current.get()
+    return turn.get("session", "") if turn else ""
+
+
 def step(stage: str, name: str, state: str = "ok", detail: str = "", ms: float | None = None) -> None:
     """
     Додає крок до поточного ходу (або у «вільні», якщо ходу нема).
@@ -178,12 +185,20 @@ def _public(turn: dict) -> dict:
     return {**turn, "steps": list(turn["steps"])}
 
 
-def recent() -> dict:
-    """Історія для щойно відкритої консолі: ходи + вільні кроки."""
+def recent(session: str | None = None) -> dict:
+    """Історія для Watch; за сесією повертаємо лише її хід."""
     with _lock:
+        turns = list(_turns)
+        loose = list(_loose)
+        if session is not None:
+            clean = str(session).strip()
+            turns = [turn for turn in turns if clean and turn.get("session") == clean]
+            # Вільні події (камера, голос до сесії) не мають session_id, тому
+            # не домішуємо їх до відфільтрованої історії розмови.
+            loose = []
         return {
-            "turns": [_public(t) for t in _turns],
-            "events": list(_loose),
+            "turns": [_public(t) for t in turns],
+            "events": loose,
         }
 
 

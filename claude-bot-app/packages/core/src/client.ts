@@ -131,19 +131,19 @@ export class BotClient {
   sessions(mode: ChatMode = 'chat'): Promise<{ sessions: SessionSummary[] }> {
     // Кодинг має власний простір розмов — інакше задачі для агента
     // змішалися б зі звичайними чатами.
-    return this.request(`/api/sessions${mode === 'code' ? '?space=code' : ''}`);
+    return this.request(`/api/sessions?kind=${encodeURIComponent(mode)}`);
   }
 
-  session(id: string): Promise<SessionDetail> {
-    return this.request(`/api/sessions/${encodeURIComponent(id)}`);
+  session(id: string, mode: ChatMode = 'chat'): Promise<SessionDetail> {
+    return this.request(`/api/sessions/${encodeURIComponent(id)}?kind=${encodeURIComponent(mode)}`);
   }
 
-  deleteSession(id: string): Promise<{ ok: boolean }> {
-    return this.request(`/api/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  deleteSession(id: string, mode: ChatMode = 'chat'): Promise<{ ok: boolean }> {
+    return this.request(`/api/sessions/${encodeURIComponent(id)}?kind=${encodeURIComponent(mode)}`, { method: 'DELETE' });
   }
 
-  pinSession(id: string, pinned: boolean): Promise<{ ok: boolean }> {
-    return this.request(`/api/sessions/${encodeURIComponent(id)}/pin`, {
+  pinSession(id: string, pinned: boolean, mode: ChatMode = 'chat'): Promise<{ ok: boolean }> {
+    return this.request(`/api/sessions/${encodeURIComponent(id)}/pin?kind=${encodeURIComponent(mode)}`, {
       method: 'POST',
       body: { pinned },
     });

@@ -1587,19 +1587,19 @@ async def api_asr_partial(request: Request, audio: UploadFile = File(...)) -> di
 
 
 @app.get("/api/console")
-def api_console() -> dict:
-    """Останні рядки консолі (історія для початкового завантаження панелі)."""
-    return {"logs": events.recent_logs()}
+def api_console(session_id: Optional[str] = Query(default=None, max_length=64)) -> dict:
+    """Логи Watch; за session_id не тягнемо історію інших розмов."""
+    return {"logs": events.recent_logs(session_id)}
 
 
 @app.get("/api/trace")
-def api_trace() -> dict:
+def api_trace(session_id: Optional[str] = Query(default=None, max_length=64)) -> dict:
     """
     Хід розмови по кроках для окремої консолі (/console): які мозки пробувались,
-    скільки тривала кожна спроба, які тули смикались. Історія — щоб консоль,
-    відкрита посеред розмови, показала не порожньо; далі йдуть живі SSE-події.
+    скільки тривала кожна спроба, які тули смикались. За session_id повертаємо
+    лише поточну розмову; без нього — повний буфер для сумісних API-клієнтів.
     """
-    return trace_log.recent()
+    return trace_log.recent(session_id)
 
 
 @app.get("/api/processes")
