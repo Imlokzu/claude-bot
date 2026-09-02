@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
+import { TopbarAuth } from "./auth.jsx";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { ScreenManager } from "./components/ScreenManager";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -218,13 +218,7 @@ export default function App() {
                 <ClockWidget clock={clock} compact />
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <Show when="signed-out">
-                  <SignInButton />
-                  <SignUpButton />
-                </Show>
-                <Show when="signed-in">
-                  <UserButton />
-                </Show>
+                <TopbarAuth />
                 <div className={`connection-dot ${connected ? "online" : "offline"}`} />
               </div>
             </header>
