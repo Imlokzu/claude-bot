@@ -31,6 +31,7 @@ import httpx
 import app_config as cfg
 import brain_context
 import profile_store
+import trace_log
 from emotions import ALLOWED_EMOTIONS, extract_emotion, guess_emotion
 from memory import append_user_profile, find_relevant_notes, load_user_profile
 import tools as tool_registry
@@ -40,6 +41,10 @@ ChatHistory = list[dict[str, str]]
 ImageAttachment = dict[str, str]
 
 log = logging.getLogger("virtual_bot.brains")
+
+# Що каже бот, коли не відповів ЖОДЕН мозок і демо-затичка вимкнена.
+# Свідомо НЕ вдаємо розмову: це повідомлення про поломку, а не репліка бота.
+_OFFLINE_REPLY = "Зараз я без мозку — жоден із них не відповів. Загляни в консоль."
 
 # ------------------------------------------------------------------ промпт
 
@@ -186,6 +191,25 @@ async def check_chat2api_alive(client: httpx.AsyncClient) -> bool:
 # /api/status бере його як mode: ping може «брехати» (gateway живий, але
 # chatCompletions віддає 500), а цей факт — ні.
 _last_successful_brain: str | None = None
+
+
+def _fail_detail(exc: BaseException, timeout_s: float | None = None) -> str:
+    """
+    Текст падіння для консолі. У asyncio.TimeoutError str(exc) ПОРОЖНІЙ —
+    без цього в консолі висів безглуздий рядок «TimeoutError:», який не
+    каже головного: скільки саме ми чекали, перш ніж здатись.
+    """
+    text = str(exc).strip()
+    if text:
+        return f"{type(exc).__name__}: {text}"
+    if isinstance(exc, asyncio.TimeoutError) and timeout_s:
+        return f"TimeoutError: не вклався у {timeout_s:.0f} с"
+    return type(exc).__name__
+
+
+def _elapsed_ms(started: float) -> float:
+    """Скільки тривала спроба мозку (мс) — для кроків консолі."""
+    return (time.perf_counter() - started) * 1000
 
 
 def get_last_successful_brain() -> str | None:
@@ -406,6 +430,12 @@ async def chat_omni(
     """
     global _last_omni_model
     selected = get_selected_omni_model()
+    if images and cfg.OMNI_VISION_MODEL:
+        # З картинками — ОДРАЗУ перевірена vision-модель. Обрана в панелі
+        # майже завжди текстова, а «не бачу картинки» від неї — це успішна
+        # відповідь для ланцюга: виключення немає, тож fallback на
+        # OMNI_VISION_MODEL нижче ніколи б не спрацював.
+        selected = cfg.OMNI_VISION_MODEL
     try:
         result = await _omni_call(
             message, system_prompt, selected, history, emit=emit,
@@ -660,6 +690,30 @@ def _build_messages(
     return messages
 
 
+async def _execute_tool_traced(name: str, args: dict) -> dict:
+    """
+    Виклик тулзу + крок у консоль (/console).
+
+    Один вхід для ВСІХ трьох гілок — OpenAI-сумісної, Anthropic і демо.
+    Інакше в консолі було б видно тули лише того мозку, який відповів
+    останнім, а решта виглядала б як «мозок просто думав 13 секунд».
+    Помилку тулзу віддаємо результатом (так поводились усі три гілки й
+    до цього) — падати через несправний тул чат не має.
+    """
+    started = time.perf_counter()
+    try:
+        result = await tool_registry.execute_tool(name, args)
+    except Exception as exc:  # noqa: BLE001 — показуємо помилку як результат
+        result = {"error": str(exc)}
+    trace_log.step(
+        "tool", name,
+        "fail" if isinstance(result, dict) and result.get("error") else "ok",
+        _tool_progress_detail(name, args) or json.dumps(args, ensure_ascii=False)[:120],
+        (time.perf_counter() - started) * 1000,
+    )
+    return result
+
+
 async def _execute_tool_calls(tool_calls: list[dict], emit=None) -> tuple[list[dict], list[dict]]:
     """
     Виконує tool_calls з OpenAI-відповіді.
@@ -682,10 +736,7 @@ async def _execute_tool_calls(tool_calls: list[dict], emit=None) -> tuple[list[d
             "type": "tool_progress", "tool": name, "stage": "fetch",
             "detail": _tool_progress_detail(name, args),
         })
-        try:
-            result = await tool_registry.execute_tool(name, args)
-        except Exception as exc:  # noqa: BLE001 — показуємо помилку як результат
-            result = {"error": str(exc)}
+        result = await _execute_tool_traced(name, args)
         await _emit_tool_event(emit, {"type": "tool_done", "tool": name, "input": args, "result": result})
         tool_results.append({"tool": name, "input": args, "result": result})
         messages.append({
@@ -837,7 +888,7 @@ async def _call_anthropic_with_tools(
         })
     payload = {**payload_base, "tools": anthropic_tools}
     async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload)
+        resp = await client.post(f"{cfg.ANTHROPIC_BASE_URL}/v1/messages", headers=headers, json=payload)
         resp.raise_for_status()
         data = resp.json()
 
@@ -869,10 +920,7 @@ async def _call_anthropic_with_tools(
                 "type": "tool_progress", "tool": name, "stage": "fetch",
                 "detail": _tool_progress_detail(name, args),
             })
-            try:
-                result = await tool_registry.execute_tool(name, args)
-            except Exception as exc:  # noqa: BLE001 — показуємо помилку як результат
-                result = {"error": str(exc)}
+            result = await _execute_tool_traced(name, args)
             await _emit_tool_event(emit, {"type": "tool_done", "tool": name, "input": args, "result": result})
             tool_results.append({"tool": name, "input": args, "result": result})
             tool_messages.append({
@@ -883,7 +931,7 @@ async def _call_anthropic_with_tools(
         messages = payload["messages"] + [{"role": "assistant", "content": assistant_content}] + [{"role": "user", "content": tool_messages}]
         payload2 = {**payload_base, "messages": messages}
         async with httpx.AsyncClient(timeout=timeout) as client:
-            resp2 = await client.post("https://api.anthropic.com/v1/messages", headers=headers, json=payload2)
+            resp2 = await client.post(f"{cfg.ANTHROPIC_BASE_URL}/v1/messages", headers=headers, json=payload2)
             resp2.raise_for_status()
             data2 = resp2.json()
         blocks2 = data2.get("content", [])
@@ -901,21 +949,25 @@ async def _call_anthropic_with_tools(
 # ------------------------------------------------------------------ памʼять: факти про користувача
 
 _NAME_PATTERNS = [
-    re.compile(r"мене\s+звати\s+([\w\-]+)", re.IGNORECASE | re.UNICODE),
-    re.compile(r"моє\s+ім\W*я\s+([\w\-]+)", re.IGNORECASE | re.UNICODE),
-    re.compile(r"я\s+([\w\-]+)\s+(?:зі?\s+)?\w*\s*звати", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)мене\s+звати\s+([\w\-]+)", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)моє\s+ім\W*я\s+([\w\-]+)", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)я\s+([\w\-]+)\s+(?:зі?\s+)?\w*\s*звати", re.IGNORECASE | re.UNICODE),
 ]
 
 _LIKE_PATTERNS = [
-    re.compile(r"я\s+люблю\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
-    re.compile(r"я\s+не\s+люблю\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
-    re.compile(r"я\s+обожнюю\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
-    re.compile(r"я\s+ненавиджу\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)я\s+люблю\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)я\s+не\s+люблю\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)я\s+обожнюю\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)я\s+ненавиджу\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
 ]
 
+# (?<!\w) перед «я» принципово: без цього regex ловив «я» в кінці БУДЬ-ЯКОГО
+# дієслова на «-ся» («здогадуйся», «зберігся» тощо) як займенник «я», а те, що
+# йшло далі після випадкового «з» — назавжди осідало як «місце проживання»
+# (саме так «Не здогадуйся з назви файла» перетворилось на фейкове місто).
 _LIVE_PATTERNS = [
-    re.compile(r"я\s+живу\s+(?:у|в|на)\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
-    re.compile(r"я\s+з\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)я\s+живу\s+(?:у|в|на)\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
+    re.compile(r"(?<!\w)я\s+з\s+(.+?)(?:\.|,|;|!|\?|$)", re.IGNORECASE | re.UNICODE),
 ]
 
 _FAVORITE_PATTERNS = [
@@ -1074,6 +1126,41 @@ def _extract_city(message: str) -> str | None:
             if city:
                 return city
     return None
+
+
+# Короткі репліки, які не є містом (щоб «а в мюнхені» тригерило, а «а ти?» — ні)
+_FOLLOWUP_STOPWORDS = {
+    "так", "ні", "ок", "окей", "ага", "угу", "дякую", "дяки", "спасибі",
+    "круто", "клас", "класно", "добре", "погано", "що", "чому", "як",
+    "коли", "де", "ти", "я", "ну", "і", "а", "тобто",
+}
+
+_FOLLOWUP_CITY_RE = re.compile(
+    r"^\s*(?:а|і|та)?\s*(?:в|у|для|про|на)?\s*([\w'’\- ]{2,40}?)\s*[?!.…]*$",
+    re.IGNORECASE | re.UNICODE,
+)
+
+
+def _extract_followup_city(message: str) -> str | None:
+    """Коротке продовження на кшталт «а в мюнхені» → назва міста (без ключа «погода»)."""
+    text = message.strip()
+    if not text or len(text.split()) > 3:
+        return None
+    m = _FOLLOWUP_CITY_RE.match(text)
+    if not m:
+        return None
+    city = m.group(1).strip(" .,;:!?")
+    if not city or city.casefold() in _FOLLOWUP_STOPWORDS:
+        return None
+    return city
+
+
+def _last_assistant_was_weather(history: ChatHistory) -> bool:
+    """Чи була попередня відповідь бота про погоду (для розуміння продовжень)."""
+    for h in reversed(history or []):
+        if h.get("role") == "assistant":
+            return "°c" in (h.get("content") or "").casefold()
+    return False
 
 
 def _extract_currencies(message: str) -> tuple[str, str]:
@@ -1287,10 +1374,7 @@ async def _run_tool(emit, name: str, input_data: dict) -> dict:
         "type": "tool_progress", "tool": name, "stage": "fetch",
         "detail": _tool_progress_detail(name, input_data),
     })
-    try:
-        result = await tool_registry.execute_tool(name, input_data)
-    except Exception as exc:  # noqa: BLE001
-        result = {"error": str(exc)}
+    result = await _execute_tool_traced(name, input_data)
     await _emit_tool_event(emit, {"type": "tool_done", "tool": name, "input": input_data, "result": result})
     return result
 
@@ -1315,6 +1399,14 @@ async def chat_demo(message: str, history: ChatHistory, emit=None) -> tuple[str,
         result = await _run_tool(emit, "weather", {"city": city})
         tool_results.append({"tool": "weather", "input": {"city": city}, "result": result})
         return _format_weather_result(result), "web", tool_results
+
+    # Продовження погодної розмови без ключа: «а в мюнхені» після відповіді про погоду
+    if _last_assistant_was_weather(history):
+        followup_city = _extract_followup_city(message)
+        if followup_city:
+            result = await _run_tool(emit, "weather", {"city": followup_city})
+            tool_results.append({"tool": "weather", "input": {"city": followup_city}, "result": result})
+            return _format_weather_result(result), "web", tool_results
 
     if any(kw in lowered for kw in ("курс", "валют", "долар", "євро", "usd", "eur", "uah", "гривн")):
         base, target = _extract_currencies(message)
@@ -1374,7 +1466,10 @@ async def chat(
         backoff_left = openclaw_backoff_remaining()
         if backoff_left > 0:
             log.info("OpenClaw у бекофі після невдачі — пропускаю (ще %.0f с)", backoff_left)
+            trace_log.step("brain", "openclaw", "skip", f"бекоф після невдачі, ще {backoff_left:.0f} с")
         else:
+            trace_log.step("brain", "openclaw", "start", cfg.OPENCLAW_AGENT)
+            started = time.perf_counter()
             try:
                 raw, tool_results = await asyncio.wait_for(
                     chat_openclaw(message, system_prompt, history, emit=emit, images=images),
@@ -1385,22 +1480,35 @@ async def chat(
                 reply, emotion = extract_emotion(raw)
                 _openclaw_note_success()
                 _remember_brain("openclaw", cfg.OPENCLAW_AGENT)
+                trace_log.step("brain", "openclaw", "ok", cfg.OPENCLAW_AGENT, _elapsed_ms(started))
                 return reply, emotion, "openclaw", tool_results
             except Exception as exc:  # noqa: BLE001 — свідомо ковтаємо, падаємо на наступний мозок
                 _openclaw_note_failure()
+                trace_log.step(
+                    "brain", "openclaw", "fail",
+                    _fail_detail(exc, cfg.CHAT_OPENCLAW_TIMEOUT_S), _elapsed_ms(started),
+                )
                 log.warning(
                     "OpenClaw недоступний (%s), пробую Omni; наступні ~%.0f с OpenClaw у чаті пропускаю",
                     type(exc).__name__, cfg.CHAT_OPENCLAW_BACKOFF_S,
                 )
     elif images:
         log.info("Запит містить %d зображень — пропускаю OpenClaw без vision", len(images))
+        trace_log.step("brain", "openclaw", "skip", f"{len(images)} зображень — шлюз їх не бачить")
+    else:
+        trace_log.step("brain", "openclaw", "skip", "немає токена")
 
     # Мозок 1: Omni-роутер (ШВИДКИЙ запасний) — якщо OpenClaw недоступний
+    if not cfg.get_omni_key():
+        trace_log.step("brain", "omni", "skip", "немає ключа OMNI_API_KEY")
     if cfg.get_omni_key():
         backoff_left = omni_backoff_remaining()
         if backoff_left > 0:
             log.info("Omni у бекофі після невдачі — пропускаю (ще %.0f с)", backoff_left)
+            trace_log.step("brain", "omni", "skip", f"бекоф після невдачі, ще {backoff_left:.0f} с")
         else:
+            trace_log.step("brain", "omni", "start", get_selected_omni_model())
+            started = time.perf_counter()
             try:
                 raw, tool_results = await asyncio.wait_for(
                     chat_omni(
@@ -1415,35 +1523,71 @@ async def chat(
                 reply, emotion = extract_emotion(raw)
                 _omni_note_success()
                 _remember_brain("omni", _last_omni_model or get_selected_omni_model())
+                trace_log.step(
+                    "brain", "omni", "ok",
+                    _last_omni_model or get_selected_omni_model(), _elapsed_ms(started),
+                )
                 return reply, emotion, "omni", tool_results
             except Exception as exc:  # noqa: BLE001 — свідомо ковтаємо, падаємо на наступний мозок
                 _omni_note_failure()
+                trace_log.step(
+                    "brain", "omni", "fail",
+                    _fail_detail(exc, cfg.CHAT_OMNI_TIMEOUT_S), _elapsed_ms(started),
+                )
                 log.warning(
                     "Omni недоступний (%s), пробую Anthropic; наступні ~%.0f с Omni у чаті пропускаю",
                     type(exc).__name__, cfg.CHAT_OMNI_BACKOFF_S,
                 )
 
     if cfg.get_anthropic_key():
+        anthropic_model = getattr(cfg, "ANTHROPIC_MODEL", "anthropic")
+        trace_log.step("brain", "anthropic", "start", anthropic_model)
+        started = time.perf_counter()
         try:
             raw, tool_results = await chat_anthropic(message, system_prompt, history, emit=emit, images=images)
             reply, emotion = extract_emotion(raw)
-            _remember_brain("anthropic", getattr(cfg, "ANTHROPIC_MODEL", "anthropic"))
+            _remember_brain("anthropic", anthropic_model)
+            trace_log.step("brain", "anthropic", "ok", anthropic_model, _elapsed_ms(started))
             return reply, emotion, "anthropic", tool_results
         except Exception as exc:  # noqa: BLE001
+            trace_log.step(
+                "brain", "anthropic", "fail", _fail_detail(exc), _elapsed_ms(started),
+            )
             log.warning("Anthropic недоступний (%s), пробую Chat2API", type(exc).__name__)
+    else:
+        trace_log.step("brain", "anthropic", "skip", "немає ключа ANTHROPIC_API_KEY")
 
     # Chat2API — локальний, ключа не потребує, тому пробуємо завжди
+    chat2api_model = getattr(cfg, "CHAT2API_MODEL", "chat2api")
+    trace_log.step("brain", "chat2api", "start", chat2api_model)
+    started = time.perf_counter()
     try:
         raw, tool_results = await chat_chat2api(message, system_prompt, history, emit=emit, images=images)
         reply, emotion = extract_emotion(raw)
-        _remember_brain("chat2api", getattr(cfg, "CHAT2API_MODEL", "chat2api"))
+        _remember_brain("chat2api", chat2api_model)
+        trace_log.step("brain", "chat2api", "ok", chat2api_model, _elapsed_ms(started))
         return reply, emotion, "chat2api", tool_results
     except Exception as exc:  # noqa: BLE001
+        trace_log.step(
+            "brain", "chat2api", "fail", _fail_detail(exc), _elapsed_ms(started),
+        )
         log.warning("Chat2API недоступний (%s), переходжу в демо", type(exc).__name__)
+
+    # Жоден мозок не відповів. Що показати — вирішує chat.demo_fallback.
+    if not cfg.CHAT_DEMO_FALLBACK:
+        # Чесний стан замість завченої фрази. Затичка колись здавалась
+        # безпечною («хай застосунок працює завжди»), але саме вона ховала
+        # поломку: бот бадьоро вітався, а насправді ланцюг лежав, і побачити
+        # це можна було лише в логах.
+        _remember_brain("offline", "мозок недоступний")
+        trace_log.step("brain", "offline", "fail", "жоден мозок не відповів")
+        log.error("Жоден мозок не відповів — віддаю offline (демо вимкнено)")
+        return _OFFLINE_REPLY, "sad", "offline", []
 
     reply, emotion, tool_results = await chat_demo(message, history, emit=emit)
     # Демо-відповіді теж проганяємо через евристику як запасний варіант
     if emotion not in ALLOWED_EMOTIONS:
         emotion = guess_emotion(reply)
     _remember_brain("demo", "демо-режим")
+    trace_log.step("brain", "demo", "ok", "заготовлені відповіді")
     return reply, emotion, "demo", tool_results

@@ -9,7 +9,7 @@ MCP додаються в OpenClaw через `openclaw mcp add <name> --command
 
 from __future__ import annotations
 
-from app_config import BASE_DIR
+from app_config import BASE_DIR, BRAIN_DIR
 
 # id, name, desc(укр), category, command+args(stdio), env(ключі), needs_key,
 # recommended(маст-хев), note
@@ -90,8 +90,9 @@ MCP_SUGGESTIONS: list[dict] = [
         "id": "filesystem", "name": "Файли",
         "desc": "Читання/запис файлів у дозволеній папці (напр. нотатки brain/).",
         "category": "Файли", "command": "npx",
-        "args": ["-y", "@modelcontextprotocol/server-filesystem",
-                 "/Users/hhh/projects/claude bot/Virtual Bot/brain"],
+        # Шлях беремо з конфігу, а не зашитий: інакше в репозиторій потрапляє
+        # домашня тека автора, і в чужій установці він усе одно невірний.
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", str(BRAIN_DIR)],
         "env": [], "needs_key": False, "recommended": False,
         "note": "Офіційний; шлях можна змінити.",
     },

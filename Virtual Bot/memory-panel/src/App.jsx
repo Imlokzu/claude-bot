@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Show, SignInButton, SignUpButton, UserButton } from '@clerk/react'
 import FileList from './components/FileList'
 import Editor from './components/Editor'
 import MemoryMap from './components/MemoryMap'
 import { getActiveSessionId, memoryRequestPath } from './session'
+import { TopbarAuth } from './AuthGate.jsx'
+import { authFetch } from './auth.js'
 
 const API_BASE = '/api'
 
 async function api(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, options)
+  const res = await authFetch(`${API_BASE}${path}`, options)
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     let msg = data.error || data.detail || data.message || `HTTP ${res.status}`
@@ -179,14 +180,8 @@ function App() {
 
   return (
     <div className="memory-app">
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '8px 12px', borderBottom: '1px solid var(--border, #e5e5e5)' }}>
-        <Show when="signed-out">
-          <SignInButton />
-          <SignUpButton />
-        </Show>
-        <Show when="signed-in">
-          <UserButton />
-        </Show>
+      <div className="memory-authbar">
+        <TopbarAuth />
       </div>
       <div className="memory-sidebar">
         <div className="memory-tabs" role="tablist" aria-label="Розділи пам'яті">

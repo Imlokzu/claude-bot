@@ -37,6 +37,7 @@ DEFAULT_BRAIN_ID = "__default__"
 _SEED_DIRECTORIES = ("people", "topics", "logs")
 
 _brain_root_ctx: ContextVar[Path | None] = ContextVar("brain_root", default=None)
+_clerk_user_ctx: ContextVar[str | None] = ContextVar("clerk_user", default=None)
 
 _DIGEST_ID_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -161,3 +162,35 @@ def set_brain_root(root: Path) -> Iterator[None]:
         yield
     finally:
         _brain_root_ctx.reset(token)
+
+
+# ---- Clerk user isolation helpers ----
+
+def set_active_clerk_user(user_id: str | None) -> None:
+    _clerk_user_ctx.set(user_id)
+
+
+def get_active_clerk_user() -> str | None:
+    return _clerk_user_ctx.get()
+
+
+@contextmanager
+def set_clerk_user(user_id: str | None) -> Iterator[None]:
+    token = _clerk_user_ctx.set(user_id)
+    try:
+        yield
+    finally:
+        _clerk_user_ctx.reset(token)
+
+
+def clerk_user_dir_name(user_id: str) -> str:
+    """Stable dir name for a Clerk user_id (sub) — з префіксом clerk: щоб не колізнути з session_id."""
+    return hashlib.sha256(f"clerk:{user_id}".encode("utf-8")).hexdigest()
+
+
+def init_clerk_user_brain(user_id: str) -> Path:
+    """Brain root scoped to a Clerk user (per-account bot)."""
+    key = f"clerk:{user_id}"
+    root = _user_brain_root(key)
+    _seed_brain_atomic(root)
+    return root

@@ -1,8 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Dropdown, message, Modal } from 'antd';
+import { authFetch } from './auth.js';
 import {
-  LeftOutlined,
-  RightOutlined,
   CopyOutlined,
   LinkOutlined,
   DownloadOutlined,
@@ -14,11 +13,11 @@ import {
 /**
  * Карусель для картинок, які знайшов бот.
  *
- * Замість купи зображень поспіль — одна велика зі стрілками й лічильником.
- * Права кнопка миші дає те саме, що й у справжньому браузері: копіювати саму
- * картинку, копіювати посилання, зберегти. Плюс два наші пункти — лайк і
- * «до бібліотеки сесії» (файл лягає в робочу теку бота, тож він може взяти
- * його для сайту, який робить).
+ * Стрічка мініатюр фіксованого розміру зі свайпом убік (видно ~2.5 картинки
+ * одразу, як у мобільних стрічках), а не одна картинка на всю ширину. Клік —
+ * перегляд на весь екран, права кнопка — те саме меню, що й у браузері:
+ * копіювати саму картинку, копіювати посилання, зберегти, плюс лайк і
+ * «до бібліотеки сесії» (файл лягає в робочу теку бота).
  */
 
 const LIKES_KEY = 'virtual_bot_liked_images';
@@ -31,7 +30,7 @@ const loadLikes = () => {
   }
 };
 
-export default function ImageGallery({ images, sessionId }) {
+export default function ImageGallery({ images, sessionId, project }) {
   const [index, setIndex] = useState(0);
   const [likes, setLikes] = useState(loadLikes);
   const [preview, setPreview] = useState(false);
@@ -55,15 +54,41 @@ export default function ImageGallery({ images, sessionId }) {
 
   if (!images || images.length === 0) return null;
   const current = images[Math.min(index, images.length - 1)];
-  const liked = likes.has(current.src);
 
-  const move = (delta) =>
-    setIndex((i) => (i + delta + images.length) % images.length);
+  const itemEls = () => trackRef.current?.querySelectorAll('.img-gallery-item') || [];
 
-  const toggleLike = () => {
+  const scrollToIndex = (i) => {
+    itemEls()[i]?.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' });
+  };
+
+  /* Стрічка сама «підказує», яка картинка зараз найближче до лівого краю —
+     звідти беремо підпис, лайк-іконку та те, яку картинку відкриє повний
+     перегляд і контекстне меню без зайвого кліку по самій мініатюрі. */
+  const onTrackScroll = () => {
+    const el = trackRef.current;
+    if (!el) return;
+    let closest = 0;
+    let closestDist = Infinity;
+    itemEls().forEach((it, i) => {
+      const dist = Math.abs(it.offsetLeft - el.scrollLeft);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = i;
+      }
+    });
+    setIndex((prev) => (prev === closest ? prev : closest));
+  };
+
+  const move = (delta) => {
+    const next = (index + delta + images.length) % images.length;
+    setIndex(next);
+    scrollToIndex(next);
+  };
+
+  const toggleLike = (img) => {
     const next = new Set(likesRef.current);
-    if (next.has(current.src)) next.delete(current.src);
-    else next.add(current.src);
+    if (next.has(img.src)) next.delete(img.src);
+    else next.add(img.src);
     likesRef.current = next;
     setLikes(next);
     try {
@@ -71,16 +96,16 @@ export default function ImageGallery({ images, sessionId }) {
     } catch {}
   };
 
-  const copyUrl = async () => {
-    await navigator.clipboard.writeText(current.src);
+  const copyUrl = async (img) => {
+    await navigator.clipboard.writeText(img.src);
     message.success('Посилання скопійовано');
   };
 
   /* Саме зображення в буфер: беремо байти й кладемо як image/png —
      інакше вставиться лише текст посилання. */
-  const copyImage = async () => {
+  const copyImage = async (img) => {
     try {
-      const blob = await fetch(current.src).then((r) => r.blob());
+      const blob = await fetch(img.src).then((r) => r.blob());
       const png = blob.type === 'image/png' ? blob : await toPng(blob);
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
       message.success('Картинку скопійовано');
@@ -104,23 +129,31 @@ export default function ImageGallery({ images, sessionId }) {
       img.src = URL.createObjectURL(blob);
     });
 
-  const download = () => {
+  const download = (img) => {
     const a = document.createElement('a');
-    a.href = current.src;
-    a.download = (current.alt || 'image').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'image';
+    a.href = img.src;
+    a.download = (img.alt || 'image').replace(/[^\w.-]+/g, '_').slice(0, 60) || 'image';
     a.target = '_blank';
     a.rel = 'noreferrer';
     a.click();
   };
 
-  /* «У бібліотеку сесії» — бот кладе файл у свою робочу теку, тому потім
-     може використати картинку в тому, що робить (напр. на сайті). */
-  const addToLibrary = async () => {
+  /* «У бібліотеку» — бот кладе файл у свою робочу теку, тому потім може
+     використати картинку в тому, що робить (напр. на сайті). Якщо чат
+     привʼязаний до проєкту — файл летить у бібліотеку САМЕ цього проєкту,
+     а не загальну сесійну, щоб усі матеріали лежали разом. */
+  const addToLibrary = async (img) => {
     try {
-      const res = await fetch('/api/workspace/save-url', {
+      /* authFetch, а не голий fetch: із увімкненим Clerk ручка вимагає токен,
+         і «У бібліотеку» мовчки падало б 401 у всіх, крім дев-режиму. */
+      const res = await authFetch('/api/workspace/save-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: current.src, session_id: sessionId || '' }),
+        body: JSON.stringify({
+          url: img.src,
+          session_id: sessionId || '',
+          subdir: project ? `projects/${project}/library` : 'session/library',
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'не вдалося');
@@ -130,43 +163,56 @@ export default function ImageGallery({ images, sessionId }) {
     }
   };
 
-  const menuItems = [
-    { key: 'copy', icon: <CopyOutlined />, label: 'Копіювати картинку' },
-    { key: 'url', icon: <LinkOutlined />, label: 'Копіювати посилання' },
-    { key: 'download', icon: <DownloadOutlined />, label: 'Зберегти на компʼютер' },
-    { type: 'divider' },
-    {
-      key: 'like',
-      icon: liked ? <HeartFilled /> : <HeartOutlined />,
-      label: liked ? 'Прибрати вподобайку' : 'Подобається',
-    },
-    { key: 'library', icon: <FolderAddOutlined />, label: 'У бібліотеку сесії' },
-  ];
+  const libraryLabel = project ? 'У бібліотеку проєкту' : 'У бібліотеку сесії';
 
-  const onMenu = ({ key }) => {
-    if (key === 'copy') copyImage();
-    else if (key === 'url') copyUrl();
-    else if (key === 'download') download();
-    else if (key === 'like') toggleLike();
-    else if (key === 'library') addToLibrary();
+  const menuItemsFor = (img) => {
+    const liked = likes.has(img.src);
+    return [
+      { key: 'copy', icon: <CopyOutlined />, label: 'Копіювати картинку' },
+      { key: 'url', icon: <LinkOutlined />, label: 'Копіювати посилання' },
+      { key: 'download', icon: <DownloadOutlined />, label: 'Зберегти на компʼютер' },
+      { type: 'divider' },
+      {
+        key: 'like',
+        icon: liked ? <HeartFilled /> : <HeartOutlined />,
+        label: liked ? 'Прибрати вподобайку' : 'Подобається',
+      },
+      { key: 'library', icon: <FolderAddOutlined />, label: libraryLabel },
+    ];
+  };
+
+  const onMenuFor = (img) => ({ key }) => {
+    if (key === 'copy') copyImage(img);
+    else if (key === 'url') copyUrl(img);
+    else if (key === 'download') download(img);
+    else if (key === 'like') toggleLike(img);
+    else if (key === 'library') addToLibrary(img);
   };
 
   return (
     <div className="img-gallery">
-      <Dropdown menu={{ items: menuItems, onClick: onMenu }} trigger={['contextMenu']}>
-        <div className="img-gallery-stage" ref={trackRef}>
-          <img
-            src={current.src}
-            alt={current.alt || ''}
-            onClick={() => setPreview(true)}
-            title="Клік — на весь екран, права кнопка — меню"
-          />
-          {liked && <HeartFilled className="img-gallery-like" />}
-        </div>
-      </Dropdown>
+      <div className="img-gallery-track" ref={trackRef} onScroll={onTrackScroll}>
+        {images.map((im, i) => (
+          <Dropdown
+            key={im.src}
+            menu={{ items: menuItemsFor(im), onClick: onMenuFor(im) }}
+            trigger={['contextMenu']}
+          >
+            <div
+              className="img-gallery-item"
+              onClick={() => {
+                setIndex(i);
+                setPreview(true);
+              }}
+              title={im.alt || 'Клік — на весь екран, права кнопка — меню'}
+            >
+              <img src={im.src} alt={im.alt || ''} loading="lazy" />
+              {likes.has(im.src) && <HeartFilled className="img-gallery-like" />}
+            </div>
+          </Dropdown>
+        ))}
+      </div>
 
-      {/* Підпис моделі до саме цієї картинки — коли їх кілька, це єдине,
-          з чого видно, що на кожній. Плюс лічильник. */}
       {(current.alt || images.length > 1) && (
         <div className="img-gallery-caption">
           {current.alt && <span className="img-gallery-alt">{current.alt}</span>}
@@ -179,25 +225,17 @@ export default function ImageGallery({ images, sessionId }) {
       )}
 
       {images.length > 1 && (
-        <>
-          <button type="button" className="img-gallery-nav img-gallery-prev" onClick={() => move(-1)}>
-            <LeftOutlined />
-          </button>
-          <button type="button" className="img-gallery-nav img-gallery-next" onClick={() => move(1)}>
-            <RightOutlined />
-          </button>
-          <div className="img-gallery-dots">
-            {images.map((im, i) => (
-              <button
-                key={im.src}
-                type="button"
-                className={`img-gallery-dot${i === index ? ' img-gallery-dot-active' : ''}`}
-                onClick={() => setIndex(i)}
-                aria-label={`Картинка ${i + 1}`}
-              />
-            ))}
-          </div>
-        </>
+        <div className="img-gallery-dots">
+          {images.map((im, i) => (
+            <button
+              key={im.src}
+              type="button"
+              className={`img-gallery-dot${i === index ? ' img-gallery-dot-active' : ''}`}
+              onClick={() => move(i - index)}
+              aria-label={`Картинка ${i + 1}`}
+            />
+          ))}
+        </div>
       )}
 
       <Modal
@@ -213,17 +251,17 @@ export default function ImageGallery({ images, sessionId }) {
         {/* Ті самі дії, що й у контекстному меню: у повний екран заходять
             саме щоб роздивитись і забрати картинку. */}
         <div className="img-full-actions">
-          <Button size="small" icon={<CopyOutlined />} onClick={copyImage}>Копіювати</Button>
-          <Button size="small" icon={<LinkOutlined />} onClick={copyUrl}>Посилання</Button>
-          <Button size="small" icon={<DownloadOutlined />} onClick={download}>Зберегти</Button>
-          <Button size="small" icon={<FolderAddOutlined />} onClick={addToLibrary}>У бібліотеку</Button>
+          <Button size="small" icon={<CopyOutlined />} onClick={() => copyImage(current)}>Копіювати</Button>
+          <Button size="small" icon={<LinkOutlined />} onClick={() => copyUrl(current)}>Посилання</Button>
+          <Button size="small" icon={<DownloadOutlined />} onClick={() => download(current)}>Зберегти</Button>
+          <Button size="small" icon={<FolderAddOutlined />} onClick={() => addToLibrary(current)}>{libraryLabel}</Button>
           <Button
             size="small"
-            icon={liked ? <HeartFilled /> : <HeartOutlined />}
-            onClick={toggleLike}
-            danger={liked}
+            icon={likes.has(current.src) ? <HeartFilled /> : <HeartOutlined />}
+            onClick={() => toggleLike(current)}
+            danger={likes.has(current.src)}
           >
-            {liked ? 'Подобається' : 'Вподобати'}
+            {likes.has(current.src) ? 'Подобається' : 'Вподобати'}
           </Button>
           {images.length > 1 && (
             <span className="img-full-count">{index + 1} / {images.length}</span>

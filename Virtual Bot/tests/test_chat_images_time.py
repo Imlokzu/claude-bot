@@ -109,18 +109,21 @@ class ChatImageTests(unittest.TestCase):
         self.assertEqual(reply, "Бачу")
         self.assertEqual(mode, "omni")
 
-    def test_image_uses_dedicated_vision_fallback(self) -> None:
+    def test_image_goes_straight_to_vision_model(self) -> None:
+        """
+        З картинками vision-модель питається ПЕРШОЮ, а не як fallback:
+        текстова модель на запит із зображенням чемно відповідає «не бачу» —
+        для ланцюга це успіх, і fallback за винятком ніколи не спрацьовував.
+        """
         calls = []
         image = {"mime": "image/png", "data": "YWJj"}
 
         async def fake_omni_call(message, system_prompt, model, history, **kwargs):
             calls.append(model)
-            if len(calls) == 1:
-                raise RuntimeError("primary has no vision")
             return "Бачу", []
 
         with (
-            patch.object(brains, "get_selected_omni_model", return_value="claude/broken"),
+            patch.object(brains, "get_selected_omni_model", return_value="opencode/text-only"),
             patch.object(brains.cfg, "OMNI_VISION_MODEL", "opencode-go/minimax-m3"),
             patch.object(brains, "_omni_call", side_effect=fake_omni_call),
         ):
@@ -129,7 +132,7 @@ class ChatImageTests(unittest.TestCase):
             ))
 
         self.assertEqual(result, "Бачу")
-        self.assertEqual(calls, ["claude/broken", "opencode-go/minimax-m3"])
+        self.assertEqual(calls, ["opencode-go/minimax-m3"])
         self.assertEqual(brains._last_omni_model, "opencode-go/minimax-m3")
 
 

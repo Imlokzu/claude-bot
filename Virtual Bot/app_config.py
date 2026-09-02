@@ -142,6 +142,16 @@ def cfg_int(*keys: str, default: int) -> int:
         return int(default)
 
 
+def cfg_bool(*keys: str, default: bool) -> bool:
+    """Прапорець із конфігу: приймає і yaml-булеве, і рядки «1/true/так/on»."""
+    raw = cfg(*keys, default=default)
+    if isinstance(raw, bool):
+        return raw
+    if raw is None:
+        return default
+    return str(raw).strip().casefold() in {"1", "true", "yes", "on", "так"}
+
+
 def cfg_str(*keys: str, default: str) -> str:
     """Рядок із конфігу; None/порожнє → default (щоб не було рядка "None")."""
     raw = cfg(*keys, default=default)
@@ -218,6 +228,9 @@ OPENCLAW_TIMEOUT_S: float = cfg_float("openclaw", "timeout_s", default=45)
 # (щоб завислий gateway не додавав десятки секунд до кожної відповіді чату)
 CHAT_OPENCLAW_TIMEOUT_S: float = cfg_float("chat", "openclaw_timeout_s", default=10)
 CHAT_OPENCLAW_BACKOFF_S: float = cfg_float("chat", "openclaw_backoff_s", default=120)
+# Затичка з заготовленими відповідями. Типово вимкнена: мовчазна підміна
+# зламаного мозку «живою» фразою коштувала години пошуку неіснуючої причини.
+CHAT_DEMO_FALLBACK: bool = cfg_bool("chat", "demo_fallback", default=False)
 ANTHROPIC_BASE_URL: str = cfg_str("anthropic", "base_url", default="https://api.anthropic.com").rstrip("/")
 ANTHROPIC_MODEL: str = cfg_str("anthropic", "model", default="claude-sonnet-5")
 ANTHROPIC_MAX_TOKENS: int = cfg_int("anthropic", "max_tokens", default=1024)
@@ -228,13 +241,93 @@ CHAT2API_TIMEOUT_S: float = cfg_float("chat2api", "timeout_s", default=60)
 ASR_PROVIDER: str = cfg_str("asr", "provider", default="regolo").casefold()
 REGOLO_ASR_BASE_URL: str = cfg_str("asr", "base_url", default="https://api.regolo.ai/v1").rstrip("/")
 REGOLO_ASR_MODEL: str = cfg_str("asr", "model", default="faster-whisper-large-v3")
-REGOLO_ASR_LANGUAGE: str = cfg_str("asr", "language", default="uk")
+
+
+def _load_asr_languages() -> list[str]:
+    """
+    `asr.languages` → список кодів мов. Одна мова = жорстка фіксація (швидко),
+    кілька = визначаємо мову ЛИШЕ серед них. Обмеження тут головне: коли в
+    кандидатах немає польської чи російської, Whisper фізично не може в них
+    зіскочити на невиразній фразі.
+    """
+    raw = cfg("asr", "languages", default=None)
+    if isinstance(raw, str):
+        items = raw.split(",")
+    elif isinstance(raw, list):
+        items = [str(item) for item in raw]
+    else:
+        items = []
+    out: list[str] = []
+    for item in items:
+        code = item.strip().casefold()
+        if code and code not in out:
+            out.append(code)
+    return out or [cfg_str("asr", "language", default="uk").casefold()]
+
+
+ASR_LANGUAGES: list[str] = _load_asr_languages()
+# Хмарний Regolo приймає РІВНО одну мову, тож йому дістається перша зі списку.
+REGOLO_ASR_LANGUAGE: str = cfg_str("asr", "language", default=ASR_LANGUAGES[0])
 REGOLO_ASR_TIMEOUT_S: float = cfg_float("asr", "timeout_s", default=45)
 REGOLO_ASR_MAX_UPLOAD_BYTES: int = cfg_int("asr", "max_upload_bytes", default=10 * 1024 * 1024)
 ASR_LOCAL_MODEL: str = cfg_str("asr", "local_model", default="large-v3-turbo")
 ASR_LOCAL_DEVICE: str = cfg_str("asr", "local_device", default="cpu").casefold()
 ASR_LOCAL_COMPUTE_TYPE: str = cfg_str("asr", "local_compute_type", default="int8")
 ASR_LOCAL_BEAM_SIZE: int = cfg_int("asr", "local_beam_size", default=3)
+# 0 = за кількістю ядер. Стандартний ctranslate2 бере лише частину ядер, і на
+# M2 Pro це коштувало ~1.5с на кожну коротку фразу (заміряно 5.6с → 4.1с).
+ASR_LOCAL_THREADS: int = cfg_int("asr", "local_threads", default=0)
+# Модель для ЖИВИХ проміжних результатів (поки ти ще говориш). Мусить бути
+# швидкою, а не найточнішою: остаточний текст усе одно рахує local_model.
+ASR_PARTIAL_MODEL: str = cfg_str("asr", "partial_model", default="small")
+ASR_PARTIALS_ENABLED: bool = cfg_bool("asr", "partials", default=True)
+
+
+def _load_asr_hotwords() -> str:
+    """
+    Список термінів із конфігу → ОДИН рядок, як його чекає faster-whisper
+    (`hotwords=`) і OpenAI-сумісний `/audio/transcriptions` (`prompt=`).
+    Приймаємо і список, і готовий рядок через кому.
+    """
+    raw = cfg("asr", "hotwords", default=None)
+    if isinstance(raw, str):
+        items = raw.split(",")
+    elif isinstance(raw, list):
+        items = [str(item) for item in raw]
+    else:
+        items = []
+    return ", ".join(text for text in (item.strip() for item in items) if text)
+
+
+ASR_HOTWORDS: str = _load_asr_hotwords()
+
+
+def _load_asr_aliases() -> dict[str, list[str]]:
+    """
+    `asr.aliases` → {канон: [вимови]}. Порожні й неправильно записані рядки
+    просто пропускаємо: крива підказка не має валити старт бота.
+    """
+    raw = cfg("asr", "aliases", default=None)
+    out: dict[str, list[str]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for canonical, variants in raw.items():
+        name = str(canonical).strip()
+        if not name:
+            continue
+        if isinstance(variants, str):
+            items = variants.split(",")
+        elif isinstance(variants, list):
+            items = [str(item) for item in variants]
+        else:
+            continue
+        cleaned = [text for text in (item.strip() for item in items) if text]
+        if cleaned:
+            out[name] = cleaned
+    return out
+
+
+ASR_ALIASES: dict[str, list[str]] = _load_asr_aliases()
 VISION_BASE_URL: str = cfg_str("vision", "base_url", default="http://127.0.0.1:8000").rstrip("/")
 DISPLAY_BASE_URL: str = cfg_str("display", "base_url", default="http://127.0.0.1:8001").rstrip("/")
 

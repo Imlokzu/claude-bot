@@ -1,10 +1,19 @@
 import React, { useMemo, useState } from 'react';
-import { Button, Input } from 'antd';
-import { PlusOutlined, SearchOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
+import { Button, Input, Dropdown, Modal, message } from 'antd';
+import {
+  PlusOutlined,
+  SearchOutlined,
+  StarFilled,
+  StarOutlined,
+  FolderOutlined,
+  FolderAddOutlined,
+  MoreOutlined,
+} from '@ant-design/icons';
 
 /**
- * Список збережених розмов: пошук + назва, яку придумав бот, + коли востаннє.
- * На широкому екрані живе збоку, на вузькому — у шухляді (див. App.jsx).
+ * Сайдбар чатів: зверху завжди «Проєкти» (папка з власною бібліотекою),
+ * нижче — пошук і плоский список розмов. Кожен чат можна перенести в
+ * проєкт через кнопку-теку, яка з'являється при наведенні.
  */
 
 function whenLabel(updated) {
@@ -17,14 +26,60 @@ function whenLabel(updated) {
   return new Date(updated * 1000).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
 }
 
-export default function SessionList({ sessions, activeId, onOpen, onNew, onPin }) {
+export default function SessionList({
+  sessions,
+  activeId,
+  onOpen,
+  onNew,
+  onPin,
+  projects,
+  onOpenProject,
+  onCreateProject,
+  onMoveToProject,
+}) {
   const [query, setQuery] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return sessions;
     return sessions.filter((s) => (s.title || '').toLowerCase().includes(q));
   }, [sessions, query]);
+
+  const submitCreate = async () => {
+    const name = nameDraft.trim();
+    if (!name) return;
+    try {
+      const created = await onCreateProject(name);
+      if (typeof creating === 'string' && creating.startsWith('for-chat:')) {
+        onMoveToProject(creating.slice(9), created.id);
+      }
+      setCreating(false);
+      setNameDraft('');
+    } catch (e) {
+      message.error(`Не вдалося створити проєкт: ${e.message}`);
+    }
+  };
+
+  const projectMenu = (session) => ({
+    items: [
+      ...projects.map((p) => ({ key: `move:${p.id}`, icon: <FolderOutlined />, label: p.name })),
+      projects.length > 0 ? { type: 'divider' } : null,
+      { key: 'new', icon: <FolderAddOutlined />, label: 'Новий проєкт…' },
+      session.project ? { key: 'unassign', label: 'Прибрати з проєкту' } : null,
+    ].filter(Boolean),
+    onClick: ({ key }) => {
+      if (key === 'new') {
+        setCreating('for-chat:' + session.id);
+        setNameDraft('');
+      } else if (key === 'unassign') {
+        onMoveToProject(session.id, '');
+      } else if (key.startsWith('move:')) {
+        onMoveToProject(session.id, key.slice(5));
+      }
+    },
+  });
 
   return (
     <div className="session-list">
@@ -40,6 +95,38 @@ export default function SessionList({ sessions, activeId, onOpen, onNew, onPin }
         <Button size="small" type="text" icon={<PlusOutlined />} onClick={onNew} title="Новий чат" />
       </div>
 
+      {/* Проєкти — тека з власною бібліотекою і чатами, завжди зверху. */}
+      <div className="project-section">
+        <div className="project-section-head">
+          <span>Проєкти</span>
+          <button
+            type="button"
+            className="project-section-add"
+            onClick={() => {
+              setCreating(true);
+              setNameDraft('');
+            }}
+            title="Новий проєкт"
+          >
+            <PlusOutlined />
+          </button>
+        </div>
+        {projects.length > 0 && (
+          <div className="project-section-items">
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="project-section-row"
+                onClick={() => onOpenProject(p.id)}
+              >
+                <FolderOutlined /> <span>{p.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="session-list-items">
         {shown.map((s) => (
           <div
@@ -48,8 +135,27 @@ export default function SessionList({ sessions, activeId, onOpen, onNew, onPin }
           >
             <button type="button" className="session-row-open" onClick={() => onOpen(s.id)}>
               <span className="session-row-title">{s.title || 'Без назви'}</span>
-              <span className="session-row-when">{whenLabel(s.updated)}</span>
+              <span className="session-row-when">
+                {whenLabel(s.updated)}
+                {s.project && (
+                  <span className="session-row-project">
+                    {' · '}
+                    {projects.find((p) => p.id === s.project)?.name || s.project}
+                  </span>
+                )}
+              </span>
             </button>
+            <Dropdown menu={projectMenu(s)} trigger={['click']}>
+              <button
+                type="button"
+                className="session-row-move"
+                title="Перемістити в проєкт"
+                aria-label="Перемістити в проєкт"
+                onClick={(e) => e.preventDefault()}
+              >
+                <MoreOutlined />
+              </button>
+            </Dropdown>
             <button
               type="button"
               className={`session-row-pin${s.pinned ? ' session-row-pin-active' : ''}`}
@@ -67,6 +173,23 @@ export default function SessionList({ sessions, activeId, onOpen, onNew, onPin }
           </div>
         )}
       </div>
+
+      <Modal
+        open={!!creating}
+        title="Новий проєкт"
+        okText="Створити"
+        cancelText="Скасувати"
+        onCancel={() => setCreating(false)}
+        onOk={submitCreate}
+      >
+        <Input
+          autoFocus
+          value={nameDraft}
+          onChange={(e) => setNameDraft(e.target.value)}
+          onPressEnter={submitCreate}
+          placeholder="Наприклад, «Сайт котиків»"
+        />
+      </Modal>
     </div>
   );
 }

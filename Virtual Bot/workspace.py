@@ -22,10 +22,11 @@ from contextvars import ContextVar
 from pathlib import Path
 from typing import Iterator
 
-from app_config import WORKSPACE_DIR
+from app_config import CODE_DIR, WORKSPACE_DIR
+from brain_context import get_active_clerk_user, clerk_user_dir_name, USER_DATA_DIR
 
 # Теки, які створюються одразу — щоб бот бачив, куди що класти
-DEFAULT_FOLDERS = ("projects", "games", "notes", "downloads", "sessions")
+DEFAULT_FOLDERS = ("games", "notes", "downloads", "sessions")
 
 TRASH_DIRNAME = ".trash"
 
@@ -39,9 +40,10 @@ _session_ctx: ContextVar[str] = ContextVar("workspace_session", default="")
 
 README = """# Робоча тека Клода Бота
 
-Це тека, якою бот користується сам: створює файли, проєкти, ігри, нотатки.
+Це тека, якою бот користується сам: створює файли, ігри, нотатки.
+Код-проєкти сюди НЕ потрапляють — вони в окремому корені (див. `code_dir`
+у config.yaml), щоб кодинг-агент не бачив нотаток і памʼяті.
 
-- `projects/`  — робочі проєкти
 - `games/`     — ігри та експерименти
 - `notes/`     — нотатки
 - `downloads/` — те, що бот завантажив
@@ -79,15 +81,45 @@ def active_session_slug() -> str:
 
 # ---------------------------------------------------------------- шляхи
 
+def _active_workspace_base() -> Path:
+    uid = get_active_clerk_user()
+    if uid:
+        base = USER_DATA_DIR / clerk_user_dir_name(uid) / "workspace"
+    else:
+        base = WORKSPACE_DIR
+    return base
+
+
+def _active_code_base() -> Path:
+    """Корінь код-проєктів — ОКРЕМИЙ від workspace і від brain.
+
+    Розділення навмисне: кодинг-агент отримує тільки цю теку як cwd, тож
+    памʼять, профіль і журнали розмов (brain/) та особисті файли бота
+    (workspace/) лишаються поза його полем зору навіть у того самого
+    користувача.
+    """
+    uid = get_active_clerk_user()
+    if uid:
+        return USER_DATA_DIR / clerk_user_dir_name(uid) / "code"
+    return CODE_DIR
+
+
 def root() -> Path:
     """Корінь робочої теки; створюється разом зі стандартними підтеками."""
-    base = WORKSPACE_DIR
+    base = _active_workspace_base()
     base.mkdir(parents=True, exist_ok=True)
     for name in DEFAULT_FOLDERS:
         (base / name).mkdir(exist_ok=True)
     readme = base / "README.md"
     if not readme.exists():
         readme.write_text(README, encoding="utf-8")
+    return base.resolve()
+
+
+def code_root() -> Path:
+    """Корінь код-проєктів; створюється за потреби."""
+    base = _active_code_base()
+    base.mkdir(parents=True, exist_ok=True)
     return base.resolve()
 
 
@@ -228,23 +260,44 @@ def make_dir(rel: str) -> dict:
     return {"ok": True, "path": rel_path(path)}
 
 
+def _trash_move(base: Path, path: Path) -> str:
+    """Перенос у `<base>/.trash/` з міткою часу; повертає шлях відносно base.
+
+    Спільне для робочої теки й теки коду — у кожної свій власний .trash,
+    щоб видалене з одного кореня не опинялося в іншому.
+    """
+    resolved = path.resolve()
+    if resolved == base:
+        raise ValueError("Корінь видалити не можна")
+    if not resolved.is_relative_to(base):
+        raise ValueError("Шлях не може виходити за межі кореня")
+    trash = base / TRASH_DIRNAME
+    trash.mkdir(exist_ok=True)
+    target = trash / f"{int(time.time())}-{resolved.name}"
+    counter = 1
+    while target.exists():
+        target = trash / f"{int(time.time())}-{counter}-{resolved.name}"
+        counter += 1
+    shutil.move(str(resolved), str(target))
+    return target.relative_to(base).as_posix()
+
+
 def delete(rel: str) -> dict:
     """
     Видалення = переїзд у .trash/ з міткою часу. Нічого не стирається
     назавжди: помилковий клік у панелі (чи бота) завжди можна відкотити.
     """
     path = _resolve(rel, must_exist=True)
-    if path == root():
-        raise ValueError("Корінь робочої теки видалити не можна")
-    trash = root() / TRASH_DIRNAME
-    trash.mkdir(exist_ok=True)
-    target = trash / f"{int(time.time())}-{path.name}"
-    counter = 1
-    while target.exists():
-        target = trash / f"{int(time.time())}-{counter}-{path.name}"
-        counter += 1
-    shutil.move(str(path), str(target))
-    return {"ok": True, "trashed": rel_path(target)}
+    return {"ok": True, "trashed": _trash_move(root(), path)}
+
+
+def delete_code(name: str) -> dict:
+    """Те саме для теки коду: проєкт їде в `code/.trash/`, а не зникає."""
+    base = code_root()
+    target = (base / name).resolve()
+    if not target.is_dir():
+        raise FileNotFoundError("Немає такого проєкту")
+    return {"ok": True, "trashed": _trash_move(base, target)}
 
 
 def save_url(url: str, subdir: str = "session/library") -> dict:
@@ -262,19 +315,35 @@ def save_url(url: str, subdir: str = "session/library") -> dict:
     if not link.startswith("https://"):
         raise ValueError("Дозволені лише https-посилання")
 
-    with httpx.Client(timeout=20.0, follow_redirects=True) as client:
-        with client.stream("GET", link) as resp:
-            resp.raise_for_status()
-            content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
-            if not content_type.startswith("image/"):
-                raise ValueError("За посиланням не зображення")
-            chunks: list[bytes] = []
-            size = 0
-            for chunk in resp.iter_bytes():
-                chunks.append(chunk)
-                size += len(chunk)
-                if size > MAX_WRITE_BYTES:
-                    raise ValueError("Зображення завелике")
+    # Браузерний User-Agent: великі CDN (Wikimedia тощо) віддають 403 на
+    # «голий» httpx, хоча картинка публічна — а сюди приходять саме лінки
+    # з пошуку картинок у чаті.
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        ),
+    }
+    try:
+        with httpx.Client(timeout=20.0, follow_redirects=True, headers=headers) as client:
+            with client.stream("GET", link) as resp:
+                resp.raise_for_status()
+                content_type = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                if not content_type.startswith("image/"):
+                    raise ValueError("За посиланням не зображення")
+                chunks: list[bytes] = []
+                size = 0
+                for chunk in resp.iter_bytes():
+                    chunks.append(chunk)
+                    size += len(chunk)
+                    if size > MAX_WRITE_BYTES:
+                        raise ValueError("Зображення завелике")
+    except httpx.HTTPStatusError as exc:
+        # ValueError → чистий 400 із людським текстом у панелі, а не 500:
+        # чужий сервер відмовив — це не внутрішня помилка бота.
+        raise ValueError(f"Сервер картинки відповів {exc.response.status_code}") from exc
+    except httpx.HTTPError as exc:
+        raise ValueError(f"Не вдалося завантажити картинку ({type(exc).__name__})") from exc
     data = b"".join(chunks)
 
     ext = {

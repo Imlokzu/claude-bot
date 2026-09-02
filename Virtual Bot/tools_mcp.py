@@ -90,6 +90,74 @@ TOOLS = [
             "required": ["base"],
         },
     },
+    {
+        "name": "ask_question",
+        "description": (
+            "Поставити користувачу питання КАРТКОЮ З КНОПКАМИ замість звичайного тексту. "
+            "Використовуй ЗАВЖДИ, коли пропонуєш вибір або перепитуєш уточнення — "
+            "натиснути кнопку швидше, ніж друкувати. Відповідь прийде окремим повідомленням."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "Саме питання."},
+                "options": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Варіанти відповіді (до 6), напр. ['Так', 'Ні', 'Пізніше'].",
+                },
+                "allow_custom": {
+                    "type": "boolean",
+                    "description": "Чи лишати поле для власної відповіді. Типово так.",
+                },
+            },
+            "required": ["question"],
+        },
+    },
+    {
+        "name": "todo_list",
+        "description": (
+            "Показати список справ інтерактивним чеклістом — коли плануєш роботу або "
+            "перелічуєш кроки. Користувач сам ставить галочки."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Заголовок списку."},
+                "items": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Пункти (до 20).",
+                },
+            },
+            "required": ["items"],
+        },
+    },
+    {
+        "name": "show_choice",
+        "description": (
+            "Показати кілька варіантів картками з описом (напр. варіанти дизайну чи підходу). "
+            "Користувач обирає кліком."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                            "description": {"type": "string"},
+                        },
+                        "required": ["label"],
+                    },
+                },
+            },
+            "required": ["title", "options"],
+        },
+    },
 ]
 
 _TOOL_NAMES = {t["name"] for t in TOOLS}

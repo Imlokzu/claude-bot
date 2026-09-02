@@ -1057,6 +1057,13 @@ function App() {
         { role: 'ai', content: '', streaming: true, toolResults: [], mode: '', toolSteps: [] },
       ]);
 
+      /* Оголошені ДО try: catch показує помилку разом із кроками, і якщо
+         запит упав ще до створення цих змінних (мережа, 401), звертання до
+         них у catch не має саме́ кидати ReferenceError і ковтати помилку. */
+      let toolResults = [];
+      let mode = '';
+      let toolSteps = [];
+
       try {
         /* Сторожовий таймер: якщо бекенд помер посеред стріму, читання може
            не завершитись НІКОЛИ — і кнопка назавжди лишалась «стоп», а нове
@@ -1106,9 +1113,6 @@ function App() {
         let buffer = '';
         let fullReply = '';
         let emotion = 'idle';
-        let toolResults = [];
-        let mode = '';
-        let toolSteps = [];
         abortRef.current = { abort: () => { clearTimeout(watchdog); controller.abort(); } };
 
         while (true) {

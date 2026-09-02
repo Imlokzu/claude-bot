@@ -171,8 +171,11 @@ html, body {
   left: 8px;
   right: 8px;
   bottom: 16px;
-  max-height: 54px;
+  /* 84px ≈ 5 рядків. Було 54px (3 рядки) — абзац у них не жив узагалі:
+     видно було лише хвіст, а початок відповіді доводилось шукати пальцем. */
+  max-height: 84px;
   overflow-y: auto;
+  scroll-behavior: smooth;               /* гортання сторінками, не ривком */
   scrollbar-width: none;                 /* смуга прокрутки тут зайва */
   padding: 4px 6px;
   border-radius: 10px;
@@ -183,6 +186,122 @@ html, body {
   text-align: center;
 }
 .face-caption::-webkit-scrollbar { display: none; }
+
+/* Лічильник сторінок субтитра. Сидить НАД рамкою, а не в ній: усередині він
+   би їхав разом із текстом і зникав з першою ж прокруткою. */
+.caption-page {
+  position: absolute;
+  right: 10px;
+  bottom: 104px;                         /* 16 (відступ) + 84 (рамка) + 4 */
+  padding: 1px 5px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  pointer-events: none;                  /* тап має діставатись рамки під ним */
+}
+
+/* Картинки з репліки — прямо на циферблаті, над субтитром.
+   object-fit: contain, бо картинку треба показати ПОВНІСТЮ: обрізане фото
+   на 2.4" екрані здебільшого перестає бути впізнаваним. */
+/* Режим «бот показує фото»: ОДНА рамка на майже весь екран, у ній ОДНА
+   картинка, а краб унизу тримає рамку клешнями. Усе зайве (маскот у повний
+   зріст, підпис емоції, субтитр) на цей час зникає — на 320×240 два центри
+   уваги перетворюють екран на кашу. */
+.face-photo {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 34px;
+  bottom: 42px;
+  /* Рамка: один чіткий кант, квадратні кути, тонкий світлий паспарту —
+     як у справжньої фоторамки. Багатошарові тіні тут виглядали брудно. */
+  border: 3px solid var(--accent);
+  box-shadow: inset 0 0 0 2px #f4f1ea;
+  background: #f4f1ea;          /* саме він і дає «білі бари» під contain */
+  overflow: hidden;
+  touch-action: pan-y;
+}
+.face-photo img {
+  width: 100%;
+  height: 100%;
+  /* Картинку НЕ ріжемо: не влазить у рамку — лишаються білі поля */
+  object-fit: contain;
+  display: block;
+  image-rendering: auto;
+}
+
+/* Гортання: стрілки з боків + крапки. З’являються лише коли картинок кілька */
+.photo-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 26px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: rgba(20, 18, 15, 0.42);
+  color: var(--accent);
+  font: 700 15px/1 var(--font);
+  cursor: pointer;
+}
+.photo-nav:active { background: rgba(20, 18, 15, 0.75); }
+.photo-nav.prev { left: 0; }
+.photo-nav.next { right: 0; }
+.face-photo.many .photo-nav { display: flex; }
+
+/* Крапки — у лівому нижньому куті рамки, а НЕ по центру: по центру їх
+   затуляють клешні краба-тримача. */
+.photo-dots {
+  position: absolute;
+  left: 5px;
+  bottom: 4px;
+  display: none;
+  gap: 4px;
+}
+.face-photo.many .photo-dots { display: flex; }
+.photo-dots i {
+  width: 5px;
+  height: 5px;
+  background: rgba(20, 18, 15, 0.35);
+}
+.photo-dots i.on { background: var(--accent); }
+
+/* Краб-тримач сидить у правому нижньому куті, а піднята клешня заходить на
+   ПРАВИЙ кант рамки — тобто він тримає її збоку, а не підпирає знизу. */
+.face-holder {
+  position: absolute;
+  right: 12px;
+  bottom: 16px;
+  image-rendering: pixelated;
+}
+/* Мікрофон на цей час переїжджає ліворуч: інакше він і краб б’ються за той
+   самий куток. */
+.tile-face.photo .face-mic { left: 8px; right: auto; bottom: 12px; }
+
+/* У режимі фото прибираємо все зайве */
+.tile-face.photo .crab,
+.tile-face.photo .face-label,
+.tile-face.photo .face-caption { display: none; }
+
+.say-photo {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.say-photo img {
+  max-height: 96px;
+  max-width: 100%;
+  object-fit: contain;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
 .face-caption.user { color: var(--accent); }
 .face-caption.bot { color: var(--text); }
 
@@ -206,7 +325,43 @@ html, body {
 
 /* Мікрофон не стрибає: він завжди внизу праворуч, а субтитр просто
    лишає йому місце. Спроба піднімати кнопку нагору саджала її на годинник. */
-.tile-face.captioned .face-caption { right: 48px; }
+
+/* ---------- Дві колонки, поки бот відповідає ----------
+   Доти текст і краб ділили одну вертикаль: бульбашка тулилась у 5 рядків
+   унизу, а верхня половина екрана стояла порожня під крабом. На 320×240 це
+   найдорожча помилка — місця й так обмаль.
+
+   Коли є відповідь: ЛІВОРУЧ текст на всю висоту тайла, ПРАВОРУЧ краб і
+   мікрофон вузькою колонкою. Режиму фото це не стосується (.photo) — там
+   рамка займає екран цілком і ділити нічого. */
+
+.tile-face.captioned:not(.photo) .face-caption {
+  left: 8px;
+  right: 112px;                          /* ширина правої колонки */
+  top: 30px;                             /* під годинником */
+  bottom: 16px;
+  max-height: none;                      /* висоту тепер задають top/bottom */
+  text-align: left;                      /* абзац читають зліва, не по центру */
+}
+
+/* Краб у своїй колонці. Масштабуємо ЧЕРЕЗ CSS: канвас лишається 300×152,
+   тож малювання емоцій не треба переписувати під новий розмір. */
+.tile-face.captioned:not(.photo) .crab {
+  position: absolute;
+  right: 10px;
+  top: 84px;                             /* між годинником і мікрофоном */
+  width: 92px;
+  height: auto;
+}
+
+/* Лічильник сторінок їде до краба: над текстом він накрив би перший рядок */
+.tile-face.captioned:not(.photo) .caption-page {
+  right: 10px;
+  bottom: 58px;                          /* під крабом, над мікрофоном */
+}
+
+/* Поки фото — стара поведінка: субтитр знизу, лишає місце мікрофону */
+.tile-face.captioned.photo .face-caption { right: 48px; }
 
 /* Тайл 1 — годинник */
 .tile-clock { justify-content: center; align-items: center; }
@@ -880,7 +1035,7 @@ html, body {
 }
 .msg table { border-collapse: collapse; font-size: 11px; }
 .msg td, .msg th { border: 1px solid var(--line); padding: 1px 4px; }
-.msg img { max-width: 100%; }
+.msg img { max-width: 100%; max-height: 128px; object-fit: contain; }
 .msg hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
 
 /* ---------- Розмова голосом ---------- */
@@ -1125,7 +1280,7 @@ html, body {
 }
 .msg table { border-collapse: collapse; font-size: 11px; }
 .msg td, .msg th { border: 1px solid var(--line); padding: 1px 4px; }
-.msg img { max-width: 100%; }
+.msg img { max-width: 100%; max-height: 128px; object-fit: contain; }
 .msg hr { border: none; border-top: 1px solid var(--line); margin: 4px 0; }
 
 .chat-bar {

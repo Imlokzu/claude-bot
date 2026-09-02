@@ -1,0 +1,77 @@
+/* Клод Бот — AuthGate + топбар кнопки (той самий палево-теплий стиль, без гівніца) */
+.auth-gate {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 20px;
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(201,100,66,.10), transparent 60%),
+    radial-gradient(900px 500px at 90% 0%, rgba(95,139,76,.08), transparent 55%),
+    linear-gradient(180deg, #FBFAF7 0%, #F0EEE6 100%);
+}
+.auth-gate-card {
+  width: min(520px, 100%);
+  background: #FBFAF7;
+  border: 1px solid #E4E1D6;
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(43,42,38,.08), 0 2px 10px rgba(43,42,38,.06);
+  padding: 28px 26px 22px;
+}
+.auth-gate-brand {
+  display: flex; align-items: baseline; gap: 8px;
+  font-weight: 800; letter-spacing: .14em; font-size: 12px; color: #2B2A26;
+}
+.auth-gate-logo { color: #C96442; }
+.auth-gate-sub { color: #83817A; font-weight: 600; letter-spacing: .16em; }
+.auth-gate-h1 {
+  margin: 14px 0 8px;
+  font-size: 26px; line-height: 1.15; font-weight: 800; color: #2B2A26;
+  letter-spacing: -.02em;
+}
+.auth-gate-lead {
+  margin: 0; font-size: 14px; line-height: 1.6; color: #6b6a64;
+}
+.auth-gate-actions {
+  display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px;
+}
+.auth-gate-btn {
+  appearance: none; border-radius: 999px; padding: 10px 18px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  border: 1px solid #E4E1D6; transition: transform .12s, box-shadow .12s, background .12s, border-color .12s, color .12s;
+}
+.auth-gate-btn:active { transform: translateY(1px) scale(.99); }
+.auth-gate-btn-primary {
+  background: #C96442; border-color: #C96442; color: #fff;
+  box-shadow: 0 6px 18px rgba(201,100,66,.28);
+}
+.auth-gate-btn-primary:hover { background: #b85a3b; border-color: #b85a3b; }
+.auth-gate-btn-ghost { background: #fff; color: #2B2A26; }
+.auth-gate-btn-ghost:hover { border-color: #C96442; color: #C96442; }
+.auth-gate-hint { margin: 12px 0 0; font-size: 12px; color: #9a9993; }
+
+/* Топбар — компактні пігулки */
+.auth-topbar { display: inline-flex; align-items: center; gap: 8px; }
+.auth-btn {
+  appearance: none; border-radius: 999px; padding: 7px 14px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  border: 1px solid #E4E1D6; background: #fff; color: #2B2A26;
+  transition: border-color .12s, background .12s, color .12s, transform .12s;
+}
+.auth-btn:hover { border-color: #C96442; color: #C96442; }
+.auth-btn-primary { background: #2B2A26; color: #FBFAF7; border-color: #2B2A26; }
+.auth-btn-primary:hover { background: #1f1e1a; border-color: #1f1e1a; color: #FBFAF7; }
+.auth-btn:active { transform: translateY(1px); }
+
+/* Локальний режим (CLERK_DISABLED=1): тиха позначка замість кнопок входу */
+.auth-local-badge {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(0,0,0,.15));
+  color: var(--muted, #8a8a8a);
+  opacity: .75;
+}

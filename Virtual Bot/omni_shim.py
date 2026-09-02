@@ -41,6 +41,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+# Імпорт заради двох речей: .env підвантажується самим app_config (start_brain.sh
+# його НЕ читає) і звідти ж беремо ключ Regolo для прямого провайдера нижче.
+import app_config as cfg
+
 log = logging.getLogger("omni_shim")
 
 PORT = int(os.environ.get("OMNI_SHIM_PORT", "20128"))
@@ -54,6 +58,18 @@ REAL_AUTH = Path.home() / ".local/share/opencode/auth.json"
 # Скільки чекати на відповідь моделі. opencode-go відповідає за 3–10с,
 # але великі задачі бувають довшими.
 REPLY_TIMEOUT_S = float(os.environ.get("OMNI_SHIM_TIMEOUT_S", "180"))
+
+# --- прямий провайдер `regolo` (повз opencode) -------------------------------
+# opencode про Regolo не знає, а нам звідти потрібні ШВИДКІ моделі: gpt-oss-20b
+# відповідає за ~0.9с проти ~5с у будь-якої моделі через сесійне API opencode
+# (там на кожен запит створюється сесія й крутиться власний агентний цикл).
+# Regolo говорить чистою OpenAI-мовою, тож проксі тут — прямий і короткий.
+# Ключ той самий, що й для ASR: env REGOLO_ASR_API_KEY (один акаунт Regolo).
+REGOLO_PROVIDER = "regolo"
+REGOLO_BASE_URL = os.environ.get("REGOLO_BASE_URL", "https://api.regolo.ai/v1").rstrip("/")
+# Лише текстові моделі — картинок вони не приймають (див. _ask_regolo).
+REGOLO_MODELS = ("gpt-oss-20b", "gpt-oss-120b")
+REGOLO_TIMEOUT_S = float(os.environ.get("OMNI_SHIM_REGOLO_TIMEOUT_S", "60"))
 
 app = FastAPI(title="Omni shim (opencode)", docs_url=None, redoc_url=None)
 
@@ -141,6 +157,16 @@ async def models() -> dict:
         for mid in ids:
             if mid:
                 out.append({"id": f"{pid}/{mid}", "object": "model", "created": now, "owned_by": pid})
+
+    # Regolo йде повз opencode, тому в його списку провайдерів не значиться —
+    # дописуємо самі, і лише коли ключ реально є (мертвий пункт у списку
+    # гірший за його відсутність).
+    if cfg.get_regolo_asr_key():
+        for mid in REGOLO_MODELS:
+            out.append({
+                "id": f"{REGOLO_PROVIDER}/{mid}", "object": "model",
+                "created": now, "owned_by": REGOLO_PROVIDER,
+            })
     return {"object": "list", "data": out}
 
 
@@ -166,8 +192,8 @@ class ChatReq(BaseModel):
 
 
 def _text_of(content) -> str:
-    """Текст повідомлення. Частини-картинки пропускаємо: сесійне API opencode
-    приймає файли окремим типом, і підмішувати їх у текст було б брехнею."""
+    """Текст повідомлення. Частини-картинки тут не змішуємо з текстом:
+    вони їдуть окремими file-частинами opencode (див. _file_parts_of)."""
     if isinstance(content, str):
         return content
     if isinstance(content, list):
@@ -178,17 +204,48 @@ def _text_of(content) -> str:
     return ""
 
 
-def _split(messages: list[Msg]) -> tuple[str, str]:
-    """Системний промпт окремо, решта розмови — одним транскриптом.
+def _file_parts_of(content) -> list[dict]:
+    """
+    OpenAI-стиль image_url → file-частини сесійного API opencode.
+
+    Бот шле картинки data:-URL (base64), і саме їх opencode вміє віддати
+    моделі як вкладення. Сторонні http(s)-посилання свідомо пропускаємо:
+    качати чуже за роутер — не робота шима. Без цієї конвертації картинки
+    мовчки губились, і текстова модель «чесно» відповідала «не бачу».
+    """
+    parts: list[dict] = []
+    if not isinstance(content, list):
+        return parts
+    for p in content:
+        if not (isinstance(p, dict) and p.get("type") == "image_url"):
+            continue
+        url = str((p.get("image_url") or {}).get("url") or "").strip()
+        if not url.startswith("data:"):
+            continue
+        head = url[5:url.find(",")] if "," in url else ""
+        mime = head.split(";", 1)[0].strip() or "image/png"
+        parts.append({
+            "type": "file",
+            "mime": mime,
+            "filename": f"image-{len(parts) + 1}.{mime.rsplit('/', 1)[-1] or 'png'}",
+            "url": url,
+        })
+    return parts
+
+
+def _split(messages: list[Msg]) -> tuple[str, str, list[dict]]:
+    """Системний промпт окремо, розмова — транскриптом, картинки — file-частинами.
 
     Сесію створюємо НОВУ на кожен запит: бот і так надсилає всю історію,
     а reuse сесії означав би подвійний контекст (свій і ботів) і розсинхрон.
+    Картинки беремо лише з ОСТАННЬОГО повідомлення: історію бот шле текстом.
     """
     system = "\n\n".join(_text_of(m.content) for m in messages if m.role == "system").strip()
     convo = [m for m in messages if m.role != "system"]
+    files = _file_parts_of(convo[-1].content) if convo else []
 
     if len(convo) <= 1:
-        return system, _text_of(convo[0].content) if convo else ""
+        return system, _text_of(convo[0].content) if convo else "", files
 
     lines = []
     for m in convo[:-1]:
@@ -198,15 +255,46 @@ def _split(messages: list[Msg]) -> tuple[str, str]:
             lines.append(f"{who}: {text}")
     last = _text_of(convo[-1].content).strip()
     if lines:
-        return system, "Попередня розмова:\n" + "\n".join(lines) + f"\n\nКористувач: {last}"
-    return system, last
+        return system, "Попередня розмова:\n" + "\n".join(lines) + f"\n\nКористувач: {last}", files
+    return system, last, files
 
 
-async def _ask(model: str, system: str, text: str) -> str:
+async def _ask_regolo(model_id: str, system: str, text: str, files: list[dict] | None = None) -> str:
+    """Прямий OpenAI-виклик до Regolo (без opencode) — заради швидкості."""
+    key = cfg.get_regolo_asr_key()
+    if not key:
+        raise HTTPException(502, "немає ключа Regolo (env REGOLO_ASR_API_KEY)")
+    if files:
+        # Ці моделі текстові. Чесна помилка краща за мовчазно проігноровану
+        # картинку: бот побачить невдачу і піде до vision-моделі далі по ланцюгу.
+        raise HTTPException(400, f"модель {model_id} не приймає картинки")
+
+    messages = ([{"role": "system", "content": system}] if system else []) + \
+               [{"role": "user", "content": text}]
+    async with httpx.AsyncClient(timeout=REGOLO_TIMEOUT_S) as client:
+        r = await client.post(
+            f"{REGOLO_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": model_id, "messages": messages},
+        )
+    if r.status_code != 200:
+        raise HTTPException(502, f"Regolo відмовив ({r.status_code}): {r.text[:200]}")
+    try:
+        reply = (r.json()["choices"][0]["message"].get("content") or "").strip()
+    except (KeyError, IndexError, ValueError) as exc:
+        raise HTTPException(502, "Regolo повернув несподівану відповідь") from exc
+    if not reply:
+        raise HTTPException(502, "модель повернула порожню відповідь")
+    return reply
+
+
+async def _ask(model: str, system: str, text: str, files: list[dict] | None = None) -> str:
     """Один запит до opencode: нова сесія → повідомлення → текст відповіді."""
     if "/" not in model:
         raise HTTPException(400, f"Модель має бути «провайдер/модель», отримано: {model}")
     provider_id, _, model_id = model.partition("/")
+    if provider_id == REGOLO_PROVIDER:
+        return await _ask_regolo(model_id, system, text, files)
 
     async with httpx.AsyncClient(timeout=REPLY_TIMEOUT_S) as client:
         r = await client.post(f"{OPENCODE_URL}/session", json={"title": "claude-bot"})
@@ -216,7 +304,7 @@ async def _ask(model: str, system: str, text: str) -> str:
 
         body: dict = {
             "model": {"providerID": provider_id, "modelID": model_id},
-            "parts": [{"type": "text", "text": text}],
+            "parts": [{"type": "text", "text": text}, *(files or [])],
         }
         if system:
             body["system"] = system
@@ -258,11 +346,14 @@ def _openai_response(model: str, reply: str) -> dict:
 
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatReq):
-    await _ensure_opencode()
-    system, text = _split(req.messages)
-    if not text:
+    # Regolo ходить повз opencode — не піднімаємо його заради такого запиту
+    # (інакше найшвидша модель платила б за чужий холодний старт).
+    if not req.model.startswith(f"{REGOLO_PROVIDER}/"):
+        await _ensure_opencode()
+    system, text, files = _split(req.messages)
+    if not text and not files:
         raise HTTPException(400, "Порожнє повідомлення")
-    reply = await _ask(req.model, system, text)
+    reply = await _ask(req.model, system, text or "Опиши зображення.", files)
 
     if not req.stream:
         return _openai_response(req.model, reply)

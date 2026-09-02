@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="uk" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Клод Бот — Консоль</title>
+  <link rel="stylesheet" href="/static/console/console.css">
+</head>
+<body>
+
+<header class="bar">
+  <div class="bar-title">
+    <span class="live-dot" id="liveDot" title="Звʼязок із ботом"></span>
+    <b>Консоль</b>
+    <span class="bar-sub" id="barSub">підключення…</span>
+  </div>
+  <div class="bar-actions">
+    <label class="chk"><input type="checkbox" id="follow" checked> стежити</label>
+    <button class="btn" id="pauseBtn" type="button" data-paused="0">Пауза</button>
+    <button class="btn" id="clearBtn" type="button">Очистити</button>
+  </div>
+</header>
+
+<main class="grid">
+
+  <!-- ── Ліворуч: хто зараз живий ─────────────────────────────── -->
+  <aside class="col col-procs">
+    <div class="col-head">
+      <h2>Процеси</h2>
+      <span class="col-note" id="procNote">—</span>
+    </div>
+    <div class="procs" id="procs"></div>
+
+    <div class="col-head">
+      <h2>Мозок</h2>
+    </div>
+    <div class="brainbox" id="brainbox"></div>
+  </aside>
+
+  <!-- ── Праворуч: що відбувається ────────────────────────────── -->
+  <section class="col col-flow">
+    <div class="col-head">
+      <h2>Хід розмови</h2>
+      <span class="col-note">кожна репліка → які мозки пробувались і скільки це тривало</span>
+    </div>
+    <div class="flow" id="flow">
+      <p class="empty">Поки тихо. Скажи щось боту — і тут зʼявиться маршрут запиту.</p>
+    </div>
+
+    <div class="col-head logs-head">
+      <h2>Логи</h2>
+      <div class="log-filters">
+        <input class="inp" id="logFilter" type="search" placeholder="фільтр…" autocomplete="off">
+        <label class="chk"><input type="checkbox" id="onlyProblems"> лише проблеми</label>
+      </div>
+    </div>
+    <div class="logs" id="logs"></div>
+  </section>
+
+</main>
+
+<script src="/static/console/console.js"></script>
+</body>
+</html>

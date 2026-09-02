@@ -266,7 +266,7 @@ _ITAG_AUDIO = 140   # audio/mp4 ~128k — стандартна аудіо-дор
 def _probe_stream(url: str) -> bool:
     """Перевіряє, що ссилка віддає АУДІО з Range (1 байт), а не HTML-помилку."""
     try:
-        with httpx.Client(timeout=httpx.Timeout(6.0), follow_redirects=True) as client:
+        with httpx.Client(timeout=httpx.Timeout(4.0), follow_redirects=True) as client:
             response = client.get(url, headers={"Range": "bytes=0-0"})
     except Exception:  # noqa: BLE001 — мережа/таймаут = кандидат не живий
         return False
@@ -304,11 +304,15 @@ async def audio_stream_url(video_id: str) -> str:
 
     last_error = "немає кандидатів стріму"
     for round_no in range(3):
-        for url in candidates():
-            if await asyncio.to_thread(_probe_stream, url):
+        # Пробуємо УСІ кандидати ПАРАЛЕЛЬНО: мертві хости тягнуть таймаут,
+        # і послідовний обхід розтягував би відповідь на хвилини
+        urls = candidates()
+        probes = await asyncio.gather(*(asyncio.to_thread(_probe_stream, u) for u in urls))
+        for url, ok in zip(urls, probes):
+            if ok:
                 _URL_CACHE[video_id] = (time.monotonic(), url)
                 return url
-            last_error = url.split("/")[2] if "://" in url else url
+        last_error = urls[-1].split("/")[2] if urls else last_error
         if round_no < 2:
             await asyncio.sleep(1.5)
     raise RuntimeError(f"жодне джерело аудіо не відповіло (останнє: {last_error})")

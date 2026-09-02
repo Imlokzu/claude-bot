@@ -55,9 +55,12 @@ import chat_store
 import coding
 import coding_api
 import console_log
+import processes
+import trace_log
 import display_bridge
 import dream_cycle
 import asr_regolo
+import asr_terms
 import asr_whisper
 import emotions
 import events
@@ -177,6 +180,12 @@ async def lifespan(_app: FastAPI):
     _recover_all_user_brains()
     # Консоль: перехоплюємо логи застосунку/httpx у фронтенд-панель
     console_log.install()
+    # Прогрів ASR у фоні: без нього ПЕРШЕ розпізнавання чекало ще ~5с на
+    # завантаження моделі понад сам декод (функція була, але її не викликали).
+    try:
+        asr_whisper.warm()
+    except Exception:  # noqa: BLE001 — прогрів не має права завалити старт
+        log.debug("Прогрів ASR не вдався", exc_info=True)
     # Ланцюжок сигналів: SIGINT/SIGTERM закривають SSE-потоки ще ДО того,
     # як uvicorn почне чекати закриття з'єднань (інакше shutdown висів би)
     _install_signal_chain()
@@ -340,7 +349,11 @@ async def api_auth_config():
 # ------------------------------------------------------------------ моделі
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=8000)
+    # 8000 було замало: вставлений у чат уривок статті просто відскакував 422-ю
+    # («String should have at most 8000 characters»), і на екрані це виглядало
+    # як мовчання бота. 32000 ≈ 8k токенів — вміщається у контекст будь-якого
+    # мозку ланцюга, але й далі не дає завалити шлюз мегабайтом тексту.
+    message: str = Field(min_length=1, max_length=32_000)
     stream: bool = False
     session_id: str = Field(default="", max_length=64)
     history: list[dict[str, str]] = Field(default_factory=list)
@@ -369,6 +382,9 @@ class BrainFileRequest(BaseModel):
 class TTSRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     speaker: Optional[int] = Field(default=None)  # None → активний голос
+    # Темп: 1.0 звичайний, 1.5/2.0 — швидше. Межі — ті самі, що в piper_voice,
+    # щоб некоректне значення відсікалось на вході, а не всередині синтезу.
+    speed: float = Field(default=1.0, ge=0.5, le=3.0)
 
 
 class VoiceSelectRequest(BaseModel):
@@ -933,11 +949,18 @@ async def _autoname_chat(sid: str, user_message: str, reply: str) -> None:
         "тією ж мовою, що й розмова. У відповідь напиши ЛИШЕ назву.\n\n"
         f"Користувач: {user_message[:400]}\nТи: {reply[:400]}"
     )
+    # Власний хід у консолі: це ОКРЕМИЙ виклик мозку у фоні, і без нього в
+    # /console виглядало б, ніби бот думає ще 20 секунд після відповіді.
+    turn_id = trace_log.start_turn("назва чату", user_message[:80], sid)
     try:
-        title, _emotion, _mode, _tools = await asyncio.wait_for(
-            brains.chat(prompt, []), timeout=30
-        )
-    except Exception:  # noqa: BLE001 — назва не варта того, щоб щось ламати
+        with trace_log.bind(turn_id):
+            title, _emotion, _mode, _tools = await asyncio.wait_for(
+                brains.chat(prompt, []), timeout=30
+            )
+            trace_log.end_turn(mode=_mode, model=brains.get_last_model())
+    except Exception as exc:  # noqa: BLE001 — назва не варта того, щоб щось ламати
+        with trace_log.bind(turn_id):
+            trace_log.end_turn(error=f"{type(exc).__name__}: {exc}")
         log.debug("Не вдалося згенерувати назву чату", exc_info=True)
         return
     finally:
@@ -1056,6 +1079,20 @@ def _load_chat_images(attachments: list[dict[str, str]]) -> list[dict[str, str]]
 
 # ------------------------------------------------------------------ чат
 
+# Чанк довший за це — ознака, що мозок НЕ стрімив, а віддав відповідь цілком
+# (саме так поводиться шлюз OpenClaw: заміряно — один-єдиний чанк через 14с).
+# Такий шматок розсипаємо на слова, інакше текст падає стіною попри stream:true.
+_LUMP_CHARS = 40
+# Пауза між словами імітованого набору (та сама, що й у гілці «мозок не стрімить»)
+_TYPE_DELAY_S = 0.02
+
+
+def _typewriter(text: str) -> list[str]:
+    """Текст → шматочки по слову (з пробілом), щоб набирався на очах."""
+    words = text.split(" ")
+    return [w + (" " if i < len(words) - 1 else "") for i, w in enumerate(words)]
+
+
 @app.post("/api/chat")
 async def api_chat(request: Request, req: ChatRequest):
     """Повідомлення користувача → відповідь бота + емоція (мозок за пріоритетом)."""
@@ -1064,6 +1101,11 @@ async def api_chat(request: Request, req: ChatRequest):
     images = await asyncio.to_thread(_load_chat_images, req.attachments)
     sid = _get_or_create_session_id(req)
     log.info("→ Запит у чат: session=%s user=%s %s", sid, clerk_uid[:8], message[:120])
+    # Хід для окремої консолі (/console): звідки прийшла репліка видно за
+    # Referer — з екрана пристрою чи з панелі. Далі до цього ходу чіпляються
+    # кроки мозків (див. brains.chat) і кроки тулзів.
+    turn_source = "screen" if "/screen" in (request.headers.get("referer") or "") else "chat"
+    turn_id = trace_log.start_turn(turn_source, message, sid)
     try:
         vision_watcher.note_interaction()  # будить бота з дрімоти
     except Exception:  # noqa: BLE001 — інтеграція не має права зламати чат
@@ -1075,11 +1117,17 @@ async def api_chat(request: Request, req: ChatRequest):
         await asyncio.to_thread(_extract_and_save_facts, message)
 
         if not req.stream:
-            reply, emotion, mode, tool_results = await brains.chat(
-                message, history, **_chat_image_kwargs(images),
-                **_chat_reasoning_kwargs(req.reasoning_effort),
-            )
-            final_emotion = emotions.settled_emotion(emotion)
+            with trace_log.bind(turn_id):
+                try:
+                    reply, emotion, mode, tool_results = await brains.chat(
+                        message, history, **_chat_image_kwargs(images),
+                        **_chat_reasoning_kwargs(req.reasoning_effort),
+                    )
+                except Exception as exc:  # noqa: BLE001 — хід треба закрити, помилку віддаємо далі
+                    trace_log.end_turn(error=f"{type(exc).__name__}: {exc}")
+                    raise
+                final_emotion = emotions.settled_emotion(emotion)
+                trace_log.end_turn(mode=mode, model=brains.get_last_model(), emotion=final_emotion)
             log.info("Чат (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
             _save_history(sid, history, message, reply, attachments=req.attachments)
             # Назву чату генеруємо у фоні — відповідь на неї не чекає
@@ -1114,7 +1162,7 @@ async def api_chat(request: Request, req: ChatRequest):
         # Стрімінг виконується в окремому життєвому циклі запиту: перевстановлюємо
         # ізольований brain користувача, бо ContextVar у FastAPI-генераторі може
         # не успадковуватися автоматично.
-        with _brain_context(sid, clerk_uid):
+        with _brain_context(sid, clerk_uid), trace_log.bind(turn_id):
             event_queue: asyncio.Queue[dict] = asyncio.Queue()
 
             # Скільки тексту вже віддали СПРАВЖНІМ стрімом токенів (brains шле delta).
@@ -1141,6 +1189,14 @@ async def api_chat(request: Request, req: ChatRequest):
                     if not visible:
                         return  # чанк був цілком тегом (або чекає в буфері)
                     streamed["text"] += visible
+                    if len(visible) > _LUMP_CHARS:
+                        # Не стрімінг, а відповідь одним шматком — набираємо її
+                        # словами. Мозок на цей момент уже відпрацював, тож ці
+                        # паузи нічого не затримують.
+                        for piece in _typewriter(visible):
+                            await event_queue.put({**event, "chunk": piece})
+                            await asyncio.sleep(_TYPE_DELAY_S)
+                        return
                     event = {**event, "chunk": visible}
                 await event_queue.put(event)
 
@@ -1162,6 +1218,7 @@ async def api_chat(request: Request, req: ChatRequest):
 
                 reply, emotion, mode, tool_results = chat_task.result()
                 final_emotion = emotions.settled_emotion(emotion)
+                trace_log.end_turn(mode=mode, model=brains.get_last_model(), emotion=final_emotion)
                 log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
                 _save_history(sid, history, message, reply, attachments=req.attachments)
                 asyncio.create_task(_autoname_chat(sid, message, reply))
@@ -1210,6 +1267,7 @@ async def api_chat(request: Request, req: ChatRequest):
                 except Exception:  # noqa: BLE001
                     log.exception("Не вдалося дописати автожурнал")
             except Exception as exc:  # noqa: BLE001
+                trace_log.end_turn(error=f"{type(exc).__name__}: {exc}")
                 log.exception("Помилка стрімінгу чату")
                 try:
                     events.publish_emotion("idle")
@@ -1407,6 +1465,7 @@ def api_tts_status() -> dict:
         "interruptible": True,
         "voices": piper_voice.VOICES,
         "selected": piper_voice.get_speaker(),
+        "speeds": piper_voice.SPEEDS,
     }
 
 
@@ -1425,11 +1484,17 @@ async def api_tts(req: TTSRequest):
     speaker — тимчасовий голос для прослуховування (None → активний).
     Мозок — OpenClaw, Piper лише голос. 503, якщо недоступний.
     """
+    started = time.perf_counter()
     try:
-        audio = await asyncio.to_thread(piper_voice.synthesize, req.text, req.speaker)
+        audio = await asyncio.to_thread(piper_voice.synthesize, req.text, req.speaker, req.speed)
     except Exception as exc:  # noqa: BLE001 — голос не критичний; кажемо 503, фронтенд впорається
+        trace_log.step("tts", req.speaker or piper_voice.get_speaker(), "fail",
+                       f"{type(exc).__name__}: {exc}", (time.perf_counter() - started) * 1000)
         log.warning("Piper TTS не впорався (%s)", type(exc).__name__)
         return JSONResponse(status_code=503, content={"error": "TTS недоступний"})
+    trace_log.step("tts", req.speaker or piper_voice.get_speaker(), "ok",
+                   f"{len(req.text)} символів → {len(audio)} байт WAV",
+                   (time.perf_counter() - started) * 1000)
     return StreamingResponse(iter([audio]), media_type="audio/wav",
                              headers={"Cache-Control": "no-store"})
 
@@ -1458,6 +1523,7 @@ async def api_asr(request: Request, audio: UploadFile = File(...)) -> dict:
         raise HTTPException(status_code=400, detail="Порожнє аудіо")
     if len(data) > cfg.REGOLO_ASR_MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Аудіо завелике")
+    started = time.perf_counter()
     try:
         if provider == "whisper_local":
             text = await asyncio.to_thread(
@@ -1472,16 +1538,87 @@ async def api_asr(request: Request, audio: UploadFile = File(...)) -> dict:
                 audio.content_type,
             )
     except Exception as exc:  # noqa: BLE001 — розпізнавання не має валити сервер
+        trace_log.step("asr", provider, "fail", f"{type(exc).__name__}: {exc}",
+                       (time.perf_counter() - started) * 1000)
         log.warning("ASR (%s) не впорався (%s)", provider, type(exc).__name__)
         return JSONResponse(status_code=503, content={"error": "ASR помилка"})
-    log.info("ASR (%s): %s", provider, (text or "")[:80])
+    # Канонічні назви моделей ДО журналу й відповіді: у консолі має бути видно
+    # той самий текст, який отримає мозок, інакше розбір «чому не перемкнулось»
+    # шукає «кван» у логах, а в мозок пішло «Qwen».
+    text = asr_terms.normalize(text or "")
+    trace_log.step("asr", provider, "ok", f"{len(data)} байт → «{text[:60]}»",
+                   (time.perf_counter() - started) * 1000)
+    log.info("ASR (%s): %s", provider, text[:80])
     return {"text": text}
+
+
+@app.post("/api/asr/partial")
+async def api_asr_partial(request: Request, audio: UploadFile = File(...)) -> dict:
+    """
+    Проміжне розпізнавання, поки людина ЩЕ говорить: швидка модель, beam=1.
+
+    Екран шле сюди аудіо, що накопичується, кожні ~1.2с і показує текст живцем —
+    інакше після кожної фрази була б німа пауза на повне розпізнавання.
+    Текст чорновий і може змінитись; остаточний рахує POST /api/asr.
+
+    У консоль (/console) ці виклики НЕ пишемо: їх десятки на одну фразу,
+    вони втопили б стрічку ходу розмови.
+    """
+    await _require_user(request)
+    if not cfg.ASR_PARTIALS_ENABLED or not asr_whisper.is_available():
+        return JSONResponse(status_code=503, content={"error": "Проміжне розпізнавання вимкнено"})
+    data = await audio.read(cfg.REGOLO_ASR_MAX_UPLOAD_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="Порожнє аудіо")
+    if len(data) > cfg.REGOLO_ASR_MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Аудіо завелике")
+    try:
+        text = await asyncio.to_thread(
+            asr_whisper.transcribe_partial,
+            data,
+            Path(audio.filename or "voice.webm").suffix or ".webm",
+        )
+    except Exception as exc:  # noqa: BLE001 — чорновий текст не вартий 500-ки
+        log.debug("Проміжне розпізнавання не вдалося (%s)", type(exc).__name__)
+        return JSONResponse(status_code=503, content={"error": "Проміжне розпізнавання недоступне"})
+    # Чорновик канонізуємо теж — інакше назва моделі на екрані стрибала б
+    # («кван» у чорновику → «Qwen» у фіналі) і читалось би як помилка.
+    return {"text": asr_terms.normalize(text or ""), "partial": True}
 
 
 @app.get("/api/console")
 def api_console() -> dict:
     """Останні рядки консолі (історія для початкового завантаження панелі)."""
     return {"logs": events.recent_logs()}
+
+
+@app.get("/api/trace")
+def api_trace() -> dict:
+    """
+    Хід розмови по кроках для окремої консолі (/console): які мозки пробувались,
+    скільки тривала кожна спроба, які тули смикались. Історія — щоб консоль,
+    відкрита посеред розмови, показала не порожньо; далі йдуть живі SSE-події.
+    """
+    return trace_log.recent()
+
+
+@app.get("/api/processes")
+async def api_processes() -> dict:
+    """
+    Хто зараз живий у ланцюгу: порт слухає / health відповідає / чий процес.
+    Плюс поточний стан мозку — що відповідало востаннє і чи хтось у бекофі.
+    """
+    return {
+        "processes": await processes.snapshot(),
+        "brain": {
+            "last_mode": brains.get_last_successful_brain() or "",
+            "last_model": brains.get_last_model(),
+            "openclaw_backoff_s": round(brains.openclaw_backoff_remaining(), 1),
+            "omni_backoff_s": round(brains.omni_backoff_remaining(), 1),
+            "selected_omni_model": brains.get_selected_omni_model(),
+        },
+        "sse_clients": events.subscribers_count(),
+    }
 
 
 @app.get("/api/events")
@@ -1542,11 +1679,19 @@ async def api_tools_call(request: Request, req: ToolCallRequest) -> dict:
             events.publish_tool(req.name, detail, "start")
         except Exception:  # noqa: BLE001 — індикація не має валити виклик тулзу
             log.exception("Не вдалося опублікувати подію початку тулзу")
+    trace_log.step("tool", req.name, "start", detail)
+    tool_started = time.perf_counter()
 
     # Частина тулзів працює з памʼяттю, тому навіть загальний API-виклик не має
     # права впасти назад у спільний шаблон brain/.
-    with _brain_context(req.session_id, clerk_uid):
-        result = await tools.execute_tool(req.name, req.args)
+    try:
+        with _brain_context(req.session_id, clerk_uid):
+            result = await tools.execute_tool(req.name, req.args)
+    except Exception as exc:  # noqa: BLE001 — крок консолі, помилку віддаємо далі
+        trace_log.step("tool", req.name, "fail", f"{type(exc).__name__}: {exc}",
+                       (time.perf_counter() - tool_started) * 1000)
+        raise
+    trace_log.step("tool", req.name, "ok", detail, (time.perf_counter() - tool_started) * 1000)
 
     if show_generic:
         try:
@@ -1740,6 +1885,7 @@ def _workspace_call(session_id: str, fn, *args, **kwargs):
         events.publish_tool(tool, detail, "start")
     except Exception:  # noqa: BLE001 — індикація не має валити операцію
         log.exception("Не вдалося опублікувати подію тулзу робочої теки")
+    started = time.perf_counter()
     try:
         with workspace.set_session(session_id):
             result = fn(*args, **kwargs)
@@ -1747,12 +1893,15 @@ def _workspace_call(session_id: str, fn, *args, **kwargs):
                 events.publish_tool(tool, detail, "done")
             except Exception:  # noqa: BLE001
                 log.exception("Не вдалося опублікувати завершення тулзу робочої теки")
+            trace_log.step("tool", tool, "ok", detail, (time.perf_counter() - started) * 1000)
             return result
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except (ValueError, FileExistsError, NotADirectoryError, IsADirectoryError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except OSError as exc:
+        trace_log.step("tool", tool, "fail", f"{type(exc).__name__}: {exc}",
+                       (time.perf_counter() - started) * 1000)
         raise HTTPException(status_code=500, detail=f"Помилка файлової системи: {type(exc).__name__}")
 
 

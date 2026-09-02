@@ -18,11 +18,49 @@ import re
 import time
 from pathlib import Path
 
-from brain_context import USER_DATA_DIR
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Iterator
+
+from brain_context import USER_DATA_DIR, get_active_clerk_user, clerk_user_dir_name
 
 log = logging.getLogger("virtual_bot.chat_store")
 
 CHATS_DIR = USER_DATA_DIR / "chats"
+
+# Простори розмов. Чат і кодинг — РІЗНІ харнеси з різною історією, різними
+# назвами й різним життєвим циклом, тому й лежать вони в різних теках, а не
+# перемішані з ознакою в JSON: список, видалення, обрізання й пошук працюють
+# у своєму просторі без жодної фільтрації, і не можуть випадково зачепити чужий.
+KIND_CHAT = "chat"
+KIND_CODE = "code"
+_KIND_DIRS = {KIND_CHAT: "chats", KIND_CODE: "code-chats"}
+
+_kind_ctx: ContextVar[str] = ContextVar("chat_kind", default=KIND_CHAT)
+
+
+def active_kind() -> str:
+    return _kind_ctx.get()
+
+
+@contextmanager
+def set_kind(kind: str) -> Iterator[None]:
+    """Перемикає простір розмов на час запиту (ContextVar, не глобалка)."""
+    token = _kind_ctx.set(kind if kind in _KIND_DIRS else KIND_CHAT)
+    try:
+        yield
+    finally:
+        _kind_ctx.reset(token)
+
+
+def _active_chats_dir() -> Path:
+    sub = _KIND_DIRS.get(_kind_ctx.get(), "chats")
+    uid = get_active_clerk_user()
+    if uid:
+        return USER_DATA_DIR / clerk_user_dir_name(uid) / sub
+    # Тести підмінюють CHATS_DIR — поважаємо це, але кодингові розмови все
+    # одно тримаємо збоку, щоб вони не потрапили у список звичайних чатів.
+    return CHATS_DIR if sub == "chats" else CHATS_DIR.parent / sub
 
 # Скільки повідомлень тримаємо в одному чаті і скільки чатів узагалі
 MAX_MESSAGES = 500
@@ -42,8 +80,9 @@ def _path(session_id: str) -> Path:
     sid = (session_id or "").strip()
     if not _SAFE_ID_RE.match(sid):
         raise ValueError("Некоректний id сесії")
-    CHATS_DIR.mkdir(parents=True, exist_ok=True)
-    return CHATS_DIR / f"{sid}.json"
+    d = _active_chats_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{sid}.json"
 
 
 def make_title(text: str) -> str:
@@ -210,10 +249,11 @@ def mark_titled(session_id: str) -> None:
 
 def list_sessions(limit: int = 50) -> list[dict]:
     """Список чатів, найсвіжіші першими (без вмісту повідомлень)."""
-    if not CHATS_DIR.is_dir():
+    d = _active_chats_dir()
+    if not d.is_dir():
         return []
     out: list[dict] = []
-    for path in CHATS_DIR.glob("*.json"):
+    for path in d.glob("*.json"):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -224,6 +264,7 @@ def list_sessions(limit: int = 50) -> list[dict]:
             "updated": int(data.get("updated") or 0),
             "count": len(data.get("messages") or []),
             "pinned": bool(data.get("pinned")),
+            "project": data.get("project") or "",
         })
     # Закріплені чати завжди зверху; всередині групи — найсвіжіші першими.
     out.sort(key=lambda s: (not s["pinned"], -s["updated"]))
@@ -249,6 +290,53 @@ def set_pinned(session_id: str, pinned: bool) -> bool:
         log.exception("Не вдалося змінити закріплення чату %s", session_id)
         tmp.unlink(missing_ok=True)
         return False
+
+
+def set_project(session_id: str, project: str) -> bool:
+    """Прив'язує чат до проєкту (slug) або знімає прив'язку (порожній рядок)."""
+    try:
+        path = _path(session_id)
+    except ValueError:
+        return False
+    data = load(session_id)
+    if not data.get("messages"):
+        return False
+    clean = (project or "").strip()
+    if clean:
+        data["project"] = clean
+    else:
+        data.pop("project", None)
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+        return True
+    except OSError:
+        log.exception("Не вдалося привʼязати чат %s до проєкту", session_id)
+        tmp.unlink(missing_ok=True)
+        return False
+
+
+def clear_project(project: str) -> None:
+    """Знімає прив'язку до проєкту з усіх чатів (проєкт видалили)."""
+    d = _active_chats_dir()
+    if not d.is_dir():
+        return
+    for path in d.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("project") != project:
+            continue
+        data.pop("project", None)
+        tmp = path.with_suffix(".tmp")
+        try:
+            tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(path)
+        except OSError:
+            log.exception("Не вдалося зняти привʼязку до проєкту у %s", path.name)
+            tmp.unlink(missing_ok=True)
 
 
 def delete(session_id: str) -> bool:

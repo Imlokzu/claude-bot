@@ -20,17 +20,28 @@
     <!-- Тайл 0 — «циферблат»: краб + час + стан -->
     <section class="tile tile-face" data-tile="face" data-emotion="idle">
       <div class="face-top">
-        <span class="link-dot" id="linkDot" title="Звʼязок із ботом"></span>
+        <span class="link-dot" id="linkDot" data-i18n-title="face.link" title="Звʼязок із ботом"></span>
         <canvas class="face-clock" id="faceClockCanvas" width="76" height="20"></canvas>
       </div>
       <canvas class="crab" id="crabCanvas" width="300" height="152"></canvas>
-      <div class="face-label" id="faceLabel">Очікування</div>
+      <div class="face-label" id="faceLabel" data-i18n="emo.idle">Очікування</div>
 
       <!-- Розмова просто на циферблаті: що кажеш ти і що відповідає бот -->
       <div class="face-caption hidden" id="faceCaption"></div>
+      <!-- «1/3»: показуємо ЛИШЕ коли репліка не влізла — інакше зайвий шум -->
+      <div class="caption-page hidden" id="captionPage"></div>
+      <!-- Бот показує картинку: ОДНА рамка, одна картинка, гортання -->
+      <div class="face-photo hidden" id="facePhoto">
+        <img id="facePhotoImg" alt="">
+        <button class="photo-nav prev" id="facePhotoPrev" type="button" aria-label="Попередня">‹</button>
+        <button class="photo-nav next" id="facePhotoNext" type="button" aria-label="Наступна">›</button>
+        <div class="photo-dots" id="facePhotoDots"></div>
+      </div>
+      <!-- Краб, що тримає рамку: клешні заходять на її нижній край -->
+      <canvas class="face-holder hidden" id="faceHolder" width="33" height="30"></canvas>
 
       <!-- Говорити можна прямо звідси, не заходячи в тайл розмови -->
-      <button class="face-mic" id="faceMic" data-mic type="button" aria-label="Говорити">
+      <button class="face-mic" id="faceMic" data-mic type="button" data-i18n-aria="face.mic" aria-label="Говорити">
         <span class="ico-slot" id="faceMicIco"></span>
       </button>
     </section>
@@ -43,22 +54,23 @@
 
     <!-- Тайл 2 — остання репліка бота -->
     <section class="tile tile-say" data-tile="say">
-      <div class="tile-head">Бот сказав</div>
+      <div class="tile-head" data-i18n="say.head">Бот сказав</div>
       <div class="say-text" id="sayText">Поки тиша.</div>
+      <div class="say-photo hidden" id="sayPhoto"></div>
       <div class="tile-foot" id="sayAge"></div>
     </section>
 
     <!-- Тайл 3 — стан систем. Одна головна дія — «Оновити» (як у Wear OS) -->
     <section class="tile tile-state" data-tile="state">
-      <div class="tile-head">Стан</div>
+      <div class="tile-head" data-i18n="state.head">Стан</div>
       <ul class="state-list">
-        <li><span class="k">Мозок</span><span class="v" id="stBrain">—</span></li>
-        <li><span class="k">Зір</span><span class="v" id="stVision">—</span></li>
-        <li><span class="k">Дисплей</span><span class="v" id="stDisplay">—</span></li>
-        <li><span class="k">Звʼязок</span><span class="v" id="stLink">—</span></li>
+        <li><span class="k" data-i18n="state.brain">Мозок</span><span class="v" id="stBrain">—</span></li>
+        <li><span class="k" data-i18n="state.vision">Зір</span><span class="v" id="stVision">—</span></li>
+        <li><span class="k" data-i18n="state.display">Дисплей</span><span class="v" id="stDisplay">—</span></li>
+        <li><span class="k" data-i18n="state.link">Звʼязок</span><span class="v" id="stLink">—</span></li>
       </ul>
       <div class="tile-foot" id="stAge"></div>
-      <button class="cta" id="stRefresh" type="button">Оновити</button>
+      <button class="cta" id="stRefresh" type="button" data-i18n="common.refresh">Оновити</button>
     </section>
 
     <!-- Тайл 4 — розмова: голосом, без клавіатури (її тут нема куди діти) -->
@@ -66,15 +78,15 @@
       <div class="chat-head">
         <button class="chat-head-btn" id="sessionsBtn" type="button">
           <span class="ico-slot" id="sessionsIco"></span>
-          <span class="chat-title" id="sessionTitle">Розмова</span>
+          <span class="chat-title" id="sessionTitle" data-i18n="chat.title">Розмова</span>
         </button>
-        <button class="chat-head-btn icon-only" id="chatNew" type="button" title="Нова розмова">
+        <button class="chat-head-btn icon-only" id="chatNew" type="button" data-i18n-title="chat.new" title="Нова розмова">
           <span class="ico-slot" id="chatNewIco"></span>
         </button>
       </div>
 
       <div class="chat-log" id="chatLog">
-        <div class="chat-empty" id="chatEmpty">Натисни мікрофон і говори.</div>
+        <div class="chat-empty" id="chatEmpty" data-i18n="chat.empty">Натисни мікрофон і говори.</div>
       </div>
 
       <!-- Те, що чуємо просто зараз (проміжний результат розпізнавання) -->
@@ -83,16 +95,16 @@
       <div class="chat-bar">
         <button class="mic-btn" id="micBtn" data-mic type="button">
           <span class="ico-slot" id="micIco"></span>
-          <span class="mic-label" id="micLabel">Говорити</span>
+          <span class="mic-label" id="micLabel" data-i18n="voice.speak">Говорити</span>
         </button>
-        <button class="mode-chip" id="modeChip" type="button" title="Режим розмови">Поговорити</button>
+        <button class="mode-chip" id="modeChip" type="button" data-i18n-title="mode.head" title="Режим розмови">Поговорити</button>
       </div>
 
       <!-- Список розмов поверх тайла -->
       <div class="sessions hidden" id="sessionsPanel">
         <div class="sessions-head">
-          <span>Розмови</span>
-          <button class="layer-back" id="sessionsClose" type="button">Назад ✕</button>
+          <span data-i18n="chat.sessions">Розмови</span>
+          <button class="layer-back" id="sessionsClose" type="button" data-i18n="common.back">Назад ✕</button>
         </div>
         <div class="sessions-list" id="sessionsList"></div>
       </div>
@@ -111,12 +123,12 @@
   <div class="nowplaying hidden" id="nowPlaying">
     <div class="np-progress" aria-hidden="true"><i id="npProgress"></i></div>
     <div class="np-row">
-      <button class="np-btn np-provider" id="npProvider" type="button" title="Джерело музики">
+      <button class="np-btn np-provider" id="npProvider" type="button" data-i18n-title="music.source" title="Джерело музики">
         <span class="ico-slot" id="npProviderIco"></span>
       </button>
       <button class="np-title" id="npTitleBtn" type="button">
         <span class="np-track" id="npTrack">
-          <span class="np-text" id="npText">Музика вимкнена</span>
+          <span class="np-text" id="npText" data-i18n="music.off">Музика вимкнена</span>
         </span>
       </button>
       <button class="np-btn np-toggle" id="npToggle" type="button">
@@ -129,35 +141,35 @@
   <!-- ── Шторка швидких дій: свайп ВНИЗ, виїжджає згори ── -->
   <section class="layer layer-quick" id="layerQuick">
     <div class="layer-head">
-      <span>Швидкі дії</span>
+      <span data-i18n="quick.head">Швидкі дії</span>
       <span class="head-btns">
-        <button class="layer-edit" id="quickEdit" type="button" title="Переставити плитки"></button>
-        <button class="layer-back" data-back type="button">Назад ✕</button>
+        <button class="layer-edit" id="quickEdit" type="button" data-i18n-title="quick.edit" title="Переставити плитки"></button>
+        <button class="layer-back" data-back type="button" data-i18n="common.back">Назад ✕</button>
       </span>
     </div>
 
     <!-- Повзунки: обидва керують справжніми речами -->
     <div class="qs-slider">
       <span class="qs-slider-ico" id="brightIco"></span>
-      <input type="range" id="brightRange" min="15" max="100" step="5" aria-label="Яскравість">
+      <input type="range" id="brightRange" min="15" max="100" step="5" data-i18n-aria="quick.bright" aria-label="Яскравість">
       <span class="qs-slider-val" id="brightVal">100%</span>
     </div>
     <div class="qs-slider" id="volRow">
       <span class="qs-slider-ico" id="volIco"></span>
-      <input type="range" id="volRange" min="0" max="100" step="5" aria-label="Гучність">
+      <input type="range" id="volRange" min="0" max="100" step="5" data-i18n-aria="quick.volume" aria-label="Гучність">
       <span class="qs-slider-val" id="volVal">70%</span>
     </div>
 
     <div class="qs-grid" id="quickGrid"></div>
-    <div class="qs-hint" id="quickHint">Торкнись двох плиток, щоб поміняти їх місцями</div>
+    <div class="qs-hint" id="quickHint" data-i18n="quick.hint">Торкнись двох плиток, щоб поміняти їх місцями</div>
   </section>
 
   <!-- Шухляда застосунків: свайп ВГОРУ (там, де раніше була стрічка) -->
   <section class="layer layer-apps" id="layerApps" aria-labelledby="appsTitle" aria-hidden="true" inert>
     <div class="apps-handle" aria-hidden="true"></div>
     <div class="layer-head apps-head">
-      <span id="appsTitle">Застосунки</span>
-      <button class="layer-back" data-apps-close type="button">Назад ✕</button>
+      <span id="appsTitle" data-i18n="apps.head">Застосунки</span>
+      <button class="layer-back" data-apps-close type="button" data-i18n="common.back">Назад ✕</button>
     </div>
     <div class="apps-grid" id="appsGrid"></div>
   </section>
@@ -165,8 +177,8 @@
   <!-- Застосунок поверх усього (камера, сервіси) -->
   <section class="layer layer-app" id="layerApp">
     <div class="layer-head">
-      <span id="appTitle">Застосунок</span>
-      <button class="layer-back" data-app-close type="button">Назад ✕</button>
+      <span id="appTitle" data-i18n="app.head">Застосунок</span>
+      <button class="layer-back" data-app-close type="button" data-i18n="common.back">Назад ✕</button>
     </div>
     <div class="app-body" id="appBody"></div>
   </section>
@@ -175,20 +187,20 @@
   <div class="mode-sheet hidden" id="modeSheet">
     <div class="mode-card">
       <div class="mode-head">
-        <span>Режим розмови</span>
+        <span data-i18n="mode.head">Режим розмови</span>
         <button class="layer-back" data-mode-close type="button">✕</button>
       </div>
       <button class="mode-row" data-mode="push" type="button">
-        <span class="mode-name">Поговорити</span>
-        <span class="mode-hint">Тиснеш — кажеш фразу — бот відповідає</span>
+        <span class="mode-name" data-i18n="mode.push">Поговорити</span>
+        <span class="mode-hint" data-i18n="mode.push.hint">Тиснеш — кажеш фразу — бот відповідає</span>
       </button>
       <button class="mode-row" data-mode="open" type="button">
-        <span class="mode-name">Слухає завжди</span>
-        <span class="mode-hint">Мікрофон відкритий, кожна фраза йде боту</span>
+        <span class="mode-name" data-i18n="mode.open">Слухає завжди</span>
+        <span class="mode-hint" data-i18n="mode.open.hint">Мікрофон відкритий, кожна фраза йде боту</span>
       </button>
       <button class="mode-row" data-mode="wake" type="button">
-        <span class="mode-name">Ключове слово</span>
-        <span class="mode-hint">Реагує лише після свого імені</span>
+        <span class="mode-name" data-i18n="mode.wake">Ключове слово</span>
+        <span class="mode-hint" data-i18n="mode.wake.hint">Реагує лише після свого імені</span>
       </button>
     </div>
   </div>
@@ -197,20 +209,20 @@
   <div class="mode-sheet hidden" id="iconSheet">
     <div class="mode-card">
       <div class="mode-head">
-        <span>Іконки</span>
+        <span data-i18n="icons.head">Іконки</span>
         <button class="layer-back" data-icons-close type="button">✕</button>
       </div>
       <button class="mode-row" data-icons="pixel" type="button">
-        <span class="mode-name">Наші (піксельні)</span>
-        <span class="mode-hint">Одна мова з крабом і годинником</span>
+        <span class="mode-name" data-i18n="icons.pixel">Наші (піксельні)</span>
+        <span class="mode-hint" data-i18n="icons.pixel.hint">Одна мова з крабом і годинником</span>
       </button>
       <button class="mode-row" data-icons="line" type="button">
-        <span class="mode-name">Звичайні</span>
-        <span class="mode-hint">Контурні, як у телефоні</span>
+        <span class="mode-name" data-i18n="icons.line">Звичайні</span>
+        <span class="mode-hint" data-i18n="icons.line.hint">Контурні, як у телефоні</span>
       </button>
       <button class="mode-row" data-icons="color" type="button">
-        <span class="mode-name">Кольорові</span>
-        <span class="mode-hint">Ті самі, але кожна у своєму відтінку</span>
+        <span class="mode-name" data-i18n="icons.color">Кольорові</span>
+        <span class="mode-hint" data-i18n="icons.color.hint">Ті самі, але кожна у своєму відтінку</span>
       </button>
     </div>
   </div>
@@ -219,7 +231,7 @@
   <div class="mode-sheet hidden" id="musicSheet">
     <div class="mode-card music-card">
       <div class="mode-head">
-        <span>Музика</span>
+        <span data-i18n="music.head">Музика</span>
         <button class="layer-back" data-music-close type="button">✕</button>
       </div>
 
@@ -230,24 +242,24 @@
           <span class="ico-slot" id="npProvYoutubeIco"></span>YouTube
         </button>
         <button class="np-provider-chip" data-provider="radio" type="button">
-          <span class="ico-slot" id="npProvRadioIco"></span>Радіо
+          <span class="ico-slot" id="npProvRadioIco"></span><span data-i18n="music.radio">Радіо</span>
         </button>
       </div>
 
       <!-- Поточний трек: назва біжить, якщо не влазить -->
-      <div class="np-now">
+      <div class="np-now" id="npNow">
         <span class="np-track" id="npTrack2"><span class="np-text" id="npNowTitle">—</span></span>
         <span class="np-sub" id="npNowSub"></span>
       </div>
 
       <!-- Перемотка: для живого радіо ховається (його не можна мотати) -->
-      <input type="range" class="np-seek" id="npSeek" min="0" max="1000" value="0" aria-label="Позиція трека">
+      <input type="range" class="np-seek" id="npSeek" min="0" max="1000" value="0" data-i18n-aria="music.seek" aria-label="Позиція трека">
       <div class="np-times" id="npTimes"><span id="npCur">0:00</span><span id="npDur">0:00</span></div>
 
       <div class="np-controls">
-        <button class="np-btn" id="npPrev" type="button" aria-label="Попередній"><span class="ico-slot" id="npPrevIco"></span></button>
-        <button class="np-btn np-big" id="npBigToggle" type="button" aria-label="Грати/пауза"><span class="ico-slot" id="npBigIco"></span></button>
-        <button class="np-btn" id="npNext" type="button" aria-label="Наступний"><span class="ico-slot" id="npNextIco"></span></button>
+        <button class="np-btn" id="npPrev" type="button" data-i18n-aria="music.prev" aria-label="Попередній"><span class="ico-slot" id="npPrevIco"></span></button>
+        <button class="np-btn np-big" id="npBigToggle" type="button" data-i18n-aria="music.playPause" aria-label="Грати/пауза"><span class="ico-slot" id="npBigIco"></span></button>
+        <button class="np-btn" id="npNext" type="button" data-i18n-aria="music.next" aria-label="Наступний"><span class="ico-slot" id="npNextIco"></span></button>
       </div>
 
       <div class="np-list" id="npList"></div>

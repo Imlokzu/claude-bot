@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import os
 import tempfile
 from pathlib import Path
 
 import pytest
+
+# Тести перевіряють логіку застосунку, а не Clerk: без цього кожен виклик
+# гейтнутої ручки відповідав би 401, і 16 тестів падали б через відсутній
+# JWT, а не через справжні регресії. Ставимо ДО імпорту main (він читає
+# auth_clerk, а той — env при кожному запиті, але хай буде до всього).
+os.environ.setdefault("CLERK_DISABLED", "1")
 
 import chat_store
 

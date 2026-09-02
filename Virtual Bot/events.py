@@ -104,7 +104,10 @@ def publish_reply(text: str, emotion: str) -> None:
     """
     if emotion not in ALLOWED_EMOTIONS:
         emotion = "speaking"
-    publish({"type": "reply", "text": str(text)[:2000], "emotion": emotion})
+    # 2000 символів різали довгу відповідь просто посеред слова — і саме цим
+    # хвостом екран її й показував. Лишаємо стелю (SSE-подія не має возити
+    # мегабайти), але таку, що реальна репліка в неї вміщається.
+    publish({"type": "reply", "text": str(text)[:16000], "emotion": emotion})
 
 
 def publish_tool(tool: str, detail: str = "", state: str = "start") -> None:

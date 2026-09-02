@@ -11,6 +11,8 @@ import { drawGlyphString, makeIcon, paintIcon } from "./pixel-ui.js";
 import { parseWake } from "./wake.js";
 /* Контурні іконки та їхні кольори — у icons.js */
 import { makeSvgIcon, ICON_COLORS } from "./icons.js";
+/* Дві мови інтерфейсу (uk/en) — словник і хелпери в i18n.js */
+import { t, getLang, setLang, onLangChange, applyStatic, emotionLabels, fmtDate, LANGS } from "./i18n.js";
 
 /* ============================================================
    Клод Бот — ЕКРАН ПРИСТРОЮ (/screen)
@@ -221,7 +223,7 @@ function stageScale() {
    інакше тягнення повзунка гортало б тайли, а скрол чату відкривав шар. */
 function isInteractive(el) {
   return !!(el && el.closest &&
-    el.closest("input, button, textarea, select, .chat-log, .feed, .qs-slider"));
+    el.closest("input, button, textarea, select, .chat-log, .feed, .qs-slider, .face-photo"));
 }
 
 stage.addEventListener("pointerdown", (e) => {
@@ -274,10 +276,6 @@ window.addEventListener("keydown", (e) => {
 
 /* ---------- Годинник ---------- */
 
-const WEEKDAYS = ["неділя", "понеділок", "вівторок", "середа", "четвер", "п'ятниця", "субота"];
-const MONTHS = ["січня", "лютого", "березня", "квітня", "травня", "червня",
-  "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"];
-
 function two(n) { return n < 10 ? "0" + n : String(n); }
 
 const clockCanvas = $("clockCanvas");
@@ -300,9 +298,8 @@ function tickClock() {
     shadow: crab.colors.shadow,
     skip: d.getSeconds() % 2 === 0 ? "" : ":",
   });
-  $("clockDate").textContent = showClockDate
-    ? d.getDate() + " " + MONTHS[d.getMonth()] + ", " + WEEKDAYS[d.getDay()]
-    : "";
+  // Порядок «число — місяць — день тижня» у мовах різний — збирає i18n
+  $("clockDate").textContent = showClockDate ? fmtDate(d) : "";
   updateAges();
 }
 tickClock();
@@ -312,20 +309,27 @@ setInterval(tickClock, 1000);
 function ago(ts) {
   if (!ts) return "";
   const s = Math.max(0, Math.round((Date.now() - ts) / 1000));
-  if (s < 60) return "щойно";
-  if (s < 3600) return Math.floor(s / 60) + " хв тому";
-  if (s < 86400) return Math.floor(s / 3600) + " год тому";
-  return Math.floor(s / 86400) + " дн тому";
+  if (s < 60) return t("ago.now");
+  if (s < 3600) return t("ago.min", { n: Math.floor(s / 60) });
+  if (s < 86400) return t("ago.hour", { n: Math.floor(s / 3600) });
+  return t("ago.day", { n: Math.floor(s / 86400) });
 }
 
 function updateAges() {
   $("sayAge").textContent = sayAt ? ago(sayAt) : "";
-  $("stAge").textContent = statusAt ? "оновлено " + ago(statusAt) : "";
+  $("stAge").textContent = statusAt ? t("ago.updated", { ago: ago(statusAt) }) : "";
 }
 
 /* ---------- Тайл «Стан» ---------- */
 
-const BRAIN_LABELS = { openclaw: "OpenClaw", omni: "Omni", anthropic: "Anthropic", chat2api: "Chat2API", demo: "демо" };
+const BRAIN_LABELS = { openclaw: "OpenClaw", omni: "Omni", anthropic: "Anthropic", chat2api: "Chat2API" };
+/* Назви мозків — власні імена й не перекладаються; «демо» — єдине слово */
+function brainLabel(mode) {
+  if (BRAIN_LABELS[mode]) return BRAIN_LABELS[mode];
+  if (mode === "demo") return t("state.demo");
+  if (mode === "offline") return t("state.nobrain");
+  return mode;
+}
 
 function setState(el, on, text) {
   el.textContent = text;
@@ -340,12 +344,12 @@ async function refreshStatus() {
     const r = await fetch("/api/status");
     if (!r.ok) throw new Error("status " + r.status);
     const s = await r.json();
-    setState($("stBrain"), s.mode !== "demo", BRAIN_LABELS[s.mode] || s.mode || "—");
-    setState($("stVision"), !!s.vision, s.vision ? "онлайн" : "офлайн");
-    setState($("stDisplay"), !!s.display, s.display ? "онлайн" : "офлайн");
+    setState($("stBrain"), s.mode !== "demo" && s.mode !== "offline", brainLabel(s.mode) || "—");
+    setState($("stVision"), !!s.vision, s.vision ? t("state.online") : t("state.offline"));
+    setState($("stDisplay"), !!s.display, s.display ? t("state.online") : t("state.offline"));
     statusAt = Date.now();
   } catch (err) {
-    setState($("stBrain"), false, "нема звʼязку");
+    setState($("stBrain"), false, t("state.noLink"));
     setState($("stVision"), false, "—");
     setState($("stDisplay"), false, "—");
   } finally {
@@ -363,9 +367,12 @@ setInterval(() => {
 
 /* ---------- Живі події бота (той самий SSE, що й у панелі) ---------- */
 
+let linkAlive = false;   // памʼятаємо стан: після зміни мови підпис треба перемалювати
+
 function setLink(on) {
-  $("linkDot").classList.toggle("on", !!on);
-  setState($("stLink"), on, on ? "живий" : "нема");
+  linkAlive = !!on;
+  $("linkDot").classList.toggle("on", linkAlive);
+  setState($("stLink"), linkAlive, linkAlive ? t("state.alive") : t("common.none"));
 }
 setLink(false);
 
@@ -397,18 +404,14 @@ setLink(false);
       // а не сам бот подав голос.
       const text = typeof ev.text === "string" && ev.text.trim() ? ev.text.trim() : "";
       if (text) {
-        $("sayText").textContent = text;
-        sayAt = Date.now();
-        updateAges();
+        showSaid(text);
         showCaption(text, "bot");
         speak(text);
       }
       setEmotion(ev.emotion || "speaking");
     } else if (ev.type === "say") {
-      const text = typeof ev.text === "string" && ev.text.trim() ? ev.text.trim() : "(без тексту)";
-      $("sayText").textContent = text;
-      sayAt = Date.now();
-      updateAges();
+      const text = typeof ev.text === "string" && ev.text.trim() ? ev.text.trim() : t("say.noText");
+      showSaid(text);
       showCaption(text, "bot");
       speak(text);
       setEmotion(ev.emotion || "speaking");
@@ -416,8 +419,8 @@ setLink(false);
       if (asleep) wake();
     } else if (ev.type === "vision") {
       // Зір лишається видимим на обличчі — коротким субтитром, без журналу
-      if (ev.event === "face_appeared") showCaption("бачу тебе", "bot");
-      else if (ev.event === "face_gone") showCaption("нікого не бачу", "bot");
+      if (ev.event === "face_appeared") showCaption(t("face.seeYou"), "bot");
+      else if (ev.event === "face_gone") showCaption(t("face.seeNobody"), "bot");
     }
     // type "log" навмисно ігноруємо: технічні рядки — це для панелі, не для
     // екрана бота, інакше стрічка перетворюється на консоль.
@@ -436,17 +439,19 @@ const ICON_KEY = "botScreenIcons";
 const ICON_TINT_KEY = "botScreenIconTint";
 const DEFAULT_ICON_TINT = "#d98263";
 const ICON_TINTS = [
-  { value: "#d98263", label: "Кораловий" },
-  { value: "#7fa8d8", label: "Блакитний" },
-  { value: "#79b07a", label: "Зелений" },
-  { value: "#b48ad8", label: "Фіолетовий" },
-  { value: "#d7a65b", label: "Золотий" },
-  { value: "#5fb0a8", label: "Бірюзовий" },
+  { value: "#d98263", key: "tint.coral" },
+  { value: "#7fa8d8", key: "tint.blue" },
+  { value: "#79b07a", key: "tint.green" },
+  { value: "#b48ad8", key: "tint.purple" },
+  { value: "#d7a65b", key: "tint.gold" },
+  { value: "#5fb0a8", key: "tint.teal" },
 ];
+/* id стилю → ключ підпису: id зберігається у налаштуваннях, підпис залежить
+   від мови, тому в константі лежить саме ключ, а не готовий текст */
 const ICON_STYLES = {
-  pixel: "Піксельні",
-  line: "Однотонні",
-  color: "Кольорові",
+  pixel: "iconstyle.pixel",
+  line: "iconstyle.line",
+  color: "iconstyle.color",
 };
 const PIXEL_ICON_ASSETS = {
   face: "face.svg",
@@ -602,6 +607,7 @@ const THEME_KEY = "botScreenTheme";
 const BRIGHT_KEY = "botScreenBright";
 const VOL_KEY = "botScreenVol";
 const VOICE_KEY = "botScreenVoice";
+const SPEED_KEY = "botScreenVoiceSpeed";
 const ORDER_KEY = "botScreenQuickOrder";
 const IDLE_HOME_KEY = "botScreenIdleHome";
 const IDLE_SLEEP_KEY = "botScreenIdleSleep";
@@ -609,24 +615,30 @@ const CLOCK_FORMAT_KEY = "botScreenClockFormat";
 const CLOCK_DATE_KEY = "botScreenClockDate";
 const MOTION_KEY = "botScreenMotion";
 
+/* Варіанти тримають ключ, а не готовий підпис: список перемальовується при
+   зміні мови, а value лишається тим самим — його читає validOption і prefs */
 const IDLE_HOME_OPTIONS = [
-  { value: "10000", label: "10 секунд" },
-  { value: "20000", label: "20 секунд" },
-  { value: "40000", label: "40 секунд" },
-  { value: "0", label: "Не повертати" },
+  { value: "10000", key: "opt.sec", n: 10 },
+  { value: "20000", key: "opt.sec", n: 20 },
+  { value: "40000", key: "opt.sec", n: 40 },
+  { value: "0", key: "opt.noHome" },
 ];
 const IDLE_SLEEP_OPTIONS = [
-  { value: "60000", label: "1 хвилина" },
-  { value: "180000", label: "3 хвилини" },
-  { value: "300000", label: "5 хвилин" },
-  { value: "0", label: "Не засинати" },
+  { value: "60000", key: "opt.min1" },
+  { value: "180000", key: "opt.min3" },
+  { value: "300000", key: "opt.min5" },
+  { value: "0", key: "opt.noSleep" },
 ];
 const CLOCK_FORMAT_OPTIONS = [
-  { value: "24", label: "24 години" },
-  { value: "12", label: "12 годин" },
+  { value: "24", key: "opt.h24" },
+  { value: "12", key: "opt.h12" },
 ];
 
 let voiceOn = false;
+// Темп голосу. Piper типово говорить неквапно — для короткої репліки це добре,
+// для абзацу вже втомлює, тому 1.5× і 2× виведені в швидкі дії.
+const VOICE_SPEEDS = [1, 1.5, 2];
+let voiceSpeed = 1;
 let ttsAvailable = false;
 let editing = false;
 let picked = null;      // id плитки, обраної першою в режимі перестановки
@@ -637,13 +649,18 @@ const volRange = $("volRange");
 
 /* Плитки: id → що це і що робить. Порядок за замовчуванням — цей масив. */
 const QUICK_TILES = {
-  sleep:  { label: "Сон", icon: "moon", toggle: () => (asleep ? wake() : sleep()), isOn: () => asleep },
-  theme:  { label: "Тема", icon: "contrast", toggle: toggleTheme, isOn: () => document.documentElement.dataset.theme === "light" },
-  voice:  { label: "Голос", icon: "speaker", toggle: toggleVoice, isOn: () => voiceOn, enabled: () => ttsAvailable },
-  apps:   { label: "Екрани", icon: "grid", toggle: () => { openLayer(null); openApps(); }, isOn: () => false },
-  icons:  { label: "Налаштування", icon: "settings", toggle: () => { openLayer(null); openSettings(); }, isOn: () => false },
-  full:   { label: "На весь", icon: "expand", toggle: toggleFullscreen, isOn: () => !!document.fullscreenElement },
-  reload: { label: "Перезапуск", icon: "power", toggle: () => location.reload(), isOn: () => false },
+  sleep:  { labelKey: "quick.sleep", icon: "moon", toggle: () => (asleep ? wake() : sleep()), isOn: () => asleep },
+  theme:  { labelKey: "quick.theme", icon: "contrast", toggle: toggleTheme, isOn: () => document.documentElement.dataset.theme === "light" },
+  voice:  { labelKey: "quick.voice", icon: "speaker", toggle: toggleVoice, isOn: () => voiceOn, enabled: () => ttsAvailable },
+  // Підпис динамічний («1.5×»): на 320×240 саме значення інформативніше за
+  // слово «Швидкість», яке однаково не влазить повністю.
+  speed:  { labelKey: "quick.speed", icon: "speaker", label: () => fmtSpeed(voiceSpeed),
+            toggle: cycleVoiceSpeed, isOn: () => voiceSpeed > 1,
+            enabled: () => ttsAvailable && voiceOn },
+  apps:   { labelKey: "quick.screens", icon: "grid", toggle: () => { openLayer(null); openApps(); }, isOn: () => false },
+  icons:  { labelKey: "quick.settings", icon: "settings", toggle: () => { openLayer(null); openSettings(); }, isOn: () => false },
+  full:   { labelKey: "quick.full", icon: "expand", toggle: toggleFullscreen, isOn: () => !!document.fullscreenElement },
+  reload: { labelKey: "quick.reload", icon: "power", toggle: () => location.reload(), isOn: () => false },
 };
 const DEFAULT_ORDER = Object.keys(QUICK_TILES);
 let quickOrder = DEFAULT_ORDER.slice();
@@ -689,8 +706,8 @@ window.musicAudio = musicAudio;
 
 const PROVIDER_KEY = "botScreenMusicProvider";
 const PROVIDERS = {
-  youtube: { label: "YouTube", icon: "youtube" },
-  radio: { label: "Радіо", icon: "radio" },
+  youtube: { label: "YouTube", icon: "youtube" },   // власна назва, не перекладається
+  radio: { labelKey: "music.radio", icon: "radio" },
 };
 
 const musicState = {
@@ -721,20 +738,36 @@ async function checkTts() {
   if (!ttsAvailable) {
     voiceOn = false;
     volRange.disabled = true;
-    $("volVal").textContent = "нема";
+    $("volVal").textContent = t("common.none");
   }
   renderQuickTiles();
 }
 
-async function speak(text) {
+/* Обрізає текст для озвучки по межі речення: краще недоказати фразу, ніж
+   обірвати її посеред слова — на слух друге читається як поломка. */
+function cutForSpeech(text, limit) {
+  if (text.length <= limit) return text;
+  const head = text.slice(0, limit);
+  const end = Math.max(head.lastIndexOf("."), head.lastIndexOf("!"),
+                       head.lastIndexOf("?"), head.lastIndexOf("…"));
+  // Занадто ранню крапку ігноруємо: інакше репліка з абревіатурою на початку
+  // озвучилась би одним словом.
+  return end > limit * 0.5 ? head.slice(0, end + 1) : head;
+}
+
+async function speak(raw) {
+  // Розмітку картинок вголос не читаємо: інакше Piper диктував би
+  // «знак оклику дужка ейч-ті-ті-пі-ес…» замість самої репліки
+  const text = splitImages(raw).text;
   if (!voiceOn || !ttsAvailable || !text) return;
   try {
     const r = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      // Довгі репліки не озвучуємо цілком: синтез на сервері не безкоштовний,
-      // а на екрані бота важлива швидка реакція, а не повний переказ
-      body: JSON.stringify({ text: text.slice(0, 400) }),
+      // Стеля — 1000 символів: рівно стільки бере piper_voice._clean, тож
+      // менший поріг просто мовчки губив би кінець і без того обрізаної фрази.
+      // Ріжемо по МЕЖІ РЕЧЕННЯ: обірване на півслові звучить як збій.
+      body: JSON.stringify({ text: cutForSpeech(text, 1000), speed: voiceSpeed }),
     });
     if (!r.ok) return;                       // 503 — голос просто мовчить
     const blob = await r.blob();
@@ -752,6 +785,20 @@ async function speak(text) {
   } catch (e) {
     /* голос не критичний — мовчимо */
   }
+}
+
+/* «1.5×» без зайвого нуля: 1× / 1.5× / 2× */
+function fmtSpeed(v) {
+  return (Number.isInteger(v) ? String(v) : v.toFixed(1)) + "\u00d7";
+}
+
+function cycleVoiceSpeed() {
+  if (!ttsAvailable || !voiceOn) return;
+  const i = VOICE_SPEEDS.indexOf(voiceSpeed);
+  voiceSpeed = VOICE_SPEEDS[(i + 1) % VOICE_SPEEDS.length];
+  writePref(SPEED_KEY, voiceSpeed);
+  // Уже озвучена репліка лишається у старому темпі — наступна піде в новому.
+  // Перезапитувати аудіо на льоту не варто: це зайвий синтез заради півсекунди.
 }
 
 function toggleVoice() {
@@ -810,7 +857,7 @@ function renderQuickTiles() {
     if (def.enabled && !def.enabled()) btn.disabled = true;
     btn.appendChild(uiIcon(def.icon, { on: on }));
     const lbl = document.createElement("span");
-    lbl.textContent = def.label;
+    lbl.textContent = def.label ? def.label() : t(def.labelKey);
     btn.appendChild(lbl);
     btn.addEventListener("click", () => onQuickTile(id, btn));
     quickGrid.appendChild(btn);
@@ -903,7 +950,11 @@ volRange.addEventListener("input", () => {
 
   applyBright(readPref(BRIGHT_KEY, 100));
   applyVolume(readPref(VOL_KEY, 70));
-  voiceOn = readPref(VOICE_KEY, "0") === "1";
+  // Типово УВІМКНЕНО: бот із головою, але без голосу — це половина бота.
+  // Хто не хоче звуку, вимикає у швидких діях, і вибір запамʼятовується.
+  voiceOn = readPref(VOICE_KEY, "1") === "1";
+  const savedSpeed = parseFloat(readPref(SPEED_KEY, "1"));
+  if (VOICE_SPEEDS.includes(savedSpeed)) voiceSpeed = savedSpeed;
 
   const saved = readPref(ORDER_KEY, null);
   if (saved) {
@@ -1004,7 +1055,7 @@ async function sendChat(message) {
     }
     streamed += chunk;
     smd.parser_write(parser, chunk);
-    showCaption(streamed, "bot");        // те саме — субтитром під обличчям
+    showCaption(streamed, "bot", true);  // те саме — субтитром під обличчям (ще друкує)
     // Скрол не частіше за кадр: інакше на A53 кожен чанк дає reflow
     if (!scrollPending) {
       scrollPending = true;
@@ -1063,7 +1114,7 @@ async function sendChat(message) {
             }
             setEmotion(payload.emotion);
           } else if (eventType === "error") {
-            throw new Error(payload.error || "помилка мозку");
+            throw new Error(payload.error || t("chat.brainError"));
           }
         }
       }
@@ -1071,7 +1122,7 @@ async function sendChat(message) {
     if (parser) smd.parser_end(parser);
     if (!started) {
       bubble.classList.remove("pending");
-      bubble.textContent = "(порожня відповідь)";
+      bubble.textContent = t("chat.emptyReply");
     }
   } catch (err) {
     if (parser) { try { smd.parser_end(parser); } catch (e2) {} }
@@ -1113,17 +1164,20 @@ const chatLive = $("chatLive");
 const micButtons = Array.from(document.querySelectorAll("[data-mic]"));
 const faceTile = tiles[0];
 const faceCaption = $("faceCaption");
+const facePhoto = $("facePhoto");
 const faceLabel = $("faceLabel");
 
 const MODE_KEY = "botScreenVoiceMode";
 const MODES = {
-  push: { label: "Поговорити", hint: "Тиснеш — кажеш фразу — бот відповідає" },
-  open: { label: "Слухає завжди", hint: "Мікрофон відкритий, кожна фраза йде боту" },
-  wake: { label: "Ключове слово", hint: "Реагує лише після свого імені" },
+  push: { labelKey: "mode.push", hintKey: "mode.push.hint" },
+  open: { labelKey: "mode.open", hintKey: "mode.open.hint" },
+  wake: { labelKey: "mode.wake", hintKey: "mode.wake.hint" },
 };
 
 let voiceMode = "push";
-let wakeWord = "клод";        // підтягуємо з імені бота в налаштуваннях
+// Типове ключове слово залежить від мови; справжнє приходить з імені бота
+let wakeWord = t("voice.defaultWake");
+let wakeWordFromBot = false;  // ім'я прийшло з налаштувань — мовою не чіпаємо
 let wakeArmed = false;        // ім'я почули, чекаємо саму команду
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -1145,7 +1199,24 @@ const REC_MAX_MS = 15000;     // жорстка стеля однієї фраз
 const SILENCE_MS = 1300;      // стільки тиші ПІСЛЯ мовлення = кінець фрази
 const MIN_REC_MS = 600;       // коротше — це не фраза, а стук
 const VOL_SPEAK = 0.012;      // поріг «є голос»
+// Живе розпізнавання: MediaRecorder ріже потік на шматки такої довжини, і
+// накопичене аудіо йде на /api/asr/partial, поки людина ЩЕ говорить. Без
+// цього після фрази була німа пауза на повне розпізнавання (заміряно 5.7с).
+//
+// 5000, а не 1200: на короткому уривку Whisper домислює слова, і в стрічці
+// зʼявлялась вигадка вигляду «Привіток справу», хоча остаточне розпізнавання
+// того самого запису давало правильний текст. Заміряно на одному записі —
+// 1.2с дало «Рэс-бери-пай-пай», 2.4с «Рес-бери-пай протює на ліну», 5с уже
+// «Рес Беріпай працює на лінукс, а Керую дним...».
+//
+// Побічний виграш: удесятеро менше звернень до моделі, тож вона не відбирає
+// процесор в остаточного розпізнавання, яке й тримає паузу перед відповіддю.
+// Плата — фраза, коротша за 5с, живого тексту вже не покаже: буде одразу
+// остаточний. Свідомий обмін: краще нічого, ніж вигадка.
+const PARTIAL_MS = 5000;
 let spoke = false;
+let partialBusy = false;      // запит уже в дорозі — другий не шлемо
+let partialsOn = true;        // вимикається, якщо сервер віддав 503
 let silenceSince = 0;
 let recStartAt = 0;
 
@@ -1164,27 +1235,266 @@ const SR_WINDOW_MS = 10000;
    це підпис під обличчям, а не читалка. */
 
 let captionTimer = 0;
-const CAPTION_TAIL = 140;
-const CAPTION_HOLD_MS = 9000;
+const CAPTION_HOLD_MS = 9000;        // база: стільки висить коротка репліка
+const CAPTION_MS_PER_CHAR = 45;      // + на кожен символ, щоб абзац устигли прочитати
+const CAPTION_HOLD_MAX_MS = 45000;   // але не назавжди — це все ж циферблат
 
-function showCaption(text, kind) {
-  const t = (text || "").trim();
+/* Картинки в репліці бота: ![підпис](https://…). Тайл «Розмова» рендерить
+   markdown сам (smd), а циферблат і «Бот сказав» показували СИРИЙ текст —
+   тобто замість фото людина бачила дужки з посиланням. Тому розбираємо
+   репліку тут: текст лишаємо читабельним (підпис замість розмітки), а самі
+   картинки показуємо як картинки. */
+// Приймаємо і зовнішнє https-посилання (так віддає тулза image_search), і
+// шлях на нашому ж сервері (/uploads/…, /file/…) — бот може показати як
+// знайдене в мережі, так і власний файл із робочої теки.
+const MD_IMAGE_RE = /!\[([^\]]*)\]\(((?:https?:\/\/|\/)[^\s)]+)\)/g;
+
+function splitImages(raw) {
+  const images = [];
+  const text = String(raw || "")
+    .replace(MD_IMAGE_RE, (_m, alt, src) => {
+      const caption = (alt || "").trim();
+      images.push({ alt: caption, src: src });
+      return caption;               // підпис лишається в тексті замість розмітки
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { text: text, images: images };
+}
+
+/* ---------- Бот показує картинку ----------
+   ОДНА рамка, у ній ОДНА картинка; кілька — гортаються свайпом, стрілками
+   або тапом по краю. Картинка, що не влазить, лишається цілою (object-fit:
+   contain), а порожнє місце стає світлими полями — обрізати фото на 2.4"
+   означає здебільшого зробити його невпізнаваним. */
+
+const facePhotoImg = $("facePhotoImg");
+const facePhotoDots = $("facePhotoDots");
+const faceHolder = $("faceHolder");
+let facePhotos = [];
+let facePhotoIdx = 0;
+
+/* Спрайт краба, що ТРИМАЄ рамку за правий бік: компактне тіло як у маскота
+   плюс ОДНА клешня, піднята вгору-праворуч. Дві симетричні «руки» робили з
+   нього павука — тут силует лишається крабячим. Окремий від crab.js
+   навмисно: там свій автомат станів, і пози «тримаю» в ньому немає. */
+const HOLDER_SPRITE = [
+  ".........11",
+  "........1.1",
+  "........11.",
+  ".......11..",
+  ".1111111...",
+  ".1E11E11...",
+  ".1111111...",
+  "111111111..",
+  ".1111111...",
+  ".1.1.1.1...",
+];
+const HOLDER_CELL = 3;
+
+function drawHolder() {
+  if (!faceHolder) return;
+  const ctx = faceHolder.getContext("2d");
+  if (!ctx) return;
+  const accent = getComputedStyle(document.documentElement)
+    .getPropertyValue("--accent").trim() || "#c96442";
+  ctx.clearRect(0, 0, faceHolder.width, faceHolder.height);
+  for (let y = 0; y < HOLDER_SPRITE.length; y++) {
+    const row = HOLDER_SPRITE[y];
+    for (let x = 0; x < row.length; x++) {
+      const cell = row[x];
+      if (cell === ".") continue;
+      ctx.fillStyle = cell === "E" ? "#14120f" : accent;
+      ctx.fillRect(x * HOLDER_CELL, y * HOLDER_CELL, HOLDER_CELL, HOLDER_CELL);
+    }
+  }
+}
+
+function renderFacePhoto() {
+  const item = facePhotos[facePhotoIdx];
+  if (!item) return;
+  facePhotoImg.src = item.src;
+  facePhotoImg.alt = item.alt || "";
+  facePhoto.classList.toggle("many", facePhotos.length > 1);
+  facePhotoDots.textContent = "";
+  if (facePhotos.length > 1) {
+    facePhotos.forEach((_p, i) => {
+      const dot = document.createElement("i");
+      if (i === facePhotoIdx) dot.className = "on";
+      facePhotoDots.appendChild(dot);
+    });
+  }
+}
+
+function stepFacePhoto(delta) {
+  if (facePhotos.length < 2) return;
+  const n = facePhotos.length;
+  facePhotoIdx = (facePhotoIdx + delta + n) % n;
+  renderFacePhoto();
+}
+
+/* Показати картинки бота (порожній масив = вийти з режиму фото) */
+function showFacePhotos(images) {
+  facePhotos = images || [];
+  facePhotoIdx = 0;
+  if (!facePhotos.length) {
+    facePhoto.classList.add("hidden");
+    faceHolder.classList.add("hidden");
+    faceTile.classList.remove("photo");
+    facePhotoImg.removeAttribute("src");
+    return;
+  }
+  renderFacePhoto();
+  facePhoto.classList.remove("hidden");
+  faceHolder.classList.remove("hidden");
+  faceTile.classList.add("photo");
+  drawHolder();
+}
+
+// Побите посилання не має лишати порожню рамку: викидаємо саме цю картинку
+facePhotoImg.addEventListener("error", () => {
+  if (!facePhotos.length) return;
+  facePhotos.splice(facePhotoIdx, 1);
+  if (!facePhotos.length) { showFacePhotos([]); return; }
+  facePhotoIdx = facePhotoIdx % facePhotos.length;
+  renderFacePhoto();
+});
+
+$("facePhotoPrev").addEventListener("click", (e) => { e.stopPropagation(); stepFacePhoto(-1); });
+$("facePhotoNext").addEventListener("click", (e) => { e.stopPropagation(); stepFacePhoto(1); });
+
+/* Свайп по самій рамці. Гасимо спливання: інакше той самий жест перегорнув
+   би ще й карусель тайлів — і замість наступної картинки ти б опинився на
+   іншому екрані. */
+(function initPhotoSwipe() {
+  let from = null;
+  facePhoto.addEventListener("pointerdown", (e) => {
+    from = { x: e.clientX, y: e.clientY };
+    e.stopPropagation();
+  });
+  facePhoto.addEventListener("pointerup", (e) => {
+    e.stopPropagation();
+    const s = from;
+    from = null;
+    if (!s) return;
+    const dx = e.clientX - s.x;
+    if (Math.abs(dx) > 18) stepFacePhoto(dx < 0 ? 1 : -1);
+  });
+})();
+
+/* Малює картинки в контейнер тайла «Бот сказав» (там гортання не треба —
+   тайл прокручується сам) */
+function renderPhotos(box, images) {
+  if (!box) return;
+  box.textContent = "";
+  if (!images.length) { box.classList.add("hidden"); return; }
+  for (const item of images.slice(0, 4)) {
+    const img = document.createElement("img");
+    img.src = item.src;
+    img.alt = item.alt || "";
+    img.loading = "lazy";
+    img.onerror = () => {
+      img.remove();
+      if (!box.querySelector("img")) box.classList.add("hidden");
+    };
+    box.appendChild(img);
+  }
+  box.classList.remove("hidden");
+}
+
+/* ---------- Субтитр: гортання сторінками ----------
+   На 320×240 довга репліка не влазить у рамку. Смуги прокрутки тут нема
+   (палець, не курсор), тому гортаємо ТАПОМ: сторінка за сторінкою, з кінця
+   знову на початок — щоб перечитати можна було, не чекаючи нової репліки. */
+
+const captionPage = $("captionPage");
+
+// Поточна сторінка тримаємо ЧИСЛОМ, а не рахуємо зі scrollTop. Через
+// scroll-behavior: smooth прокрутка доїжджає асинхронно, тож лічильник,
+// порахований одразу після присвоєння, показував ПОПЕРЕДНЮ сторінку.
+let captionPageIdx = 0;
+
+function captionPageCount() {
+  const ph = faceCaption.clientHeight || 1;
+  return Math.max(1, Math.ceil(faceCaption.scrollHeight / ph));
+}
+
+function updateCaptionPage() {
+  const pages = captionPageCount();
+  if (pages <= 1) {                      // влізло цілком — лічильник ні до чого
+    captionPage.classList.add("hidden");
+    return;
+  }
+  captionPage.textContent = Math.min(captionPageIdx + 1, pages) + "/" + pages;
+  captionPage.classList.remove("hidden");
+}
+
+function scrollCaptionTo(idx) {
+  captionPageIdx = idx;
+  faceCaption.scrollTop = idx * (faceCaption.clientHeight || 1);
+  updateCaptionPage();
+}
+
+function pageCaption() {
+  const pages = captionPageCount();
+  if (pages <= 1) return;                              // гортати нічого
+  scrollCaptionTo((captionPageIdx + 1) % pages);       // з кінця — знову на початок
+  // Людина читає — субтитр не має зникнути з-під пальця на півслові
   clearTimeout(captionTimer);
-  if (!t) return hideCaption();
-  faceCaption.textContent = t.length > CAPTION_TAIL ? "…" + t.slice(-CAPTION_TAIL) : t;
+  captionTimer = setTimeout(hideCaption, CAPTION_HOLD_MAX_MS);
+}
+
+// Тап по рамці = наступна сторінка. stopPropagation — щоб той самий тап не
+// поїхав у карусель тайлів і не перегорнув екран замість тексту.
+faceCaption.addEventListener("click", (e) => { e.stopPropagation(); pageCaption(); });
+
+function showCaption(text, kind, live) {
+  const parts = splitImages(text);
+  const t = parts.text;
+  clearTimeout(captionTimer);
+  if (!t && !parts.images.length) return hideCaption();
+  // Текст НЕ ріжемо: рамка субтитра прокручується, і сама з’їжджає донизу —
+  // раніше довга репліка лишалась обрізаною хвостом у 140 символів, тобто
+  // початок відповіді на екрані просто не існував.
+  faceCaption.textContent = t;
   faceCaption.className = "face-caption " + (kind || "bot");
-  // Субтитр показує ОСТАННІ слова: поки бот друкує, важливий хвіст, а не
-  // початок — інакше на третьому рядку текст просто зникає під краєм
-  faceCaption.scrollTop = faceCaption.scrollHeight;
+  showFacePhotos(parts.images);
   faceLabel.classList.add("hidden");
   faceTile.classList.add("captioned");
-  captionTimer = setTimeout(hideCaption, CAPTION_HOLD_MS);
+  // Прокрутка — ОСТАННЬОЮ дією: класи вище міняють висоту й ширину рамки
+  // субтитра, тож докручування перед ними просто скидалось.
+  //
+  // live=true — бот ще ДРУКУЄ: тримаємось хвоста, бо цікаві останні слова.
+  // Готову ж репліку показуємо З ПОЧАТКУ: інакше на екран потрапляв тільки
+  // її кінець, а перші речення взагалі не існували для читача.
+  if (live) {
+    captionPageIdx = Math.max(0, captionPageCount() - 1);
+    faceCaption.scrollTop = faceCaption.scrollHeight;
+    updateCaptionPage();
+  } else {
+    scrollCaptionTo(0);
+  }
+  // Довгу репліку тримаємо довше: 9с вистачало на рядок, але не на абзац,
+  // який ще треба прокрутити.
+  const hold = Math.min(CAPTION_HOLD_MAX_MS, CAPTION_HOLD_MS + t.length * CAPTION_MS_PER_CHAR);
+  captionTimer = setTimeout(hideCaption, hold);
+}
+
+/* Тайл «Бот сказав»: текст без markdown-розмітки + самі картинки */
+function showSaid(raw) {
+  const parts = splitImages(raw);
+  $("sayText").textContent = parts.text || t("say.noText");
+  renderPhotos($("sayPhoto"), parts.images);
+  sayAt = Date.now();
+  updateAges();
 }
 
 function hideCaption() {
   clearTimeout(captionTimer);
   faceCaption.className = "face-caption hidden";
   faceCaption.textContent = "";
+  captionPage.classList.add("hidden");
+  showFacePhotos([]);
   faceLabel.classList.remove("hidden");
   faceTile.classList.remove("captioned");
 }
@@ -1202,7 +1512,7 @@ function hideCaption() {
   const canMic = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
   if (!SR && !(asrAvailable && canMic)) {
     micButtons.forEach((b) => { b.disabled = true; });
-    micLabel.textContent = "Голос недоступний";
+    micLabel.textContent = t("voice.unavailable");
     return;
   }
   // Ключове слово — ім'я бота з налаштувань: «Клод Бот» → «клод»
@@ -1210,8 +1520,8 @@ function hideCaption() {
     const r = await fetch("/api/setup");
     const d = await r.json();
     const name = ((d.profile || {}).name || "").trim().toLowerCase();
-    if (name) wakeWord = name.split(/\s+/)[0];
-  } catch (e) { /* лишається типове «клод» */ }
+    if (name) { wakeWord = name.split(/\s+/)[0]; wakeWordFromBot = true; }
+  } catch (e) { /* лишається типове слово поточної мови */ }
 
   iconStyle = readPref(ICON_KEY, "pixel");
   if (!ICON_STYLES[iconStyle]) iconStyle = "pixel";
@@ -1226,11 +1536,11 @@ function hideCaption() {
 /* Кнопка каже, що ЗАРАЗ відбувається (дія/стан), а чип поруч — який режим
    обрано. Раніше обидва писали назву режиму, і напис дублювався. */
 function micStateLabel() {
-  if (wakeArmed) return "Слухаю…";
-  if (!listening) return voiceMode === "push" ? "Говорити" : "Пауза";
-  if (voiceMode === "wake") return "Чекаю «" + wakeWord + "»";
-  if (voiceMode === "open") return "Слухаю все";
-  return "Слухаю…";
+  if (wakeArmed) return t("voice.listening");
+  if (!listening) return voiceMode === "push" ? t("voice.speak") : t("voice.pause");
+  if (voiceMode === "wake") return t("voice.waitingWord", { word: wakeWord });
+  if (voiceMode === "open") return t("voice.listeningAll");
+  return t("voice.listening");
 }
 
 function setListening(on) {
@@ -1251,7 +1561,7 @@ function setListening(on) {
 
 function renderMode() {
   const chip = $("modeChip");
-  if (chip) chip.textContent = MODES[voiceMode].label;
+  if (chip) chip.textContent = t(MODES[voiceMode].labelKey);
   micLabel.textContent = micStateLabel();
   document.querySelectorAll("#modeSheet .mode-row").forEach((row) => {
     row.classList.toggle("on", row.dataset.mode === voiceMode);
@@ -1314,7 +1624,7 @@ function handleFinalText(said) {
     if (action === "arm") {
       wakeArmed = true;                          // сказали лише ім'я — чекаємо
       setListening(listening);
-      showCaption("так?", "bot");
+      showCaption(t("voice.yes"), "bot");
       return;
     }
     wakeArmed = false;                           // команду прийняли
@@ -1330,7 +1640,9 @@ function startRecognition(continuous) {
   if (!SR) return false;
   let finalText = "";
   recognition = new SR();
-  recognition.lang = "uk-UA";
+  // Мову розпізнавання беремо з мови інтерфейсу: англійський екран, який
+  // слухає українською, чує саме сміття
+  recognition.lang = t("speech.lang");
   recognition.interimResults = true;
   recognition.continuous = !!continuous;
 
@@ -1369,7 +1681,7 @@ function startRecognition(continuous) {
         recognition = null;
         if (!startRecorder(true)) {
           setVoiceMode("push");
-          showCaption("Безперервне слухання не запустилось", "bot");
+          showCaption(t("voice.continuousFailed"), "bot");
         }
         return;
       }
@@ -1402,7 +1714,15 @@ function startRecorder(continuous) {
     mediaRec = null;
     return false;
   }
-  mediaRec.ondataavailable = (e) => { if (e.data && e.data.size) recChunks.push(e.data); };
+  mediaRec.ondataavailable = (e) => {
+    if (!e.data || !e.data.size) return;
+    recChunks.push(e.data);
+    // Перший шматок несе заголовки webm, тож декодується лише СКЛЕЄНЕ
+    // аудіо з початку — шлемо накопичене, а не останній шматок окремо.
+    if (partialsOn && spoke && !partialBusy && mediaRec && mediaRec.state === "recording") {
+      sendPartial(new Blob(recChunks, { type: "audio/webm" }));
+    }
+  };
   mediaRec.onstop = () => {
     const hadSpeech = spoke;
     const blob = new Blob(recChunks, { type: "audio/webm" });
@@ -1414,16 +1734,39 @@ function startRecorder(continuous) {
     else if (continuous && voiceMode !== "push") startRecorder(true);
     else finishPhrase("");
   };
-  mediaRec.start();
+  mediaRec.start(PARTIAL_MS);
   recTimer = setTimeout(() => {
     if (mediaRec && mediaRec.state === "recording") { try { mediaRec.stop(); } catch (e) {} }
   }, REC_MAX_MS + 500);
   return true;
 }
 
+/**
+ * Проміжне розпізнавання: показує текст, поки фраза ще триває.
+ * Свідомо «best effort» — помилку ковтаємо (це чорновик), а на 503 вимикаємо
+ * проміжні до кінця сесії, щоб не довбати сервер даремно.
+ */
+async function sendPartial(blob) {
+  partialBusy = true;
+  try {
+    const fd = new FormData();
+    fd.append("audio", blob, "voice.webm");
+    const r = await fetch("/api/asr/partial", { method: "POST", body: fd });
+    if (r.status === 503) { partialsOn = false; return; }
+    if (!r.ok) return;
+    const d = await r.json();
+    // Показуємо, лише поки ще пишемо: інакше чорновик перебив би остаточний текст
+    if (d.text && mediaRec && mediaRec.state === "recording") showLive(d.text);
+  } catch (e) {
+    /* мережа моргнула — наступний шматок спробує знову */
+  } finally {
+    partialBusy = false;
+  }
+}
+
 async function sendToAsr(blob, continuous) {
   clearTimeout(recTimer);
-  if (!continuous) showLive("(розпізнаю…)");
+  if (!continuous) showLive(t("voice.recognizing"));
   let text = "";
   try {
     const fd = new FormData();
@@ -1451,7 +1794,7 @@ async function startPhrase() {
   setListening(true);
   if (startRecognition(false)) return;
   if (startRecorder(false)) {
-    showLive("(слухаю — текст зʼявиться після паузи)");
+    showLive(t("voice.afterPause"));
     return;
   }
   finishPhrase("");
@@ -1585,10 +1928,13 @@ micButtons.forEach((btn) => {
 const sessionsPanel = $("sessionsPanel");
 const sessionsList = $("sessionsList");
 
+let sessionTitleText = null;   // null = назви ще не було, лишаємо статичну
+
 function setSessionTitle(title) {
+  sessionTitleText = title || "";
   $("sessionTitle").textContent = title && title.trim()
     ? title.trim().slice(0, 26)
-    : "Нова розмова";
+    : t("chat.new");
 }
 
 function renderHistory(messages) {
@@ -1597,7 +1943,8 @@ function renderHistory(messages) {
     const empty = document.createElement("div");
     empty.className = "chat-empty";
     empty.id = "chatEmpty";
-    empty.textContent = "Натисни мікрофон і говори.";
+    empty.dataset.i18n = "chat.empty";   // щоб applyStatic знайшов її і після зміни мови
+    empty.textContent = t("chat.empty");
     chatLog.appendChild(empty);
     return;
   }
@@ -1632,14 +1979,14 @@ async function openSession(id, title) {
 
 async function showSessions() {
   sessionsPanel.classList.remove("hidden");
-  sessionsList.textContent = "Завантаження…";
+  sessionsList.textContent = t("common.loading");
   try {
     const r = await fetch("/api/sessions");
     const d = await r.json();
     const list = d.sessions || [];
     sessionsList.innerHTML = "";
     if (!list.length) {
-      sessionsList.textContent = "Розмов ще немає.";
+      sessionsList.textContent = t("chat.sessionsEmpty");
       return;
     }
     for (const item of list.slice(0, 30)) {
@@ -1658,7 +2005,7 @@ async function showSessions() {
       sessionsList.appendChild(row);
     }
   } catch (e) {
-    sessionsList.textContent = "Не вдалося завантажити список.";
+    sessionsList.textContent = t("chat.sessionsFailed");
   }
 }
 
@@ -1696,20 +2043,20 @@ const appsGrid = $("appsGrid");
 /* Спільний словник із бекендом (tools/screen_tools.py): ті самі id, щоб
    мозок і екран говорили однією мовою. */
 const SCREENS = [
-  { id: "face", label: "Обличчя", icon: "face" },
-  { id: "clock", label: "Годинник", icon: "clock" },
-  { id: "chat", label: "Розмова", icon: "mic" },
-  { id: "say", label: "Репліка", icon: "bubble" },
-  { id: "state", label: "Стан", icon: "gauge" },
-  { id: "quick", label: "Швидкі дії", icon: "sliders" },
+  { id: "face", labelKey: "screen.face", icon: "face" },
+  { id: "clock", labelKey: "screen.clock", icon: "clock" },
+  { id: "chat", labelKey: "screen.chat", icon: "mic" },
+  { id: "say", labelKey: "screen.say", icon: "bubble" },
+  { id: "state", labelKey: "screen.state", icon: "gauge" },
+  { id: "quick", labelKey: "screen.quick", icon: "sliders" },
   // Далі — не екрани, а справжні дії пристрою
-  { id: "camera", label: "Камера", icon: "camera", app: true },
-  { id: "services", label: "Сервіси", icon: "server", app: true },
-  { id: "panel", label: "Панель", icon: "monitor", app: true },
-  { id: "settings", label: "Налаштування", icon: "settings", app: true },
-  { id: "memory", label: "Памʼять", icon: "memory", app: true },
-  { id: "chats", label: "Розмови", icon: "history", app: true },
-  { id: "store", label: "Магазин", icon: "store", app: true },
+  { id: "camera", labelKey: "screen.camera", icon: "camera", app: true },
+  { id: "services", labelKey: "screen.services", icon: "server", app: true },
+  { id: "panel", labelKey: "screen.panel", icon: "monitor", app: true },
+  { id: "settings", labelKey: "screen.settings", icon: "settings", app: true },
+  { id: "memory", labelKey: "screen.memory", icon: "memory", app: true },
+  { id: "chats", labelKey: "screen.chats", icon: "history", app: true },
+  { id: "store", labelKey: "screen.store", icon: "store", app: true },
   // Встановлені з магазину застосунки дописує refreshInstalledApps()
 ];
 
@@ -1751,7 +2098,8 @@ function renderApps() {
 
     const lbl = document.createElement("span");
     lbl.className = "app-name";
-    lbl.textContent = scr.label;
+    // Свої екрани мають ключ, застосунки з магазину — власну назву з пакета
+    lbl.textContent = scr.labelKey ? t(scr.labelKey) : scr.label;
     btn.appendChild(lbl);
 
     btn.addEventListener("click", () => { closeApps(); showScreen(scr.id); });
@@ -1814,10 +2162,16 @@ const layerApp = $("layerApp");
 const appBody = $("appBody");
 let camTimer = 0;
 
-function openAppLayer(title, build) {
+/* titleKey — ключ словника; невідомий ключ t() віддає як є, тому сюди
+   спокійно йде і власна назва застосунку з магазину. Пару (ключ, build)
+   памʼятаємо: після зміни мови шар перезбирається тим самим build. */
+let openApp = null;
+
+function openAppLayer(titleKey, build) {
   clearTimeout(camTimer);
   applyFrost(layerApp);
-  $("appTitle").textContent = title;
+  openApp = { key: titleKey, build };
+  $("appTitle").textContent = t(titleKey);
   appBody.innerHTML = "";
   build(appBody);
   layerApp.classList.add("open");
@@ -1827,6 +2181,7 @@ function openAppLayer(title, build) {
 
 function closeAppLayer() {
   clearTimeout(camTimer);
+  openApp = null;
   layerApp.classList.remove("open");
   appBody.innerHTML = "";                 // MJPEG-стрім інакше тягнеться далі
   if (!layer && !appsOpen()) stage.classList.remove("layered");
@@ -1836,55 +2191,55 @@ document.querySelector("[data-app-close]").addEventListener("click", closeAppLay
 
 /* --- Камера: потік беремо НАПРЯМУ з Vision (8000), не через бекенд --- */
 function openCamera() {
-  openAppLayer("Камера", (box) => {
+  openAppLayer("screen.camera", (box) => {
     const view = document.createElement("div");
     view.className = "cam-view";
     const note = document.createElement("div");
     note.className = "cam-note";
-    note.textContent = "Перевіряю зір…";
+    note.textContent = t("cam.checking");
     box.appendChild(view);
     box.appendChild(note);
 
     fetch("/api/status").then((r) => r.json()).then((st) => {
       if (st.vision) {
         const img = document.createElement("img");
-        img.alt = "Потік камери";
+        img.alt = t("cam.stream");
         const streamUrl = new URL("/vision/stream.mjpg", window.location.origin);
         streamUrl.port = "8000";
         img.src = streamUrl.href;
-        img.onerror = () => { note.textContent = "Потік не відкрився."; };
+        img.onerror = () => { note.textContent = t("cam.failed"); };
         view.appendChild(img);
-        note.textContent = "Живий потік";
+        note.textContent = t("cam.live");
         return;
       }
-      note.textContent = "Зір вимкнено.";
+      note.textContent = t("cam.off");
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "cta";
       btn.style.alignSelf = "center";
-      btn.textContent = "Запустити зір";
+      btn.textContent = t("cam.start");
       btn.addEventListener("click", async () => {
         btn.disabled = true;
-        note.textContent = "Запускаю…";
+        note.textContent = t("cam.starting");
         try {
           await fetch("/api/services/vision/start", { method: "POST" });
           // Сервіс піднімається не миттєво — перевіряємо трохи згодом
           camTimer = setTimeout(openCamera, 2500);
         } catch (e) {
-          note.textContent = "Не вдалося запустити.";
+          note.textContent = t("cam.startFailed");
           btn.disabled = false;
         }
       });
       box.appendChild(btn);
-    }).catch(() => { note.textContent = "Немає звʼязку з ботом."; });
+    }).catch(() => { note.textContent = t("cam.noLink"); });
   });
 }
 
 /* --- Сервіси: старт/стоп того, з чого складається «тіло» бота --- */
 function openServices() {
-  openAppLayer("Сервіси", (box) => {
+  openAppLayer("screen.services", (box) => {
     const rows = {};
-    for (const [id, label] of [["vision", "Зір (камера)"], ["display", "Дисплей"]]) {
+    for (const [id, label] of [["vision", t("svc.vision")], ["display", t("svc.display")]]) {
       const row = document.createElement("div");
       row.className = "svc-row";
       const name = document.createElement("span");
@@ -1897,10 +2252,10 @@ function openServices() {
       btn.type = "button";
       btn.className = "cta";
       btn.style.margin = "0";
-      btn.textContent = "Старт";
+      btn.textContent = t("svc.start");
       btn.addEventListener("click", async () => {
         btn.disabled = true;
-        state.textContent = btn.dataset.action === "stop" ? "зупиняю…" : "запускаю…";
+        state.textContent = btn.dataset.action === "stop" ? t("svc.stopping") : t("svc.starting");
         try {
           await fetch("/api/services/" + id + "/" + (btn.dataset.action || "start"), { method: "POST" });
         } catch (e) { /* стан оновимо наступним опитуванням */ }
@@ -1916,7 +2271,7 @@ function openServices() {
     const note = document.createElement("div");
     note.className = "cam-note";
     note.style.textAlign = "left";
-    note.textContent = "Сервіси живуть на тому ж комп’ютері, що й мозок.";
+    note.textContent = t("svc.note");
     box.appendChild(note);
 
     async function refresh() {
@@ -1925,16 +2280,16 @@ function openServices() {
         const r = await fetch("/api/services");
         data = await r.json();
       } catch (e) {
-        for (const id in rows) rows[id].state.textContent = "нема звʼязку";
+        for (const id in rows) rows[id].state.textContent = t("state.noLink");
         return;
       }
       const src = data.services || data || {};
       for (const id in rows) {
         const raw = src[id];
         const on = typeof raw === "object" && raw ? !!(raw.running || raw.alive) : !!raw;
-        rows[id].state.textContent = on ? "працює" : "зупинено";
+        rows[id].state.textContent = on ? t("state.running") : t("state.stopped");
         rows[id].state.className = "svc-state" + (on ? " on" : "");
-        rows[id].btn.textContent = on ? "Стоп" : "Старт";
+        rows[id].btn.textContent = on ? t("svc.stop") : t("svc.start");
         rows[id].btn.dataset.action = on ? "stop" : "start";
         rows[id].btn.disabled = false;
       }
@@ -1956,9 +2311,9 @@ async function fetchAppJson(url) {
 }
 
 function appAccessError(error, subject) {
-  if (error && error.status === 401) return "Потрібен вхід у панелі, щоб читати " + subject + ".";
-  if (error && error.status === 403) return "Немає доступу до " + subject + ".";
-  return "Не вдалося завантажити " + subject + ".";
+  if (error && error.status === 401) return t("err.needLogin", { subject });
+  if (error && error.status === 403) return t("err.forbidden", { subject });
+  return t("err.failed", { subject });
 }
 
 function appToolbar(parent, refresh) {
@@ -1967,7 +2322,7 @@ function appToolbar(parent, refresh) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "cta settings-test";
-  button.textContent = "Оновити";
+  button.textContent = t("common.refresh");
   button.addEventListener("click", refresh);
   toolbar.appendChild(button);
   parent.appendChild(toolbar);
@@ -1975,7 +2330,7 @@ function appToolbar(parent, refresh) {
 }
 
 function openMemory() {
-  openAppLayer("Памʼять", (box) => {
+  openAppLayer("screen.memory", (box) => {
     box.classList.add("memory-body");
     const status = document.createElement("div");
     status.className = "cam-note app-status";
@@ -2000,29 +2355,29 @@ function openMemory() {
       document.querySelectorAll(".memory-entry").forEach((item) => item.classList.remove("on"));
       if (button) button.classList.add("on");
       reader.classList.add("hidden");
-      status.textContent = "Читаю нотатку…";
+      status.textContent = t("mem.reading");
       try {
         const data = await fetchAppJson("/api/memory/file?path=" + encodeURIComponent(path) + "&session_id=" + encodeURIComponent(sessionId));
-        readerTitle.textContent = data.path ? data.path.split("/").pop().replace(/\.md$/i, "") : "Нотатка";
+        readerTitle.textContent = data.path ? data.path.split("/").pop().replace(/\.md$/i, "") : t("mem.note");
         readerPath.textContent = data.path || path;
-        content.textContent = data.content || "Нотатка порожня.";
+        content.textContent = data.content || t("mem.noteEmpty");
         reader.classList.remove("hidden");
-        status.textContent = "Нотатку відкрито";
+        status.textContent = t("mem.noteOpened");
       } catch (error) {
-        status.textContent = appAccessError(error, "нотатку");
+        status.textContent = appAccessError(error, t("mem.subjNote"));
       }
       wake();
     }
 
     async function loadFiles() {
-      list.textContent = "Завантаження…";
+      list.textContent = t("common.loading");
       try {
         const data = await fetchAppJson("/api/memory/list?session_id=" + encodeURIComponent(sessionId));
         const files = Array.isArray(data.files) ? data.files : [];
         list.innerHTML = "";
         if (!files.length) {
-          list.textContent = "Нотаток ще немає.";
-          status.textContent = "Памʼять порожня";
+          list.textContent = t("mem.empty");
+          status.textContent = t("mem.storeEmpty");
           return;
         }
         files.forEach((file) => {
@@ -2039,10 +2394,10 @@ function openMemory() {
           button.addEventListener("click", () => openFile(file.path, button));
           list.appendChild(button);
         });
-        status.textContent = "Нотаток: " + files.length;
+        status.textContent = t("mem.count", { n: files.length });
       } catch (error) {
-        list.textContent = appAccessError(error, "памʼять");
-        status.textContent = "Немає доступу";
+        list.textContent = appAccessError(error, t("mem.subjMemory"));
+        status.textContent = t("mem.noAccess");
       }
       wake();
     }
@@ -2052,7 +2407,7 @@ function openMemory() {
 }
 
 function openChats() {
-  openAppLayer("Розмови", (box) => {
+  openAppLayer("screen.chats", (box) => {
     box.classList.add("chats-body");
     const status = document.createElement("div");
     status.className = "cam-note app-status";
@@ -2074,21 +2429,21 @@ function openChats() {
       document.querySelectorAll(".session-entry").forEach((item) => item.classList.remove("on"));
       if (button) button.classList.add("on");
       reader.classList.add("hidden");
-      status.textContent = "Читаю розмову…";
+      status.textContent = t("hist.reading");
       try {
         const data = await fetchAppJson("/api/sessions/" + encodeURIComponent(id));
-        readerTitle.textContent = title || data.title || "Розмова";
+        readerTitle.textContent = title || data.title || t("chat.title");
         messages.innerHTML = "";
         const history = Array.isArray(data.messages) ? data.messages : [];
         if (!history.length) {
-          messages.textContent = "Повідомлень ще немає.";
+          messages.textContent = t("hist.messagesEmpty");
         } else {
           history.slice(-30).forEach((message) => {
             const item = document.createElement("article");
             item.className = "app-message " + (message.role === "user" ? "user" : "assistant");
             const role = document.createElement("span");
             role.className = "app-message-role";
-            role.textContent = message.role === "user" ? "Ти" : "Бот";
+            role.textContent = message.role === "user" ? t("chat.you") : t("chat.bot");
             const text = document.createElement("div");
             text.className = "app-message-text";
             text.textContent = message.content || "";
@@ -2098,22 +2453,22 @@ function openChats() {
           });
         }
         reader.classList.remove("hidden");
-        status.textContent = "Повідомлень: " + history.length;
+        status.textContent = t("hist.messagesCount", { n: history.length });
       } catch (error) {
-        status.textContent = appAccessError(error, "розмови");
+        status.textContent = appAccessError(error, t("hist.subjChat"));
       }
       wake();
     }
 
     async function loadSessions() {
-      list.textContent = "Завантаження…";
+      list.textContent = t("common.loading");
       try {
         const data = await fetchAppJson("/api/sessions");
         const sessions = Array.isArray(data.sessions) ? data.sessions : [];
         list.innerHTML = "";
         if (!sessions.length) {
-          list.textContent = "Збережених розмов ще немає.";
-          status.textContent = "Історія порожня";
+          list.textContent = t("hist.empty");
+          status.textContent = t("hist.storeEmpty");
           return;
         }
         sessions.forEach((session) => {
@@ -2121,19 +2476,19 @@ function openChats() {
           button.type = "button";
           button.className = "session-entry";
           const title = document.createElement("strong");
-          title.textContent = session.title || "Без назви";
+          title.textContent = session.title || t("common.untitled");
           const meta = document.createElement("span");
           meta.className = "memory-path";
-          meta.textContent = (session.count || 0) + " повідомлень";
+          meta.textContent = t("hist.messages", { n: session.count || 0 });
           button.appendChild(title);
           button.appendChild(meta);
           button.addEventListener("click", () => openChat(session.id, session.title, button));
           list.appendChild(button);
         });
-        status.textContent = "Розмов: " + sessions.length;
+        status.textContent = t("hist.count", { n: sessions.length });
       } catch (error) {
-        list.textContent = appAccessError(error, "історію розмов");
-        status.textContent = "Немає доступу";
+        list.textContent = appAccessError(error, t("hist.subjHistory"));
+        status.textContent = t("mem.noAccess");
       }
       wake();
     }
@@ -2143,22 +2498,22 @@ function openChats() {
 }
 
 function openPanel() {
-  openAppLayer("Панель", (box) => {
+  openAppLayer("screen.panel", (box) => {
     box.classList.add("panel-body");
     const section = document.createElement("section");
     section.className = "settings-section";
     const head = document.createElement("div");
     head.className = "settings-section-head";
     const title = document.createElement("strong");
-    title.textContent = "Стан бота";
+    title.textContent = t("panel.botState");
     const hint = document.createElement("span");
-    hint.textContent = "оновлюється локально";
+    hint.textContent = t("panel.local");
     head.appendChild(title);
     head.appendChild(hint);
     section.appendChild(head);
 
     const rows = {};
-    for (const [id, label] of [["brain", "Мозок"], ["vision", "Зір"], ["display", "Дисплей"], ["link", "Звʼязок"]]) {
+    for (const [id, label] of [["brain", t("state.brain")], ["vision", t("state.vision")], ["display", t("state.display")], ["link", t("state.link")]]) {
       const row = document.createElement("div");
       row.className = "svc-row";
       const name = document.createElement("span");
@@ -2181,17 +2536,17 @@ function openPanel() {
     const refresh = document.createElement("button");
     refresh.type = "button";
     refresh.className = "cta settings-test";
-    refresh.textContent = "Оновити";
+    refresh.textContent = t("common.refresh");
     refresh.addEventListener("click", refreshPanel);
     const services = document.createElement("button");
     services.type = "button";
     services.className = "cta settings-test";
-    services.textContent = "Сервіси";
+    services.textContent = t("screen.services");
     services.addEventListener("click", openServices);
     const settings = document.createElement("button");
     settings.type = "button";
     settings.className = "cta settings-test";
-    settings.textContent = "Налаштування";
+    settings.textContent = t("screen.settings");
     settings.addEventListener("click", openSettings);
     actions.appendChild(refresh);
     actions.appendChild(services);
@@ -2211,21 +2566,21 @@ function openPanel() {
         const serviceState = serviceData.services || serviceData || {};
         const brainOn = !!status.mode && status.mode !== "demo";
         const linkOn = $("linkDot").classList.contains("on");
-        rows.brain.textContent = BRAIN_LABELS[status.mode] || status.mode || "офлайн";
+        rows.brain.textContent = status.mode ? brainLabel(status.mode) : t("state.offline");
         rows.brain.classList.toggle("on", brainOn);
-        rows.link.textContent = linkOn ? "живий" : "нема";
+        rows.link.textContent = linkOn ? t("state.alive") : t("common.none");
         rows.link.classList.toggle("on", linkOn);
         for (const id of ["vision", "display"]) {
           const raw = serviceState[id];
           const on = raw === undefined
             ? !!status[id]
             : (typeof raw === "object" && raw ? !!(raw.running || raw.alive) : !!raw);
-          rows[id].textContent = on ? "працює" : "зупинено";
+          rows[id].textContent = on ? t("state.running") : t("state.stopped");
           rows[id].classList.toggle("on", on);
         }
       } catch (e) {
         Object.values(rows).forEach((value) => {
-          value.textContent = "нема звʼязку";
+          value.textContent = t("state.noLink");
           value.classList.remove("on");
         });
       }
@@ -2251,7 +2606,8 @@ function resetScreenPrefs() {
   clockFormat = "24";
   showClockDate = true;
   reducedMotion = false;
-  voiceOn = false;
+  voiceOn = true;                 // той самий дефолт, що й на першому запуску
+  voiceSpeed = 1;
   editing = false;
   picked = null;
   quickOrder = DEFAULT_ORDER.slice();
@@ -2267,7 +2623,8 @@ function resetScreenPrefs() {
 }
 
 function openSettings() {
-  openAppLayer("Налаштування", (box) => {
+  openAppLayer("screen.settings", (box) => {
+    const langButtons = [];
     const styleButtons = [];
     const tintButtons = [];
     const themeButtons = [];
@@ -2329,10 +2686,11 @@ function openSettings() {
 
     function fillSelect(select, options) {
       select.className = "settings-select";
+      select.innerHTML = "";
       options.forEach((item) => {
         const option = document.createElement("option");
         option.value = item.value;
-        option.textContent = item.label;
+        option.textContent = item.key ? t(item.key, item.n === undefined ? null : { n: item.n }) : item.label;
         select.appendChild(option);
       });
       return select;
@@ -2352,22 +2710,42 @@ function openSettings() {
       return button;
     }
 
-    const appearance = section("Вигляд", "застосовується одразу");
-    const styleRow = row(appearance, "Стиль іконок", "Піксельні, однотонні або кольорові");
-    const styleGrid = document.createElement("div");
-    styleGrid.className = "settings-choices";
-    for (const [id, label] of Object.entries(ICON_STYLES)) {
+    const appearance = section(t("set.appearance"), t("set.appearance.hint"));
+
+    // Мова — першим рядком «Вигляду»: її шукають саме тут, і саме вона
+    // вирішує, якою мовою читається решта цього списку
+    const langRow = row(appearance, t("set.lang"), t("set.lang.hint"));
+    const langGrid = document.createElement("div");
+    langGrid.className = "settings-choices settings-choices-two";
+    for (const item of LANGS) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "settings-choice";
-      button.textContent = label;
+      button.textContent = item.label;
+      button.addEventListener("click", () => {
+        // setLang сам перемальовує екран і перевідкриває ці налаштування
+        if (!setLang(item.value)) sync();
+      });
+      langButtons.push({ id: item.value, button });
+      langGrid.appendChild(button);
+    }
+    langRow.appendChild(langGrid);
+
+    const styleRow = row(appearance, t("set.iconStyle"), t("set.iconStyle.hint"));
+    const styleGrid = document.createElement("div");
+    styleGrid.className = "settings-choices";
+    for (const [id, key] of Object.entries(ICON_STYLES)) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "settings-choice";
+      button.textContent = t(key);
       button.addEventListener("click", () => { setIconStyle(id); sync(); });
       styleButtons.push({ id, button });
       styleGrid.appendChild(button);
     }
     styleRow.appendChild(styleGrid);
 
-    const tintRow = row(appearance, "Колір", "для однотонних і дрібних кнопок");
+    const tintRow = row(appearance, t("set.color"), t("set.color.hint"));
     const tintGrid = document.createElement("div");
     tintGrid.className = "settings-swatches";
     for (const item of ICON_TINTS) {
@@ -2375,18 +2753,18 @@ function openSettings() {
       button.type = "button";
       button.className = "settings-swatch";
       button.style.background = item.value;
-      button.title = item.label;
-      button.setAttribute("aria-label", item.label);
+      button.title = t(item.key);
+      button.setAttribute("aria-label", t(item.key));
       button.addEventListener("click", () => { setIconTint(item.value); sync(); });
       tintButtons.push({ value: item.value, button });
       tintGrid.appendChild(button);
     }
     tintRow.appendChild(tintGrid);
 
-    const themeRow = row(appearance, "Тема", "фон екрана і шторок");
+    const themeRow = row(appearance, t("set.theme"), t("set.theme.hint"));
     const themeGrid = document.createElement("div");
     themeGrid.className = "settings-choices settings-choices-two";
-    for (const [id, label] of [["dark", "Темна"], ["light", "Світла"]]) {
+    for (const [id, label] of [["dark", t("set.theme.dark")], ["light", t("set.theme.light")]]) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "settings-choice";
@@ -2402,8 +2780,8 @@ function openSettings() {
     }
     themeRow.appendChild(themeGrid);
 
-    const display = section("Екран", "ті самі значення, що й у швидких діях");
-    const brightRow = row(display, "Яскравість", "15–100% без зміни системних налаштувань");
+    const display = section(t("set.display"), t("set.display.hint"));
+    const brightRow = row(display, t("set.bright"), t("set.bright.hint"));
     brightRangeSettings.type = "range";
     brightRangeSettings.className = "settings-range";
     brightRangeSettings.min = "15";
@@ -2419,8 +2797,8 @@ function openSettings() {
     brightValue.className = "settings-value";
     brightRow.appendChild(brightValue);
 
-    const behavior = section("Поведінка", "локальні параметри пристрою");
-    const homeRow = row(behavior, "Повернення додому", "після бездіяльності");
+    const behavior = section(t("set.behavior"), t("set.behavior.hint"));
+    const homeRow = row(behavior, t("set.home"), t("set.home.hint"));
     fillSelect(idleHomeSelect, IDLE_HOME_OPTIONS);
     idleHomeSelect.addEventListener("change", () => {
       idleHomeMs = Number(idleHomeSelect.value);
@@ -2430,7 +2808,7 @@ function openSettings() {
     });
     homeRow.appendChild(idleHomeSelect);
 
-    const sleepRow = row(behavior, "Автосон", "затемнює екран і повертає додому");
+    const sleepRow = row(behavior, t("set.sleep"), t("set.sleep.hint"));
     fillSelect(idleSleepSelect, IDLE_SLEEP_OPTIONS);
     idleSleepSelect.addEventListener("change", () => {
       idleSleepMs = Number(idleSleepSelect.value);
@@ -2440,7 +2818,7 @@ function openSettings() {
     });
     sleepRow.appendChild(idleSleepSelect);
 
-    const clockRow = row(behavior, "Формат часу", "на циферблаті");
+    const clockRow = row(behavior, t("set.clock"), t("set.clock.hint"));
     fillSelect(clockFormatSelect, CLOCK_FORMAT_OPTIONS);
     clockFormatSelect.addEventListener("change", () => {
       clockFormat = clockFormatSelect.value;
@@ -2450,29 +2828,29 @@ function openSettings() {
     });
     clockRow.appendChild(clockFormatSelect);
 
-    const dateRow = row(behavior, "Дата", "під годинником");
-    setupSwitch(dateToggle, "Показувати", "Приховано", () => {
+    const dateRow = row(behavior, t("set.date"), t("set.date.hint"));
+    setupSwitch(dateToggle, t("set.date.on"), t("set.date.off"), () => {
       showClockDate = !showClockDate;
       writePref(CLOCK_DATE_KEY, showClockDate ? "1" : "0");
       tickClock();
     });
     dateRow.appendChild(dateToggle);
 
-    const motionRow = row(behavior, "Анімації", "плавні переходи та pulse мікрофона");
-    setupSwitch(motionToggle, "Повні", "Мінімальні", () => {
+    const motionRow = row(behavior, t("set.motion"), t("set.motion.hint"));
+    setupSwitch(motionToggle, t("set.motion.on"), t("set.motion.off"), () => {
       applyMotion(reducedMotion ? "full" : "reduced");
       writePref(MOTION_KEY, reducedMotion ? "reduced" : "full");
     });
     motionRow.appendChild(motionToggle);
 
-    const audio = section("Голос", "локальний Piper, якщо модель доступна");
-    const voiceRow = row(audio, "Озвучення", "бот говорить відповіді через браузер");
+    const audio = section(t("set.audio"), t("set.audio.hint"));
+    const voiceRow = row(audio, t("set.tts"), t("set.tts.hint"));
     voiceToggle.type = "button";
     voiceToggle.className = "settings-switch";
     voiceToggle.addEventListener("click", () => { toggleVoice(); sync(); });
     voiceRow.appendChild(voiceToggle);
 
-    const volumeRow = row(audio, "Гучність", "гучність наступних відповідей");
+    const volumeRow = row(audio, t("set.volume"), t("set.volume.hint"));
     volumeRangeSettings.type = "range";
     volumeRangeSettings.className = "settings-range";
     volumeRangeSettings.min = "0";
@@ -2488,7 +2866,7 @@ function openSettings() {
     volumeValue.className = "settings-value";
     volumeRow.appendChild(volumeValue);
 
-    const voiceChoiceRow = row(audio, "Голос Piper", "зберігається на сервері для наступних озвучок");
+    const voiceChoiceRow = row(audio, t("set.piper"), t("set.piper.hint"));
     voiceSelect.className = "settings-select";
     voiceSelect.addEventListener("change", async () => {
       try {
@@ -2498,9 +2876,9 @@ function openSettings() {
           body: JSON.stringify({ speaker: Number(voiceSelect.value) }),
         });
         if (!response.ok) throw new Error("voice " + response.status);
-        voiceState.textContent = "збережено";
+        voiceState.textContent = t("set.saved");
       } catch (e) {
-        voiceState.textContent = "не вдалося зберегти";
+        voiceState.textContent = t("set.saveFailed");
       }
       sync();
     });
@@ -2508,45 +2886,54 @@ function openSettings() {
 
     testVoice.type = "button";
     testVoice.className = "cta settings-test";
-    testVoice.textContent = "Перевірити голос";
+    testVoice.textContent = t("set.testVoice");
     testVoice.addEventListener("click", async () => {
       if (!voiceOn || !ttsAvailable) return;
       testVoice.disabled = true;
-      note.textContent = "Говорю тестову фразу…";
-      await speak("Налаштування голосу працюють.");
-      note.textContent = "Тест завершено.";
+      note.textContent = t("set.testSpeaking");
+      await speak(t("set.testPhrase"));
+      note.textContent = t("set.testDone");
       sync();
     });
     audio.appendChild(testVoice);
 
-    const actions = section("Дії", "локальні параметри цього екрана");
+    const actions = section(t("set.actions"), t("set.actions.hint"));
     const reset = document.createElement("button");
     reset.type = "button";
     reset.className = "settings-reset";
-    reset.textContent = "Скинути налаштування екрана";
+    reset.textContent = t("set.reset");
     reset.addEventListener("click", () => {
-      if (typeof window.confirm === "function" && !window.confirm("Скинути тему, яскравість, голос і стиль іконок?")) return;
+      if (typeof window.confirm === "function" && !window.confirm(t("set.resetAsk"))) return;
       resetScreenPrefs();
-      note.textContent = "Параметри повернуто до початкових.";
+      note.textContent = t("set.resetDone");
       sync();
     });
     actions.appendChild(reset);
 
     const attribution = document.createElement("div");
     attribution.className = "settings-note settings-attribution";
-    attribution.innerHTML = 'Піксельні іконки: <a href="https://pxlkit.xyz" target="_blank" rel="noreferrer">Pxlkit</a>.';
+    attribution.textContent = t("set.attribution");
+    const pxlkit = document.createElement("a");
+    pxlkit.href = "https://pxlkit.xyz";
+    pxlkit.target = "_blank";
+    pxlkit.rel = "noreferrer";
+    pxlkit.textContent = "Pxlkit";
+    attribution.appendChild(pxlkit);
+    attribution.appendChild(document.createTextNode("."));
     box.appendChild(attribution);
 
     note.className = "settings-note";
     box.appendChild(note);
 
     function sync() {
+      langButtons.forEach(({ id, button }) => button.classList.toggle("on", id === getLang()));
       styleButtons.forEach(({ id, button }) => button.classList.toggle("on", id === iconStyle));
       tintButtons.forEach(({ value, button }) => button.classList.toggle("on", value === iconTint));
       themeButtons.forEach(({ id, button }) => button.classList.toggle("on", id === document.documentElement.dataset.theme));
-      styleState.textContent = ICON_STYLES[iconStyle];
-      tintState.textContent = ICON_TINTS.find((item) => item.value === iconTint)?.label || "власний";
-      themeState.textContent = document.documentElement.dataset.theme === "light" ? "Світла" : "Темна";
+      styleState.textContent = t(ICON_STYLES[iconStyle]);
+      const tint = ICON_TINTS.find((item) => item.value === iconTint);
+      tintState.textContent = tint ? t(tint.key) : t("set.customColor");
+      themeState.textContent = document.documentElement.dataset.theme === "light" ? t("set.theme.light") : t("set.theme.dark");
       idleHomeSelect.value = String(idleHomeMs);
       idleSleepSelect.value = String(idleSleepMs);
       clockFormatSelect.value = clockFormat;
@@ -2559,9 +2946,9 @@ function openSettings() {
       brightRangeSettings.value = String(bright);
       brightValue.textContent = bright + "%";
       volumeRangeSettings.value = String(volume);
-      volumeValue.textContent = ttsAvailable ? volume + "%" : "нема";
+      volumeValue.textContent = ttsAvailable ? volume + "%" : t("common.none");
       voiceToggle.disabled = !ttsAvailable;
-      voiceToggle.textContent = !ttsAvailable ? "Недоступно" : (voiceOn ? "Увімкнено" : "Вимкнено");
+      voiceToggle.textContent = !ttsAvailable ? t("set.unavailable") : (voiceOn ? t("set.enabled") : t("set.disabled"));
       voiceToggle.classList.toggle("on", voiceOn && ttsAvailable);
       volumeRangeSettings.disabled = !ttsAvailable;
       testVoice.disabled = !voiceOn || !ttsAvailable;
@@ -2593,7 +2980,7 @@ function openSettings() {
       })
       .catch(() => {
         ttsAvailable = false;
-        voiceState.textContent = "сервіс недоступний";
+        voiceState.textContent = t("set.ttsOffline");
         sync();
       });
   });
@@ -2677,13 +3064,13 @@ function updateNpChrome() {
 
 function updateNpText() {
   const title = musicState.track
-    ? (musicState.track.title || "Без назви")
-    : "Музика вимкнена";
+    ? (musicState.track.title || t("common.untitled"))
+    : t("music.off");
   $("npText").textContent = title;
   $("npNowTitle").textContent = title;
   $("npNowSub").textContent = musicState.track
-    ? (musicState.track.uploader || (musicState.live ? "живий стрім" : ""))
-    : "тапни ✕-іконку зліва або попроси бота";
+    ? (musicState.track.uploader || (musicState.live ? t("music.liveStream") : ""))
+    : t("music.hintOff");
   npMarquee($("nowPlaying"), npClipEl("bar"));
   npMarquee($("npNow"), npClipEl("sheet"));
 }
@@ -2769,7 +3156,7 @@ musicAudio.addEventListener("loadedmetadata", updateNpSeek);
 musicAudio.addEventListener("timeupdate", updateNpSeek);
 musicAudio.addEventListener("error", () => {
   if (!musicState.track) return;
-  showCaption("Стрім обірвався", "bot");
+  showCaption(t("music.streamDied"), "bot");
   musicState.playing = false;
   updateNpChrome();
 });
@@ -2817,7 +3204,7 @@ function renderNpList() {
   list.innerHTML = "";
   if (musicState.provider === "radio") {
     // Радіо: список тягнемо з бекенда (це теж «каталог», але живий)
-    list.textContent = "Завантаження…";
+    list.textContent = t("common.loading");
     fetch("/api/music/radio").then((r) => r.json()).then((d) => {
       list.innerHTML = "";
       for (const st of d.stations || []) {
@@ -2838,13 +3225,13 @@ function renderNpList() {
         });
         list.appendChild(btn);
       }
-    }).catch(() => { list.textContent = "Радіо недоступне."; });
+    }).catch(() => { list.textContent = t("music.radioOffline"); });
     return;
   }
   if (!musicState.queue.length) {
     const hint = document.createElement("div");
     hint.className = "np-hint";
-    hint.textContent = "Попроси бота: «Клод, увімкни Океан Ельзи» — тут з'явиться черга.";
+    hint.textContent = t("music.queueHint");
     list.appendChild(hint);
     return;
   }
@@ -2970,7 +3357,7 @@ function applySkin(manifest) {
     applySkinVars(manifest.vars || {});
     writePref(SKIN_KEY, manifest.id);
     writePref(SKIN_VARS_KEY, JSON.stringify(manifest.vars || {}));
-    showCaption("Скін: " + (manifest.label || manifest.id), "bot");
+    showCaption(t("store.skin", { name: manifest.label || manifest.id }), "bot");
   } else {
     applySkinVars(null);
     removePref(SKIN_KEY);
@@ -2987,7 +3374,7 @@ function currentSkinVars() {
 }
 
 function openStoreApp(entry) {
-  openAppLayer(entry.title || "Застосунок", (box) => {
+  openAppLayer(entry.title || "app.head", (box) => {
     box.classList.add("storeapp-body");
     const frame = document.createElement("iframe");
     frame.className = "storeapp-frame";
@@ -3010,7 +3397,7 @@ function storeIconEl(name) {
 }
 
 function openStore() {
-  openAppLayer("Магазин", (box) => {
+  openAppLayer("screen.store", (box) => {
     box.classList.add("storeapp-body");
     box.style.padding = "10px 12px";
     box.style.gap = "0";
@@ -3018,10 +3405,10 @@ function openStore() {
     const tabs = document.createElement("div");
     tabs.className = "store-tabs";
     const TABS = [
-      ["apps", "Додатки"],
-      ["skins", "Скіни"],
-      ["skills", "Скіли"],
-      ["mcp", "Тулзи"],
+      ["apps", t("store.apps")],
+      ["skins", t("store.skins")],
+      ["skills", t("store.skills")],
+      ["mcp", t("store.mcp")],
     ];
     let active = "apps";
     const tabBtns = {};
@@ -3098,7 +3485,7 @@ function openStore() {
     }
 
     async function renderTab() {
-      body.textContent = "Завантаження…";
+      body.textContent = t("common.loading");
       try {
         if (active === "apps" || active === "skins") {
           const kind = active === "apps" ? "app" : "skin";
@@ -3106,20 +3493,20 @@ function openStore() {
           const d = await r.json();
           const pkgs = (d.packages || []).filter((p) => p.type === kind);
           body.innerHTML = "";
-          if (!pkgs.length) { body.textContent = "Каталог порожній."; return; }
+          if (!pkgs.length) { body.textContent = t("store.empty"); return; }
           for (const pkg of pkgs) {
             const actions = [];
             const applied = readPref(SKIN_KEY, "") === pkg.id;
             if (kind === "app") {
               if (pkg.installed) {
-                const open = rowAction("Відкрити");
+                const open = rowAction(t("store.open"));
                 open.addEventListener("click", () => {
                   closeAppLayer();
                   openStoreApp({ pkg: pkg.id, title: pkg.label });
                 });
                 actions.push(open);
               } else {
-                const get = rowAction("Взяти");
+                const get = rowAction(t("store.get"));
                 get.addEventListener("click", async () => {
                   get.disabled = true; get.textContent = "…";
                   try {
@@ -3134,7 +3521,7 @@ function openStore() {
               }
               if (pkg.installed) {
                 const del = rowAction("✕", true);
-                del.title = "Прибрати";
+                del.title = t("store.remove");
                 del.addEventListener("click", async () => {
                   await fetch("/api/screen-store/uninstall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pkg.id }) });
                   await refreshInstalledApps();
@@ -3145,7 +3532,7 @@ function openStore() {
                 actions.push(del);
               }
             } else {
-              const use = rowAction(applied ? "Зняти" : (pkg.installed ? "Застосувати" : "Взяти"));
+              const use = rowAction(applied ? t("store.unapply") : (pkg.installed ? t("store.apply") : t("store.get")));
               use.addEventListener("click", async () => {
                 if (applied) { applySkin(null); renderTab(); wake(); return; }
                 if (!pkg.installed) {
@@ -3165,7 +3552,7 @@ function openStore() {
               tint: pkg.tint,
               name: pkg.label || pkg.id,
               desc: pkg.description || "",
-              badge: kind === "skin" ? (applied ? "увімк." : (pkg.installed ? "є" : "")) : (pkg.installed ? "є" : ""),
+              badge: kind === "skin" ? (applied ? t("store.badgeOn") : (pkg.installed ? t("store.badgeHave") : "")) : (pkg.installed ? t("store.badgeHave") : ""),
               dots: dotColors,
               actions,
             }));
@@ -3181,12 +3568,12 @@ function openStore() {
           if (errors[kind]) {
             const note = document.createElement("div");
             note.className = "np-hint";
-            note.textContent = "OpenClaw недоступний: " + errors[kind];
+            note.textContent = t("store.openclawDown", { error: errors[kind] });
             body.appendChild(note);
             return;
           }
           if (!items.length) {
-            body.textContent = kind === "skills" ? "Скіл не знайдено." : "Каталог тулзів порожній.";
+            body.textContent = kind === "skills" ? t("store.noSkills") : t("store.noMcp");
             return;
           }
           for (const item of items) {
@@ -3194,7 +3581,7 @@ function openStore() {
             const isInstalled = item.installed;
             const actions = [];
             if (!isInstalled) {
-              const btn = rowAction("Взяти");
+              const btn = rowAction(t("store.get"));
               btn.addEventListener("click", async () => {
                 btn.disabled = true; btn.textContent = "…";
                 const url = kind === "skills" ? "/api/store/skills/install" : "/api/store/mcp/install";
@@ -3203,9 +3590,9 @@ function openStore() {
                   const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
                   if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
-                    showCaption(err.detail || "Не встановилось", "bot");
+                    showCaption(err.detail || t("store.installFailed"), "bot");
                   }
-                } catch (e) { showCaption("Не встановилось", "bot"); }
+                } catch (e) { showCaption(t("store.installFailed"), "bot"); }
                 renderTab();
                 wake();
               });
@@ -3215,13 +3602,13 @@ function openStore() {
               icon: kind === "skills" ? "bubble" : "server",
               name,
               desc: item.description || item.desc || item.summary || "",
-              badge: isInstalled ? "є" : "",
+              badge: isInstalled ? t("store.badgeHave") : "",
               actions,
             }));
           }
         }
       } catch (e) {
-        body.textContent = "Магазин недоступний.";
+        body.textContent = t("store.offline");
       }
     }
 
@@ -3232,8 +3619,53 @@ function openStore() {
   });
 }
 
+/* ---------- Зміна мови ----------
+   Перезавантаження сторінки тут було б простіше, але екран — це «пристрій»:
+   він може бути посеред розмови, з відкритим застосунком і музикою, яка
+   грає. Тому перемальовуємо все живцем: статичні написи, підписи краба,
+   плитки, шухляду, чип режиму, годинник і відкритий шар. */
+
+function relocalize() {
+  applyStatic();
+  crab.labels = emotionLabels();
+  crab.defeatLabel = t("emo.defeat");
+  crab.setEmotion(crab.emotion);            // підпис емоції новою мовою
+  // Типове ключове слово йде за мовою; справжнє імʼя бота — ні
+  if (!wakeWordFromBot) wakeWord = t("voice.defaultWake");
+  // Розпізнавання перемикаємо на льоту: у безперервному режимі мікрофон
+  // уже відкритий, і без рестарту він слухав би старою мовою
+  if (recognition) {
+    const wasContinuous = voiceMode !== "push" && listening;
+    if (wasContinuous) { stopContinuous(); startContinuous(); }
+  }
+  if (!sayAt) $("sayText").textContent = t("say.empty");
+  if (sessionTitleText !== null) setSessionTitle(sessionTitleText);
+  tickClock();
+  updateAges();
+  renderQuickTiles();
+  renderApps();
+  renderMode();
+  updateNpText();
+  updateNpSeek();
+  if (musicSheetOpen) renderNpList();
+  setLink(linkAlive);
+  refreshStatus();
+  if (openApp) openAppLayer(openApp.key, openApp.build);
+}
+
+onLangChange(relocalize);
+
 /* ---------- Старт ---------- */
 
+// Мова могла бути обрана в минулий раз — розставляємо написи ДО першого
+// малювання, інакше екран блимне українською і перескочить на англійську
+applyStatic();
+crab.labels = emotionLabels();
+crab.defeatLabel = t("emo.defeat");
+crab.setEmotion(crab.emotion);
+// «Поки тиша» лишається під керуванням JS (щоб applyStatic не затирав
+// справжню репліку бота), тож першу підстановку робимо тут
+$("sayText").textContent = t("say.empty");
 renderDots();
 goTile(0);
 syncQuickButtons();

@@ -1111,6 +1111,12 @@ async function initConsole() {
     /* бекенд ще не готовий — живі події SSE наповнять консоль */
   }
 }
+// Окрема консоль (/console): хід розмови по кроках + процеси ланцюга.
+// Вікно, а не вкладка — його тримають збоку, поки говориш із ботом.
+$("consoleOpen")?.addEventListener("click", () => {
+  window.open("/console", "klodbot-console", "width=1180,height=820");
+});
+
 $("consoleClear")?.addEventListener("click", () => {
   if (consoleLog) consoleLog.innerHTML = "";
 });
