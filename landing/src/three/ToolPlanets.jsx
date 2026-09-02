@@ -4,6 +4,7 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import * as THREE from "three";
 import { TOOLS } from "../config";
 import { createToolTexture } from "./toolTexture";
+import FloatingLabel from "./FloatingLabel";
 
 // Real asteroid shape models from NASA's public-domain 3D archive — these
 // are the actual scientific meshes flown missions produced (radar shape
@@ -73,7 +74,7 @@ function prepBody(raw, target) {
   return geo;
 }
 
-function Body({ tool, body, index, total, selected, onSelect, hovered, onHover, surface }) {
+function Body({ tool, body, index, total, selected, onSelect, hovered, onHover, surface, progressRef }) {
   const group = useRef();
   const spinRef = useRef();
   const halo = useRef();
@@ -100,25 +101,38 @@ function Body({ tool, body, index, total, selected, onSelect, hovered, onHover, 
 
   const isActive = selected === tool.id;
   const isDimmed = selected && !isActive;
+  // right-half bodies point their label inward (see `flip` below); shift
+  // the rock the opposite way so text and rock never overlap
+  const shiftDir = flip ? 1 : -1;
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
     const g = group.current;
     if (!g) return;
 
+    const p = progressRef?.current ?? 1;
+    // arrive from the side as the act opens, leave the same way as it
+    // closes — these bodies are new to the page, not always-there props
+    const enter = THREE.MathUtils.smoothstep(p, 0, 0.32);
+    const exit = THREE.MathUtils.smoothstep(p, 0.8, 1);
+    const travel = base[0] >= 0 ? 1 : -1;
+    const slide = (1 - enter) * 7 * travel + exit * 7 * travel;
+    const shift = isActive ? shiftDir * 1.5 : 0;
+
     g.position.set(
-      base[0] + Math.sin(t * 0.13 + phase) * 0.3,
+      base[0] + slide + shift + Math.sin(t * 0.13 + phase) * 0.3,
       base[1] + Math.cos(t * 0.17 + phase) * 0.24,
       base[2] + Math.sin(t * 0.11 + phase) * 0.32
     );
     // real asteroids tumble on a tilted axis — that's what sells them
     if (spinRef.current) spinRef.current.rotation.y = t * spin;
 
-    const want = isActive ? 1.2 : hovered === tool.id ? 1.08 : 1;
-    g.scale.lerp(new THREE.Vector3(want, want, want), 0.08);
+    const appear = Math.min(enter, 1 - exit);
+    const want = (isActive ? 1.2 : hovered === tool.id ? 1.08 : 1) * (0.3 + appear * 0.7);
+    g.scale.lerp(new THREE.Vector3(want, want, want), 0.1);
 
     if (halo.current) {
-      const target = isDimmed ? 0.04 : isActive ? 0.34 : hovered === tool.id ? 0.26 : 0.12;
+      const target = (isDimmed ? 0.04 : isActive ? 0.34 : hovered === tool.id ? 0.26 : 0.12) * appear;
       halo.current.material.opacity += (target - halo.current.material.opacity) * 0.08;
       if (spinRef.current) halo.current.rotation.y = spinRef.current.rotation.y;
     }
@@ -134,6 +148,7 @@ function Body({ tool, body, index, total, selected, onSelect, hovered, onHover, 
   });
 
   return (
+    <>
     <group ref={group} position={base}>
       <group ref={spinRef} rotation={tilt}>
         <mesh
@@ -198,6 +213,20 @@ function Body({ tool, body, index, total, selected, onSelect, hovered, onHover, 
         />
       </mesh>
     </group>
+
+    {/* the picked body's copy — floating text beside it in the scene, not
+        a docked panel. Anchored off the body's rest position so it holds
+        still while the rock itself drifts a little to the side. */}
+    <FloatingLabel
+      active={isActive}
+      title={tool.label}
+      copy={tool.tagline}
+      accent={tool.accent}
+      eyebrow={tool.server}
+      position={[base[0] + shiftDir * -2.1, base[1] + 0.5, base[2] + 0.4]}
+      width={2.8}
+    />
+    </>
   );
 }
 
@@ -236,6 +265,7 @@ export default function ToolPlanets({ selected, onSelect, visibleRef }) {
           body={BODIES[i % BODIES.length]}
           index={i}
           total={TOOLS.length}
+          progressRef={visibleRef}
           selected={selected}
           onSelect={onSelect}
           hovered={hovered}

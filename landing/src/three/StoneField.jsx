@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { MODELS } from "../config";
 import { createGlyphTexture } from "./glyphTexture";
 import { createWordmarkTexture } from "./wordmarkTexture";
+import FloatingLabel from "./FloatingLabel";
 
 // Real photogrammetry-scanned rocks (Poly Haven, CC0) — actual scan meshes
 // with their own diffuse/normal/ARM maps, not procedural noise.
@@ -69,7 +70,7 @@ const WIDTH_STRETCH = 1.55;
 // rocks fused into a honeycomb — pointy-top axial hex grid, converted to
 // world-space x/y, with a little per-cell jitter and depth banding so it
 // still reads as wedged-together stone rather than a perfect lattice.
-function fusedLayout(count) {
+export function fusedLayout(count) {
   const cells = hexSpiral(count);
   const raw = cells.map(([q, r]) => [
     HEX_SIZE * Math.sqrt(3) * (q + r / 2) * WIDTH_STRETCH,
@@ -141,9 +142,10 @@ function useNormalizedRock(path) {
   }, [scene]);
 }
 
-function Stone({ model, index, total, fusedPos, rock, progressRef }) {
+function Stone({ model, index, total, fusedPos, rock, progressRef, exitRef, active, onSelect }) {
   const group = useRef();
   const rockRef = useRef();
+  const [hovered, setHovered] = useState(false);
   const start = useMemo(() => scatterStart(index), [index]);
   const rotStart = useMemo(
     () => [seeded(index * 9.1) * Math.PI * 2, seeded(index * 4.4) * Math.PI * 2, seeded(index * 1.7) * Math.PI * 2],
@@ -172,8 +174,11 @@ function Stone({ model, index, total, fusedPos, rock, progressRef }) {
   );
 
   const delay = (index / total) * 0.25;
+  // which way this meteorite steps aside when picked, and which way it
+  // drifts off into the dark once the tools act takes over the frame
+  const side = fusedPos[0] >= 0 ? 1 : -1;
 
-  useFrame((state) => {
+  useFrame((state, dt) => {
     const raw = progressRef.current;
     const local = THREE.MathUtils.clamp((raw - delay) / (1 - delay), 0, 1);
     const t = THREE.MathUtils.smoothstep(local, 0, 1);
@@ -187,10 +192,15 @@ function Stone({ model, index, total, fusedPos, rock, progressRef }) {
     const dy = Math.cos(clock * 0.17 + driftPhase) * 0.06;
     const dz = Math.sin(clock * 0.13 + driftPhase) * 0.05;
 
+    // once the tools act starts taking the frame, these meteorites dissolve
+    // away rather than just sitting there forgotten behind the camera
+    const exit = exitRef ? THREE.MathUtils.smoothstep(exitRef.current, 0, 0.45) : 0;
+    const shiftX = active ? -side * 0.4 : 0;
+
     g.position.set(
-      THREE.MathUtils.lerp(start[0], fusedPos[0], t) + dx * t,
-      THREE.MathUtils.lerp(start[1], fusedPos[1], t) + dy * t,
-      THREE.MathUtils.lerp(start[2], fusedPos[2], t) + dz * t
+      THREE.MathUtils.lerp(start[0], fusedPos[0], t) + dx * t + shiftX - side * exit * 5,
+      THREE.MathUtils.lerp(start[1], fusedPos[1], t) + dy * t + exit * 1.5,
+      THREE.MathUtils.lerp(start[2], fusedPos[2], t) + dz * t - exit * 9
     );
     // NB: the group must settle to rotation 0 — the glyph plate is parented
     // to it, and any residual spin here turns the logo away from camera.
@@ -202,18 +212,53 @@ function Stone({ model, index, total, fusedPos, rock, progressRef }) {
     // the idle tumble lives on the rock mesh alone, so the face stays put
     if (rockRef.current) rockRef.current.rotation.y = clock * 0.05 * t;
 
-    const s = THREE.MathUtils.lerp(finalScale * 0.85, finalScale, t);
-    g.scale.setScalar(s);
-    glyphMat.opacity = THREE.MathUtils.smoothstep(t, 0.5, 1);
+    const s = THREE.MathUtils.lerp(finalScale * 0.85, finalScale, t) * (1 - exit * 0.85);
+    g.scale.setScalar(Math.max(s, 0.001));
+    glyphMat.opacity = THREE.MathUtils.smoothstep(t, 0.5, 1) * (1 - exit);
   });
 
   return (
+    <>
     <group ref={group}>
-      <mesh ref={rockRef} geometry={rock.geometry} material={rock.material} scale={proportions} />
+      <mesh
+        ref={rockRef}
+        geometry={rock.geometry}
+        material={rock.material}
+        scale={proportions}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setHovered(true);
+          document.body.style.cursor = "pointer";
+        }}
+        onPointerOut={() => {
+          setHovered(false);
+          document.body.style.cursor = "";
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          // still mid-flight into the honeycomb — nothing settled to pick
+          // yet, and the camera has nowhere sensible to fly to
+          if (progressRef.current < 0.75) return;
+          onSelect?.(active ? null : model.id);
+        }}
+      />
       <mesh position={[0, TARGET_SIZE * 0.5, TARGET_SIZE * 0.78]} material={glyphMat}>
         <planeGeometry args={[0.8, 0.8]} />
       </mesh>
     </group>
+
+    {/* the picked meteorite's copy — floats beside the fused cluster, not
+        docked to the viewport */}
+    <FloatingLabel
+      active={active}
+      title={model.version ?? model.name}
+      copy={model.note}
+      accent={model.accent}
+      eyebrow={model.name}
+      position={[fusedPos[0] + side * 0.95, fusedPos[1] + 0.3, fusedPos[2] + 0.55]}
+      width={2.4}
+    />
+    </>
   );
 }
 
@@ -221,7 +266,7 @@ function Wordmark({ progressRef, halfH }) {
   const ref = useRef();
   const baseY = -halfH - 0.7;
   const { texture, aspect } = useMemo(
-    () => createWordmarkTexture("CLAUDE BOT", { size: 108, sub: "future has begun" }),
+    () => createWordmarkTexture("CLAUDE BOT", { size: 108, sub: "the future is now" }),
     []
   );
   const mat = useMemo(
@@ -257,7 +302,7 @@ function Wordmark({ progressRef, halfH }) {
 // The camera is owned by the scene's rig now (see SpaceScene), so this
 // component only animates its own meteorites and reports the footprint the
 // rig should frame.
-export default function StoneField({ progressRef, onBounds }) {
+export default function StoneField({ progressRef, onBounds, exitRef, selected, onSelect }) {
   const layout = useMemo(() => fusedLayout(MODELS.length), []);
   const bounds = useMemo(() => layoutBounds(layout), [layout]);
 
@@ -275,6 +320,9 @@ export default function StoneField({ progressRef, onBounds }) {
       {MODELS.map((model, i) => (
         <Stone
           key={model.id}
+          exitRef={exitRef}
+          active={selected === model.id}
+          onSelect={onSelect}
           model={model}
           index={i}
           total={MODELS.length}

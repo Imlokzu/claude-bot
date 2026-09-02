@@ -67,14 +67,14 @@ body {
    than as a wide soft haze. Layered shadows from tight to wide give the
    phosphor bloom without turning the text to mush. */
 .glow-text {
-  color: #fff;
+  color: rgba(240, 246, 252, 0.94);
   font-weight: 700;
+  /* dimmer, closer glow — reads as lit phosphor, not a bright sign */
   text-shadow:
-    0 0 1px rgba(255, 255, 255, 0.9),
-    0 0 4px rgba(214, 232, 250, 0.85),
-    0 0 12px rgba(159, 200, 245, 0.6),
-    0 0 34px rgba(127, 208, 255, 0.4),
-    0 0 80px rgba(127, 208, 255, 0.22);
+    0 0 1px rgba(255, 255, 255, 0.55),
+    0 0 4px rgba(214, 232, 250, 0.4),
+    0 0 12px rgba(159, 200, 245, 0.28),
+    0 0 30px rgba(127, 208, 255, 0.16);
 }
 .glow-text--accent {
   color: var(--accent);
@@ -92,7 +92,18 @@ body {
   gap: 10px;
   padding: 10px 20px;
   background: transparent;
-  border: none;
+  /* The whole button reads as a button at rest. It used to be drawn by
+     the two 9px corner brackets alone, so three quarters of its outline
+     simply weren't there until you hovered — you had to already know a
+     button was there to find it. The full frame is always visible now,
+     dim; the brackets stay on top as the bright corner accents, and hover
+     brightens the frame instead of revealing it. */
+  border: 1px solid rgba(127, 208, 255, 0.6);
+  /* A faint fill as well as the frame. On a black starfield, run through
+     the vignette and the CRT grade, a hairline outline alone still didn't
+     register as a solid thing you could click — the button has to hold a
+     shape of its own at rest, not just an edge. */
+  background: rgba(127, 208, 255, 0.07);
   color: var(--accent);
   font-family: var(--mono);
   font-size: 12px;
@@ -102,38 +113,43 @@ body {
   text-shadow: 0 0 8px rgba(127, 208, 255, 0.55);
   cursor: pointer;
   pointer-events: auto;
-  transition: color 0.2s ease, text-shadow 0.2s ease;
+  transition: color 0.2s ease, text-shadow 0.2s ease, border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .hud-btn::before,
 .hud-btn::after {
   content: "";
   position: absolute;
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   border-color: currentColor;
-  opacity: 0.8;
+  opacity: 0.9;
   transition: width 0.2s ease, height 0.2s ease;
 }
+/* -1px so the bracket lands exactly on top of the frame's own line rather
+   than just inside it, which would read as a doubled border */
 .hud-btn::before {
-  top: 0;
-  left: 0;
+  top: -1px;
+  left: -1px;
   border-top: 1px solid;
   border-left: 1px solid;
 }
 .hud-btn::after {
-  bottom: 0;
-  right: 0;
+  bottom: -1px;
+  right: -1px;
   border-bottom: 1px solid;
   border-right: 1px solid;
 }
 .hud-btn:hover {
   color: #fff;
   text-shadow: 0 0 12px rgba(127, 208, 255, 0.85);
+  border-color: rgba(127, 208, 255, 0.75);
+  box-shadow: 0 0 18px -6px rgba(127, 208, 255, 0.6);
 }
 .hud-btn:hover::before,
 .hud-btn:hover::after {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 /* underlined HUD text-link, e.g. "D 01.02.2020 / CLICK TO EXPLORE" */
@@ -178,6 +194,16 @@ body {
   position: fixed;
   inset: 0;
   filter: url(#crt-chromab) saturate(1.1) contrast(1.06) brightness(1.02);
+}
+
+/* every readout on the page — floating labels, carved stone, the boot
+   terminal — renders through this filter, so the desktop-tuned channel
+   split reads as outright blur on a phone; see the lighter #crt-chromab
+   -mobile defined alongside #crt-chromab in App.jsx */
+@media (max-width: 720px) {
+  .tv-grade {
+    filter: url(#crt-chromab-mobile) saturate(1.05) contrast(1.04) brightness(1.02);
+  }
 }
 
 .tv-overlay {

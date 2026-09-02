@@ -15,6 +15,12 @@ export default function Pricing() {
         <h2 className="ov__title ov__title--sm glow-text">SPEC YOUR MACHINE</h2>
       </div>
 
+      {/* Everything below the heading sits on one tilted plane — the act
+          reads as a spec sheet held at an angle in the same volume the
+          rest of the site lives in, not a flat web page pasted over the
+          scene. Individual tiles ride that plane and lift off it on
+          hover (see pricing.css). */}
+      <div className="pricing__deck">
       {/* ── board picker: the bot's brain ─────────────── */}
       <div className="spec">
         <div className="spec__label">Choose the board</div>
@@ -72,6 +78,7 @@ export default function Pricing() {
             <button className="hud-btn plan__cta">{p.cta}</button>
           </article>
         ))}
+      </div>
       </div>
     </section>
   );

@@ -15,14 +15,20 @@
   flex-direction: column;
   align-items: center;
   text-align: center;
-  /* one screen = one stage. continuous scroll lets acts blend according
-     to the exact offset; no snap checkpoints. */
+  perspective: 1100px;
+  perspective-origin: 50% 40%;
+  /* proximity snap — settles here once a scroll gesture ends and lands
+     nearby, so a heavy flick can't sail past an act unnoticed, but
+     scrolling mid-gesture is untouched */
+  scroll-snap-align: center;
+  scroll-snap-stop: normal;
 }
 
 /* act 1 sits low so the meteorites own the upper frame */
 .ov__screen--hero {
   justify-content: flex-end;
   padding-bottom: 14vh;
+  perspective-origin: 50% 85%;
 }
 
 /* act 2 sits high — the asteroid ring and its readouts own the middle
@@ -30,6 +36,7 @@
 .ov__screen--tools {
   justify-content: flex-start;
   padding-top: 9vh;
+  perspective-origin: 50% 18%;
 }
 
 .ov__screen--tail {
@@ -41,9 +48,15 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  transform-style: preserve-3d;
 }
 
+/* ── 3D tilted type ──────────────────────────────────
+   Not extruded 3D fonts — a spatial plane: perspective
+   tilt + depth shadow layers so the headline sits in
+   the scene volume instead of flat on glass. */
 .ov__title {
+  position: relative;
   font-family: var(--mono);
   font-weight: 700;
   /* the longest line is "THIRTEEN MODELS." — 16 monospace characters, so
@@ -51,13 +64,50 @@
   font-size: clamp(25px, 7.8vw, 96px);
   line-height: 0.92;
   letter-spacing: -0.035em;
+  transform-style: preserve-3d;
+  transform-origin: 50% 60%;
+  transform: rotateX(18deg) rotateZ(-1.5deg) translateZ(28px);
+  text-shadow:
+    0 1px 0 rgba(180, 205, 235, 0.18),
+    0 2px 0 rgba(12, 18, 28, 0.55),
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    0 0 40px rgba(127, 208, 255, 0.18);
+  will-change: transform;
+}
+
+/* depth plate behind the glyph — sells the "slab in space" read */
+.ov__title::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  color: transparent;
+  -webkit-text-stroke: 1px rgba(127, 208, 255, 0.14);
+  transform: translate3d(0, 0.08em, -22px) scale(1.015);
+  filter: blur(0.3px);
+  pointer-events: none;
+  white-space: pre-line;
 }
 
 .ov__title--sm {
   font-size: clamp(21px, 4.6vw, 58px);
   letter-spacing: -0.02em;
+  transform: rotateX(14deg) rotateZ(1.2deg) translateZ(18px);
 }
 
+/* alternate tilt direction so acts don't all lean the same way */
+.ov__screen--tools .ov__title {
+  transform: rotateX(16deg) rotateZ(2deg) translateZ(22px);
+}
+
+.ov__screen--hero .ov__title {
+  transform: rotateX(20deg) rotateZ(-2deg) translateZ(32px);
+}
+
+/* Flat, not spatial: this is caption copy sitting under a headline, not
+   another plane in the scene — a small 2D lean is enough to feel like it
+   belongs to the same hand-set world as the title, without the full
+   perspective rig (which just made small print harder to read). */
 .ov__sub {
   max-width: 90vw;
   margin-top: 16px;
@@ -66,6 +116,7 @@
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: rgba(210, 222, 236, 0.7);
+  transform: rotate(-0.6deg);
 }
 
 .ov__kicker {
@@ -74,4 +125,29 @@
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: rgba(159, 182, 214, 0.75);
+  transform: rotate(-0.6deg);
+}
+
+@media (max-width: 720px) {
+  .ov__title,
+  .ov__screen--hero .ov__title,
+  .ov__screen--tools .ov__title,
+  .ov__title--sm {
+    /* gentler tilt on small screens so long mono lines stay readable */
+    transform: rotateX(10deg) rotateZ(0deg) translateZ(12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ov__title,
+  .ov__screen--hero .ov__title,
+  .ov__screen--tools .ov__title,
+  .ov__title--sm,
+  .ov__sub,
+  .ov__kicker {
+    transform: none;
+  }
+  .ov__title::before {
+    display: none;
+  }
 }

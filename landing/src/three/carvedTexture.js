@@ -48,29 +48,33 @@ export function createCarvedTexture({ title, copy, index, accent }) {
   ctx.fillStyle = "rgba(190,210,235,0.35)";
   ctx.fillRect(x, 286, W - x * 2, 2);
 
-  // the sentence, wrapped by hand so the break lands where it should
-  ctx.font = "500 42px 'IBM Plex Mono', monospace";
-  const words = copy.split(" ");
-  const lines = [];
-  let line = "";
-  for (const w of words) {
-    const next = line ? `${line} ${w}` : w;
-    if (ctx.measureText(next).width > W - x * 2 && line) {
-      lines.push(line);
-      line = w;
-    } else {
-      line = next;
+  // the sentence stays off the stone now — it lives in the floating label
+  // beside it instead, so the carving itself doesn't duplicate that copy
+  // and turn into a wall of text at close range
+  if (copy) {
+    ctx.font = "500 42px 'IBM Plex Mono', monospace";
+    const words = copy.split(" ");
+    const lines = [];
+    let line = "";
+    for (const w of words) {
+      const next = line ? `${line} ${w}` : w;
+      if (ctx.measureText(next).width > W - x * 2 && line) {
+        lines.push(line);
+        line = w;
+      } else {
+        line = next;
+      }
     }
-  }
-  if (line) lines.push(line);
+    if (line) lines.push(line);
 
-  lines.slice(0, 3).forEach((l, i) => {
-    const y = 362 + i * 56;
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.fillText(l, x + 2, y + 2);
-    ctx.fillStyle = "rgba(196,212,232,0.78)";
-    ctx.fillText(l, x, y);
-  });
+    lines.slice(0, 3).forEach((l, i) => {
+      const y = 362 + i * 56;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillText(l, x + 2, y + 2);
+      ctx.fillStyle = "rgba(196,212,232,0.78)";
+      ctx.fillText(l, x, y);
+    });
+  }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;

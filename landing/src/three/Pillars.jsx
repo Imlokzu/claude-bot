@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
-import { PILLARS } from "../config";
+import { ACTS, PILLARS } from "../config";
 import { createCarvedTexture } from "./carvedTexture";
+import FloatingLabel from "./FloatingLabel";
 
 export const PILLARS_Y = -32;
 
@@ -48,7 +49,18 @@ export function pillarNormal(index, total) {
   return [Math.sin(ry), 0, Math.cos(ry)];
 }
 
-function Slab({ pillar, index, total, geometry, material, visibleRef, active, onSelect, onHoverStart, onHoverEnd }) {
+function Slab({
+  pillar,
+  index,
+  total,
+  geometry,
+  material,
+  rawOffsetRef,
+  active,
+  onSelect,
+  onHoverStart,
+  onHoverEnd,
+}) {
   const group = useRef();
   const plate = useRef();
   const [hovered, setHovered] = useState(false);
@@ -57,16 +69,46 @@ function Slab({ pillar, index, total, geometry, material, visibleRef, active, on
 
   const tex = useMemo(
     () =>
+      // the stone carries only its word — the sentence lives in the
+      // floating label beside it, so the two don't repeat each other
       createCarvedTexture({
         title: pillar.title,
-        copy: pillar.copy,
         index: String(index + 1).padStart(2, "0"),
         accent: "#7fd0ff",
       }),
     [pillar, index]
   );
 
-  useFrame((state) => {
+  const side = place.position[0] >= 0 ? 1 : -1;
+  // the camera stands in front of the slab's own face (see pillarNormal in
+  // SpaceScene's Rig), not looking down world Z — so "beside it" has to be
+  // measured in the slab's own right vector, not world X, or the label can
+  // end up behind the camera's shoulder instead of in frame
+  const ry = place.rotation[1];
+  const rightVec = [-Math.cos(ry), Math.sin(ry)];
+  const normalVec = [Math.sin(ry), Math.cos(ry)];
+
+  // this slab's own stop along the descent (0..1 within the pillars act)
+  // — used to fade it in as the camera approaches and back out as it
+  // moves on, instead of the whole run popping in at once. Expressed as
+  // a *global* scroll offset (not the act-local 0..1 pillarsRef), because
+  // pillarsRef clamps to exactly 0 for the entire rest of the page —
+  // every slab's "distance" from 0 briefly collapsed to zero any time
+  // the scroll was merely somewhere else entirely, which read as the
+  // very first slab being permanently full-size from the fusion act
+  // onward, no matter how far away the camera actually was.
+  const ownStop = index / Math.max(1, total - 1);
+  const [pStart, pEnd] = ACTS.pillars;
+  const ownGlobalOffset = pStart + ownStop * (pEnd - pStart);
+  const closeWindowGlobal = 0.16 * (pEnd - pStart);
+  // a THREE.Object3D's scale defaults to 1, not whatever we want the
+  // "not grown in yet" state to be — reading g.scale.x back as the lerp's
+  // starting point meant every slab's very first rendered frame was full
+  // size (the object3d default) before the ease had a chance to run, so
+  // the whole run flashed in at once. Track the actual value ourselves.
+  const scaleRef = useRef(0.28);
+
+  useFrame((state, dt) => {
     const g = group.current;
     if (!g) return;
     const t = state.clock.elapsedTime;
@@ -75,9 +117,36 @@ function Slab({ pillar, index, total, geometry, material, visibleRef, active, on
     const settle = active ? 0.4 : 1;
     g.position.y = place.position[1] + Math.sin(t * 0.16 + phase) * 0.22 * settle;
     g.rotation.y = place.rotation[1] + Math.sin(t * 0.1 + phase) * 0.05 * settle;
-    // the carving shows while the act is on screen, or always once picked
+    // step aside when picked, so the floating text has clear space and the
+    // stone itself reads as still in the scene, not behind a panel — away
+    // from the label, along the slab's own right vector
+    const stepAway = active ? -side * 0.85 : 0;
+    const wantX = place.position[0] + rightVec[0] * stepAway;
+    const wantZ = place.position[2] + rightVec[1] * stepAway;
+    g.position.x += (wantX - g.position.x) * Math.min(1, dt * 4);
+    g.position.z += (wantZ - g.position.z) * Math.min(1, dt * 4);
+
+    // grow in as the camera's own position along the descent nears this
+    // slab's stop, shrink back out as it moves past — so the run reads as
+    // "always been there, coming into view" rather than empty space that
+    // suddenly spawns a slab
+    // narrower than the ~0.25 gap between neighbouring stops (for 5
+    // slabs), so at most one, maybe two, are ever growing in together —
+    // a wider window let every slab in the run count as "close" at once
+    // the moment the act opened, which read as the whole set spawning
+    // in a single batch instead of arriving one at a time
+    const rawOffset = rawOffsetRef?.current ?? 0;
+    const closeness = active
+      ? 1
+      : 1 -
+        THREE.MathUtils.clamp(Math.abs(rawOffset - ownGlobalOffset) / closeWindowGlobal, 0, 1);
+    const wantScale = THREE.MathUtils.lerp(0.28, 1, THREE.MathUtils.smoothstep(closeness, 0, 1));
+    scaleRef.current = THREE.MathUtils.lerp(scaleRef.current, wantScale, Math.min(1, dt * 3));
+    g.scale.setScalar(scaleRef.current);
+
+    // the carving shows once this slab has mostly grown in, or always once picked
     if (plate.current) {
-      const want = active || hovered || visibleRef.current > 0.04 ? 1 : 0;
+      const want = active || hovered || closeness > 0.5 ? 1 : 0;
       plate.current.material.opacity += (want - plate.current.material.opacity) * 0.08;
     }
   });
@@ -86,10 +155,12 @@ function Slab({ pillar, index, total, geometry, material, visibleRef, active, on
   const H = W / 2;
 
   return (
+    <>
     <group
       ref={group}
       position={place.position}
       rotation={place.rotation}
+      scale={0.28}
       onClick={(e) => {
         e.stopPropagation();
         onSelect(pillar.key);
@@ -120,10 +191,28 @@ function Slab({ pillar, index, total, geometry, material, visibleRef, active, on
         />
       </mesh>
     </group>
+
+    {/* the picked slab's copy — floating beside the stone in space, not a
+        docked panel. The carving stays as the decorative read; this is the
+        legible one, dim and glowing like an instrument label. */}
+    <FloatingLabel
+      active={active}
+      title={pillar.title}
+      copy={pillar.copy}
+      accent="#7fd0ff"
+      eyebrow={`${String(index + 1).padStart(2, "0")} / stone`}
+      position={[
+        place.position[0] + rightVec[0] * side * 1.6 + normalVec[0] * 1.3,
+        place.position[1] + 0.3,
+        place.position[2] + rightVec[1] * side * 1.6 + normalVec[1] * 1.3,
+      ]}
+      width={2.1}
+    />
+    </>
   );
 }
 
-export default function Pillars({ visibleRef, selected, onSelect }) {
+export default function Pillars({ rawOffsetRef, selected, onSelect }) {
   const { scene } = useGLTF(SLAB_MODEL, DRACO_PATH);
   const { geometry, material } = useMemo(() => {
     let mesh = null;
@@ -174,21 +263,16 @@ export default function Pillars({ visibleRef, selected, onSelect }) {
 
   useEffect(() => restoreCursor, [restoreCursor]);
 
-  const groupRef = useRef();
-  useFrame(() => {
-    // once a slab is picked, keep the whole run mounted and visible even
-    // if the scroll drifts out of range — closing is a deliberate click,
-    // not an accident of losing the act
-    const visible = selected || visibleRef.current > 0.01;
-    if (groupRef.current) groupRef.current.visible = visible;
-    // If the run has just hidden while a slab was hovered, the browser may
-    // not emit pointerout. Force the cursor back to its saved state so it
-    // cannot stay stuck as a pointer.
-    if (!visible) restoreCursor();
-  });
-
+  // No group-level visible toggle any more: that used to hide the whole
+  // run behind one shared threshold and then pop it all in at once the
+  // instant the scroll crossed it. Each Slab now grows in on its own as
+  // the camera nears its particular stop (see `closeness` below), and
+  // slabs the camera isn't anywhere near sit outside the view frustum by
+  // position alone (they're spread down PILLARS_SPAN, far from wherever
+  // the camera currently is), so there's no cost to just leaving the
+  // group mounted and visible throughout.
   return (
-    <group ref={groupRef}>
+    <group>
       {PILLARS.map((p, i) => (
         <Slab
           key={p.key}
@@ -197,7 +281,7 @@ export default function Pillars({ visibleRef, selected, onSelect }) {
           total={PILLARS.length}
           geometry={geometry}
           material={material}
-          visibleRef={visibleRef}
+          rawOffsetRef={rawOffsetRef}
           active={selected === p.key}
           onSelect={onSelect}
           onHoverStart={onHoverStart}

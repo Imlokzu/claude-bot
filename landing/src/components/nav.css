@@ -63,8 +63,19 @@
   gap: 16px;
 }
 
+/* The crab walks to whichever section you point at (see Nav.jsx) — it
+   overshoots slightly and settles, so it reads as something with weight
+   arriving rather than a value being tweened. */
 .chrome__mark {
   filter: drop-shadow(0 0 10px rgba(217, 130, 99, 0.45));
+  transition: transform 0.55s cubic-bezier(0.22, 1.35, 0.36, 1),
+    filter 0.35s ease;
+  will-change: transform;
+}
+
+.chrome__mark.is-aimed {
+  filter: drop-shadow(0 0 16px rgba(217, 130, 99, 0.85))
+    drop-shadow(0 0 34px rgba(127, 208, 255, 0.3));
 }
 
 .chrome__sections {
@@ -99,6 +110,32 @@
 }
 .chrome__sound:hover {
   color: #fff;
+}
+
+/* On a short frame the pricing deck fills the block right down to its
+   CTAs, and the bottom-left corner is exactly where the first one lands —
+   the sound toggle sat on top of "Get the blueprints". The bottom-right
+   corner stays clear at every size, so the toggle moves there instead. */
+@media (max-height: 640px) {
+  .chrome__sound {
+    left: auto;
+    right: 34px;
+  }
+  /* the copyright stack runs straight down the first pricing column at
+     this height — the wordmark alone carries the corner */
+  .chrome__meta {
+    display: none;
+  }
+  .chrome__wordmark {
+    font-size: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome__mark {
+    transition: filter 0.2s ease;
+    transform: none !important;
+  }
 }
 
 @media (max-width: 720px) {

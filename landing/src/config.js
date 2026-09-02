@@ -15,20 +15,105 @@ export const BRAND = {
 // a brand outline — see BRAND_PATHS (simple-icons marks) and CUSTOM_ICONS
 // (OpenAI, xAI/Grok and Z.ai/GLM, which simple-icons won't carry) in
 // three/glyphTexture.js.
+// `version` is the family's current flagship and `note` is the one thing
+// it genuinely leads on — both go on screen when you pick its meteorite.
+// Standings are from arena.ai (blind human preference, Elo) and
+// Artificial Analysis's Intelligence Index, read 8 Aug 2026. Those two
+// disagree by design: Arena measures what people prefer, AA measures what
+// scores, so a model can top one and sit mid-table on the other. Recheck
+// both when this copy starts to feel old — it dates fast.
 export const MODELS = [
-  { id: "claude", name: "Claude", accent: "#d9a066" },
-  { id: "chatgpt", name: "ChatGPT", accent: "#74e3c3" },
-  { id: "gemini", name: "Gemini", accent: "#8ab4ff" },
-  { id: "deepseek", name: "DeepSeek", accent: "#6f8bff" },
-  { id: "qwen", name: "Qwen", accent: "#a78bff" },
-  { id: "mistral", name: "Mistral", accent: "#ffb35c" },
-  { id: "grok", name: "Grok", accent: "#cfd6e0" },
-  { id: "glm", name: "GLM", accent: "#7fd0ff" },
-  { id: "kimi", name: "Kimi", accent: "#b6c2d9" },
-  { id: "perplexity", name: "Perplexity", accent: "#5fd0c8" },
-  { id: "minimax", name: "MiniMax", accent: "#9aa7ff" },
-  { id: "meta", name: "Meta", accent: "#7aa7ff" },
-  { id: "mimo", name: "Xiaomi MiMo", accent: "#ff9a6c" },
+  {
+    id: "claude",
+    name: "Claude",
+    version: "Claude Opus 5",
+    note: "First on both the Intelligence Index and agentic work. Scored a perfect 42/42 at IMO 2026 with no tools.",
+    accent: "#d9a066",
+  },
+  {
+    id: "chatgpt",
+    name: "ChatGPT",
+    version: "GPT-5.6 Sol",
+    note: "Second on the Intelligence Index at 61. Tops the academic boards more often than the human-preference ones.",
+    accent: "#74e3c3",
+  },
+  {
+    id: "gemini",
+    name: "Gemini",
+    version: "Gemini 3.1 Pro",
+    note: "First on WebDev Arena, and the best model in the field at video — 87.2% on VideoMME.",
+    accent: "#8ab4ff",
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    version: "DeepSeek V4 Pro",
+    note: "MIT-licensed and 80.6% on SWE-bench Verified, matching Gemini 3.1 Pro. V4 Flash is the cheapest usable model anywhere.",
+    accent: "#6f8bff",
+  },
+  {
+    id: "qwen",
+    name: "Qwen",
+    version: "Qwen3.8 Max",
+    note: "Sixth on Arena — the highest-placed Chinese model there, above every GPT and Gemini entry.",
+    accent: "#a78bff",
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    version: "Mistral Large 3",
+    note: "The largest open-weight mixture-of-experts from a major lab: 675B parameters, 41B awake per token.",
+    accent: "#ffb35c",
+  },
+  {
+    id: "grok",
+    name: "Grok",
+    version: "Grok 4.5",
+    note: "Third on the Coding Agent Index, level with GPT-5.5 in Codex. Scores 1543 Elo on sustained agentic work.",
+    accent: "#cfd6e0",
+  },
+  {
+    id: "glm",
+    name: "GLM",
+    version: "GLM-5.2",
+    note: "First on Design Arena's code boards. 62.1 on SWE-bench Pro at a fifth of frontier cost.",
+    accent: "#7fd0ff",
+  },
+  {
+    id: "kimi",
+    name: "Kimi",
+    version: "Kimi K3",
+    note: "The highest-scoring open-weight model on the Intelligence Index, sixth overall at 60.",
+    accent: "#b6c2d9",
+  },
+  {
+    id: "perplexity",
+    name: "Perplexity",
+    version: "Sonar Reasoning Pro",
+    note: "Doesn't chase benchmarks. Grounds every answer in live web results instead, and costs a fraction of the frontier.",
+    accent: "#5fd0c8",
+  },
+  {
+    id: "minimax",
+    name: "MiniMax",
+    version: "MiniMax M3",
+    note: "59.0 on SWE-bench Pro, past both GPT-5.5 and Gemini 3.1 Pro — with a million-token window and open weights.",
+    accent: "#9aa7ff",
+  },
+  {
+    id: "meta",
+    name: "Meta",
+    version: "Muse Spark 1.2",
+    note: "Fourth on Arena, above every GPT and Gemini. Best model in the world on health: 42.8 on HealthBench Hard.",
+    accent: "#7aa7ff",
+  },
+  {
+    id: "mimo",
+    name: "Xiaomi MiMo",
+    version: "MiMo-V2.5-Pro",
+    note: "Leads open source on ClawEval at 63.8%, using 40–60% fewer tokens per run than the frontier models.",
+    accent: "#ff9a6c",
+  },
 ];
 
 // The tool planets. Each is an MCP server the bot can reach — clicking one
@@ -119,20 +204,28 @@ export const PILLARS = [
 ];
 
 // Which brain the bot ships with. The picker lets you spec the machine
-// before you buy it — the price shifts with the board you choose.
+// before you buy it — the price shifts with the board you choose. Specs
+// are the actual sensor/output stack a build carries, not marketing chip
+// numbers: camera, mic, display, speaker — same parts list as the real
+// prototype (see claude-bot-full-spec-v3.md §3).
 export const HARDWARE = [
   {
     id: "zero",
     board: "Pi Zero 2 W",
     price: 79,
-    specs: ["512 MB RAM", "Quad-core 1 GHz", "Cloud inference"],
-    note: "The pocket one. Tiny body, everything thinks in the cloud.",
+    specs: ["USB mic + speaker", "No camera", "Cloud vision & STT", "512 MB RAM"],
+    note: "The pocket one. No eyes, no local ears — everything thinks in the cloud.",
   },
   {
     id: "pi4",
     board: "Raspberry Pi 4",
     price: 119,
-    specs: ["4 GB RAM", "Quad-core 1.8 GHz", "Voice + vision on-device"],
+    specs: [
+      "OV5647 camera (CSI)",
+      "USB mic array",
+      "2.4\" SPI touch display",
+      "I2S speaker (MAX98357A)",
+    ],
     note: "The balanced one. Hears and sees without asking the network.",
     popular: true,
   },
@@ -140,7 +233,12 @@ export const HARDWARE = [
     id: "pi5",
     board: "Raspberry Pi 5",
     price: 149,
-    specs: ["8 GB RAM", "Quad-core 2.4 GHz", "Full local inference"],
+    specs: [
+      "Everything in Pi 4",
+      "Local Whisper STT",
+      "Face recognition",
+      "HC-SR04 distance sensing",
+    ],
     note: "The whole brain, offline. Nothing ever leaves the house.",
   },
 ];
@@ -197,8 +295,33 @@ export const SCROLL_PAGES = 5;
 // `pillars` is deliberately wide: it isn't a place the camera stops but a
 // descent it makes, meeting one slab at a time across the whole range.
 export const ACTS = {
-  fusion: [0.0, 0.2], //   meteorites converge into the core  (block 1 @ 0.00)
-  tools: [0.22, 0.32], //  asteroid tool bodies, clickable    (block 2 @ 0.25)
+  fusion: [0.0, 0.12], //  meteorites converge into the core  (block 1 @ 0.00)
+  // Starts where the camera starts moving (FUSION_HOLD), not where it
+  // arrives: the fusion cluster dissolves as you leave it and the asteroid
+  // ring slides in while you're still on the way down. Held at 0.22 — the
+  // old arrival point — the descent crossed an empty frame, the fusion
+  // already gone and the ring not yet allowed to show itself.
+  tools: [0.19, 0.32], //  asteroid tool bodies, clickable    (block 2 @ 0.25)
   pillars: [0.4, 0.63], //  carved slabs: what it stands for  (block 3 @ 0.50)
   pricing: [0.72, 0.82], // spec the machine, pick a plan     (block 4 @ 0.75)
 };
+
+// The fusion doesn't hand straight over to the next act the instant the
+// last meteorite lands. It holds: from ACTS.fusion[1] to FUSION_HOLD the
+// camera does not move at all, so the assembled cluster and its wordmark
+// get a beat of their own — roughly 28vh of wheel where the only thing
+// happening is the cluster breathing on its idle orbits.
+//
+// This used to be the worst moment on the page. Fusion finished at 0.20 and
+// the camera ran its ENTIRE descent to the tools act between 0.20 and 0.22
+// — 2% of the track, about 8vh of wheel for a 16-unit move — so the payoff
+// frame existed for a couple of wheel notches and then the view snapped
+// away. It read as the scroll skipping, not as a transition.
+export const FUSION_HOLD = 0.19;
+
+// Where the camera finishes its descent into the tools act. Deliberately
+// the tools block's own offset (block 2 @ 0.25), not ACTS.tools[0]: the
+// bodies start fading in at 0.22 while the camera is still on its way
+// down, so you arrive to a ring that's already there rather than watching
+// it pop in on landing.
+export const TOOLS_ARRIVE = 0.25;
