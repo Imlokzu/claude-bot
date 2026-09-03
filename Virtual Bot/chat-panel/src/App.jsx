@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bubble, Sender } from '@ant-design/x';
-import { ConfigProvider, theme, Button, Card, Modal, Drawer, Tooltip, message } from 'antd';
+import { ConfigProvider, theme, Button, Card, Input, Modal, Drawer, Tooltip, message } from 'antd';
 import {
   PlusOutlined,
   CloudOutlined,
@@ -14,6 +14,8 @@ import {
   ToolOutlined,
   MenuOutlined,
   PictureOutlined,
+  UserAddOutlined,
+  LogoutOutlined,
 } from '@ant-design/icons';
 import { XMarkdown } from '@ant-design/x-markdown';
 import { TopbarAuth } from './AuthGate.jsx';
@@ -213,6 +215,41 @@ function ClaudeMark({ size = 16, className = '' }) {
   );
 }
 
+function participantInitials(name) {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  /* [...part][0], а не part[0]: emoji та інші сурогатні пари не ріжемо навпіл. */
+  return parts.length ? parts.slice(0, 2).map((part) => [...part][0].toUpperCase()).join('') : 'Ти';
+}
+
+/* Аватар бульбашки. В antd-x 2.x `avatar` — слот (ReactNode або функція), а не
+   пропси Avatar як у 1.x: об'єкт {icon, style} React намагається відмалювати
+   як дитину і падає з error #31 (білий екран). Тому кружок малюємо самі. */
+function BubbleAvatar({ kind, children }) {
+  return <span className={`bubble-avatar bubble-avatar-${kind}`} aria-hidden="true">{children}</span>;
+}
+
+/* Події про людей у стрічці. Теперішній час — щоб не вгадувати рід. */
+const PARTICIPANT_EVENT_TEXT = {
+  participant_joined: 'приєднується до розмови',
+  participant_left: 'залишає розмову',
+};
+
+function ParticipantEvent({ type, name, timestamp }) {
+  const stamp = Number(timestamp) ? new Date(Number(timestamp) * 1000) : null;
+  const left = type === 'participant_left';
+  return (
+    <span className={`participant-event-notice${left ? ' participant-event-left' : ''}`}>
+      {left ? <LogoutOutlined aria-hidden="true" /> : <UserAddOutlined aria-hidden="true" />}
+      <span><b>{name}</b> {PARTICIPANT_EVENT_TEXT[type] || 'у розмові'}</span>
+      {stamp && (
+        <time dateTime={stamp.toISOString()}>
+          {stamp.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+        </time>
+      )}
+    </span>
+  );
+}
+
 /* Налаштування появи тексту під час стрімінгу відповіді бота:
    кожен новий фрагмент проявляється з блюру (див. .x-markdown span у styles.css),
    плюс миготливий «хвіст» ▋ на місці курсора, поки чанки ще йдуть. */
@@ -247,6 +284,7 @@ const api = async (path, options = {}) => {
 
 const SESSION_KEY = 'virtual_bot_session_id';
 const ACTIVE_KIND_KEY = 'virtual_bot_active_session_kind';
+const HUMAN_NAME_KEY = 'virtual_bot_human_name';
 /* Кодинг — окремий простір розмов: свій список на бекенді (code-chats/), свої
    назви, свій живий процес omp. Тому й останню відкриту розмову памʼятаємо
    окремо, інакше перемикання режиму відкривало б чужу історію. */
@@ -270,6 +308,13 @@ const readStoredSession = (isCode) => {
     return '';
   }
 };
+const readStoredHumanName = () => {
+  try {
+    return localStorage.getItem(HUMAN_NAME_KEY) || '';
+  } catch {
+    return '';
+  }
+};
 const createSessionId = () => {
   try {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -277,6 +322,47 @@ const createSessionId = () => {
     }
   } catch {}
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+};
+
+/* Події сесії (приєднання людей) не є репліками для моделі, але мають
+   лишатися у timeline поруч із повідомленнями після перезавантаження. */
+const restoreTimeline = (data) => {
+  const joins = (data.events || [])
+    .filter((event) => PARTICIPANT_EVENT_TEXT[event?.type] && event?.name)
+    .map((event) => ({
+      role: 'system',
+      type: event.type,
+      participant: event.name,
+      ts: event.ts || 0,
+    }));
+  const exchanges = (data.messages || []).map((item) => ({
+    role: item.role === 'assistant' ? 'ai' : 'user',
+    content: item.content,
+    participant: item.participant || '',
+    ts: item.ts || 0,
+    streaming: false,
+    toolResults: [],
+    toolSteps: item.steps || [],
+    attachments: [],
+    imageAttachments: (item.attachments || []).filter((attachment) => attachment.type?.startsWith('image/')),
+  }));
+  return [...joins, ...exchanges].sort((a, b) => (a.ts || 0) - (b.ts || 0));
+};
+
+/* Чи пише людина в цій сесії під запамʼятованим імʼям. Імʼя глобальне
+   (localStorage), а «Вийти» — на одну розмову, тож факт виходу беремо з
+   сервера: мене нема в participants і в events є мій participant_left →
+   тут я не учасник, доки не приєднаюся знову. Ніколи тут не був → пишу під
+   своїм імʼям, бекенд зареєструє з першим повідомленням. */
+const identityInSession = (data, codeMode) => {
+  if (codeMode) return '';
+  const remembered = readStoredHumanName();
+  if (!remembered) return '';
+  if ((data.participants || []).some((participant) => participant?.name === remembered)) return remembered;
+  const leftHere = (data.events || []).some(
+    (event) => event?.type === 'participant_left' && event?.name === remembered
+  );
+  return leftHere ? '' : remembered;
 };
 
 /* Скільки чекати наступний шматок відповіді, перш ніж вважати стрім мертвим */
@@ -610,6 +696,13 @@ function App() {
   const [activeModel, setActiveModel] = useState('');
   const [activeBrain, setActiveBrain] = useState('');
   const [voiceModeOpen, setVoiceModeOpen] = useState(false);
+  /* Людина входить у розмову явно: її імʼя бачить UI й отримує агент у
+     контексті наступних реплік. Чернетку запамʼятовуємо лише локально, щоб
+     не змушувати набирати власне імʼя щоразу. */
+  const [participants, setParticipants] = useState([]);
+  const [participantName, setParticipantName] = useState('');
+  const [participantDraft, setParticipantDraft] = useState(readStoredHumanName);
+  const [participantModalOpen, setParticipantModalOpen] = useState(false);
   const abortRef = useRef(null);
   /* Номер видимого діалогу. Старий fetch/стрім може завершитись після «+»;
      тоді його результат не має права повернути історію чи дописати в новий
@@ -780,15 +873,15 @@ function App() {
     api(withKind(`/api/sessions/${encodeURIComponent(sessionId)}`, codeMode))
       .then((data) => {
         if (version !== conversationVersionRef.current || requestedSessionId !== readStoredSession(codeMode)) return;
-        const restored = (data.messages || []).map((m) => ({
-          role: m.role === 'assistant' ? 'ai' : 'user',
-          content: m.content,
-          streaming: false,
-          toolResults: [],
-          toolSteps: m.steps || [],
-          attachments: [],
-          imageAttachments: (m.attachments || []).filter((a) => a.type?.startsWith('image/')),
-        }));
+        const restored = restoreTimeline(data);
+        /* Злиття, не перезапис: якщо людина встигла натиснути «T» і приєднатися
+           до того, як цей GET повернувся, її чип не має відкотитися. */
+        setParticipants((previous) => {
+          const fromServer = Array.isArray(data.participants) ? data.participants : [];
+          const known = new Set(fromServer.map((participant) => participant?.name));
+          return [...fromServer, ...previous.filter((participant) => !known.has(participant?.name))];
+        });
+        setParticipantName(identityInSession(data, codeMode));
         if (restored.length) setMessages(restored);
       })
       .catch(() => {});
@@ -800,17 +893,9 @@ function App() {
     try {
       const data = await api(withKind(`/api/sessions/${encodeURIComponent(sid)}`, codeMode));
       if (version !== conversationVersionRef.current) return;
-      setMessages(
-        (data.messages || []).map((m) => ({
-          role: m.role === 'assistant' ? 'ai' : 'user',
-          content: m.content,
-          streaming: false,
-          toolResults: [],
-          toolSteps: m.steps || [],
-          attachments: [],
-          imageAttachments: (m.attachments || []).filter((a) => a.type?.startsWith('image/')),
-        }))
-      );
+      setMessages(restoreTimeline(data));
+      setParticipants(Array.isArray(data.participants) ? data.participants : []);
+      setParticipantName(identityInSession(data, codeMode));
       setSessionId(sid);
       try {
         localStorage.setItem(sessionKeyFor(codeMode), sid);
@@ -840,6 +925,30 @@ function App() {
     return () => mq.removeEventListener('change', on);
   }, []);
 
+  useEffect(() => {
+    if (codeMode) return undefined;
+    const onKeyDown = (event) => {
+      /* Фізична клавіша (code), а не символ: з українською розкладкою
+         event.key для T дає «е», і гарячка мовчала б. */
+      if (
+        event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey ||
+        event.code !== 'KeyT'
+      ) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.matches('input, textarea, select, [contenteditable="true"]') ||
+          target.closest('[contenteditable="true"], .ant-modal, .ant-drawer'))
+      ) return;
+      /* Відкрита будь-яка модалка — «T» їй, не нам. */
+      if (document.querySelector('.ant-modal-wrap:not([style*="display: none"])')) return;
+      event.preventDefault();
+      setParticipantModalOpen(true);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [codeMode]);
+
   /* Вибір моделі кодингу. Бекенд гасить живі процеси omp сам: модель
      передається аргументом --model під час запуску, тож уже піднятий
      процес далі працював би старою. */
@@ -868,6 +977,8 @@ function App() {
     } catch {}
     setCodeMode(nextCode);
     setMessages([]);
+    setParticipants([]);
+    setParticipantName(nextCode ? '' : readStoredHumanName());
     const nextSessionId = readStoredSession(nextCode) || createSessionId();
     setSessionId(nextSessionId);
     try {
@@ -878,6 +989,9 @@ function App() {
   const newSession = () => {
     invalidateConversation();
     setMessages([]);
+    setParticipants([]);
+    /* Імʼя живе, доки людина сама не натисне «Вийти»: новий чат — та сама людина. */
+    setParticipantName(codeMode ? '' : readStoredHumanName());
     const freshSessionId = createSessionId();
     setSessionId(freshSessionId);
     // Звичайний «+» не мав би тягнути за собою стару прив'язку до проєкту,
@@ -887,6 +1001,79 @@ function App() {
       localStorage.setItem(sessionKeyFor(codeMode), freshSessionId);
     } catch {}
     refreshSessions();
+  };
+
+  const joinAsParticipant = async (rawName) => {
+    /* Modal.onOk і onPressEnter передають подію — тоді беремо чернетку. */
+    const source = typeof rawName === 'string' ? rawName : participantDraft;
+    const name = source.trim().replace(/\s+/g, ' ').slice(0, 48);
+    if (!name) {
+      message.error('Вкажи імʼя учасника');
+      return;
+    }
+    const joinedSessionId = sessionId || createSessionId();
+    if (!sessionId) {
+      setSessionId(joinedSessionId);
+      try { localStorage.setItem(sessionKeyFor(false), joinedSessionId); } catch {}
+    }
+    try {
+      const result = await api(withKind(`/api/sessions/${encodeURIComponent(joinedSessionId)}/participants`, false), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const human = result.participant;
+      if (!human?.name) throw new Error('Сервер не повернув учасника');
+      setParticipantName(human.name);
+      setParticipantDraft(human.name);
+      try { localStorage.setItem(HUMAN_NAME_KEY, human.name); } catch {}
+      setParticipants((previous) => (
+        previous.some((participant) => participant?.name === human.name)
+          ? previous
+          : [...previous, human]
+      ));
+      if (result.joined) {
+        setMessages((previous) => [
+          ...previous,
+          { role: 'system', type: 'participant_joined', participant: human.name, ts: human.joined || Date.now() / 1000 },
+        ]);
+      }
+      setParticipantModalOpen(false);
+      refreshSessions(false);
+    } catch (error) {
+      message.error(`Не вдалося приєднатися: ${error.message}`);
+    }
+  };
+
+  /* «Вийти» — вихід із ЦІЄЇ розмови, дзеркало join (він теж на одну сесію):
+     подія на бекенді, імʼя геть з активних тут. localStorage не чіпаємо —
+     в інших чатах людина лишається учасником, і там її імʼя має жити далі.
+     Повторний leave бекенд віддає left:false — це не помилка, просто рядок
+     у стрічці не малюємо. */
+  const leaveParticipant = async () => {
+    const name = participantName;
+    if (!name) return;
+    try {
+      const result = sessionId
+        ? await api(withKind(`/api/sessions/${encodeURIComponent(sessionId)}/participants/leave`, false), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name }),
+          })
+        : { left: false };
+      setParticipantName('');
+      setParticipantDraft(name);
+      setParticipants((previous) => previous.filter((participant) => participant?.name !== name));
+      if (result?.left) {
+        setMessages((previous) => [
+          ...previous,
+          { role: 'system', type: 'participant_left', participant: name, ts: Date.now() / 1000 },
+        ]);
+      }
+      refreshSessions(false);
+    } catch (error) {
+      message.error(`Не вдалося вийти: ${error.message}`);
+    }
   };
 
   const pinSession = async (sid, pinned) => {
@@ -1106,11 +1293,25 @@ function App() {
       setPastes([]);
       setLoading(true);
 
-      const botIndex = messages.length + 1;
+      /* Людина з запамʼятованим імʼям у чаті, де ще не писала: бекенд
+         зареєструє її разом із цим повідомленням (api_chat → add_participant),
+         а ми малюємо те саме одразу, щоб не чекати перезавантаження. */
+      const joinNow = !codeMode && !!participantName &&
+        !participants.some((participant) => participant?.name === participantName);
+      if (joinNow) {
+        setParticipants((previous) => [...previous, { name: participantName, kind: 'human', joined: Date.now() / 1000 }]);
+      }
+      const botIndex = messages.length + 1 + (joinNow ? 1 : 0);
       setMessages((prev) => [
         ...prev,
-        { role: 'user', content: text || fileLinks, attachments, imageAttachments },
-        { role: 'ai', content: '', streaming: true, toolResults: [], mode: '', toolSteps: [] },
+        ...(joinNow
+          ? [{ role: 'system', type: 'participant_joined', participant: participantName, ts: Date.now() / 1000 }]
+          : []),
+        {
+          role: 'user', content: text || fileLinks, attachments, imageAttachments,
+          participant: participantName, ts: Date.now() / 1000,
+        },
+        { role: 'ai', content: '', streaming: true, toolResults: [], mode: '', toolSteps: [], ts: Date.now() / 1000 },
       ]);
 
       /* Оголошені ДО try: catch показує помилку разом із кроками, і якщо
@@ -1155,6 +1356,7 @@ function App() {
                   session_id: requestSessionId,
                   reasoning_effort: effectiveReasoningEffort,
                   attachments: imageAttachments,
+                  participant_name: participantName,
                 }
           ),
           signal: controller.signal,
@@ -1401,6 +1603,14 @@ function App() {
   const items = useMemo(
     () =>
       messages.map((msg, index) => {
+        if (msg.role === 'system' && PARTICIPANT_EVENT_TEXT[msg.type]) {
+          return {
+            key: `${msg.type}-${msg.participant}-${msg.ts || index}`,
+            role: 'system',
+            className: 'participant-event-bubble',
+            content: <ParticipantEvent type={msg.type} name={msg.participant} timestamp={msg.ts} />,
+          };
+        }
         const toolResults = msg.toolResults || [];
         const attachments = msg.attachments || [];
         const imageAttachments = msg.imageAttachments || attachments.filter((a) => a.type?.startsWith('image/'));
@@ -1408,6 +1618,9 @@ function App() {
           key: index,
           role: msg.role,
           content: msg.content,
+          avatar: msg.role === 'user'
+            ? <BubbleAvatar kind="user">{participantInitials(msg.participant)}</BubbleAvatar>
+            : undefined,
           streaming: msg.streaming,
           toolResults,
           toolSteps: msg.toolSteps || [],
@@ -1476,15 +1689,20 @@ function App() {
     [messages, sessionId]
   );
 
+  /* Конфіг ролей Bubble.List. У antd-x 2.x проп зветься `role` (у 1.x —
+     `roles`); зі старою назвою він мовчки ігнорувався, і весь цей блок був
+     мертвим. Тепер живий — тому avatar тут слот, а style сидить у styles.content. */
   const roles = {
     user: {
       placement: 'end',
       variant: 'filled',
-      avatar: { icon: 'Ти', style: { background: 'var(--blue)', color: '#fff' } },
-      style: {
-        background: 'color-mix(in srgb, var(--green) 14%, var(--bg-panel))',
-        color: 'var(--text)',
-        border: '1px solid var(--border)',
+      avatar: <BubbleAvatar kind="user">Ти</BubbleAvatar>,
+      styles: {
+        content: {
+          background: 'color-mix(in srgb, var(--green) 14%, var(--bg-panel))',
+          color: 'var(--text)',
+          border: '1px solid var(--border)',
+        },
       },
       contentRender: (content) => (
         <div className="user-content" style={{ whiteSpace: 'pre-wrap' }}>
@@ -1495,14 +1713,17 @@ function App() {
     ai: {
       placement: 'start',
       variant: 'filled',
-      avatar: { icon: <ClaudeMark size={15} />, style: { background: 'var(--green)', color: '#fff' } },
-      style: {
-        background: 'var(--bg-panel)',
-        color: 'var(--text)',
-        border: '1px solid var(--border)',
+      avatar: <BubbleAvatar kind="ai"><ClaudeMark size={15} /></BubbleAvatar>,
+      styles: {
+        content: {
+          background: 'var(--bg-panel)',
+          color: 'var(--text)',
+          border: '1px solid var(--border)',
+        },
       },
-      loadingRender: (props) => {
-        const item = items[props.index] || items.find((candidate) => candidate.streaming) || {};
+      /* У 2.x loadingRender без аргументів — індексу нема, шукаємо стрім. */
+      loadingRender: () => {
+        const item = items.find((candidate) => candidate.streaming) || {};
         const steps = item.toolSteps || [];
         const lastUserMsg = messages.slice().reverse().find((m) => m.role === 'user');
         const toolInProgress =
@@ -1542,6 +1763,14 @@ function App() {
       },
     },
   };
+
+  /* Людина з імʼям у чаті, де ще не писала: показуємо її одразу, а бекенд
+     зареєструє з першим повідомленням. */
+  const presenceList = participantName && !participants.some((participant) => participant?.name === participantName)
+    ? [...participants, { name: participantName, kind: 'human', pending: true }]
+    : participants;
+  /* Після «Вийти» імʼя памʼятаємо: повернутися в розмову — один клік, без модалки. */
+  const rememberedName = !codeMode && !participantName ? readStoredHumanName() : '';
 
   /* Модель відповіді не з нашого списку → показуємо її окремим пунктом */
   const activeIsExternal = !!activeModel && !models.some((m) => m.value === activeModel);
@@ -1762,6 +1991,63 @@ function App() {
           </div>
         </div>
 
+        {!codeMode && (
+          <section className="chat-presence-bar" aria-label="Учасники розмови">
+            <div className="chat-presence-list">
+              <span className="chat-participant chat-participant-agent" title="Агент, який відповідає в розмові">
+                <span className="chat-participant-mark" aria-hidden="true"><ClaudeMark size={13} /></span>
+                <span>Клод Бот</span>
+                <small>агент</small>
+              </span>
+              {presenceList.map((participant) => (
+                <span
+                  key={`${participant.kind || 'human'}-${participant.name}`}
+                  className={`chat-participant${participant.name === participantName ? ' active' : ''}${participant.pending ? ' pending' : ''}`}
+                  title={
+                    participant.pending
+                      ? 'Приєднаєшся з першим повідомленням'
+                      : participant.name === participantName ? 'Ти пишеш від цього імені' : 'Учасник розмови'
+                  }
+                >
+                  <span className="chat-participant-mark" aria-hidden="true">{participantInitials(participant.name)}</span>
+                  <span>{participant.name}</span>
+                  <small>людина</small>
+                </span>
+              ))}
+              <button
+                type="button"
+                className="chat-join-btn"
+                onClick={rememberedName ? () => joinAsParticipant(rememberedName) : () => setParticipantModalOpen(true)}
+                title={
+                  participantName
+                    ? 'Змінити імʼя (T)'
+                    : rememberedName
+                      ? `Повернутися в розмову як ${rememberedName} (T — інше імʼя)`
+                      : 'Приєднатися як людина (T)'
+                }
+              >
+                <UserAddOutlined />{' '}
+                {participantName ? 'Змінити імʼя' : rememberedName ? `Приєднатися як ${rememberedName}` : 'Приєднатися'}
+                {' '}<kbd>T</kbd>
+              </button>
+              {participantName && (
+                <button
+                  type="button"
+                  className="chat-join-btn chat-leave-btn"
+                  onClick={leaveParticipant}
+                  title="Вийти з розмови: агент більше не бачитиме твого імені"
+                >
+                  <LogoutOutlined /> Вийти
+                </button>
+              )}
+            </div>
+            <span className={`chat-turn${loading ? ' agent-turn' : ''}`} aria-live="polite">
+              <span>черга</span>
+              <b>{loading ? 'Клод Бот' : participantName || 'людина'}</b>
+            </span>
+          </section>
+        )}
+
         <div className="chat-body" onPasteCapture={handlePaste}>
           <div className="chat-messages">
             {items.length === 0 ? (
@@ -1784,7 +2070,7 @@ function App() {
                 </p>
               </div>
             ) : (
-              <Bubble.List items={items} roles={roles} autoScroll />
+              <Bubble.List items={items} role={roles} autoScroll />
             )}
           </div>
 
@@ -1865,7 +2151,7 @@ function App() {
           placeholder={
             codeMode
               ? (narrow ? 'Задача для omp…' : `Задача для omp — ${codeProject ? `code/${codeProject}/` : 'code/'}`)
-              : (narrow ? 'Повідомлення…' : 'Повідомлення для бота…')
+              : (narrow ? 'Повідомлення…' : participantName ? `Повідомлення від ${participantName}…` : 'Повідомлення для бота…')
           }
           allowSpeech={false}
           components={{ input: BlurTypingInput }}
@@ -1942,6 +2228,28 @@ function App() {
             onChange={(val) => setEditing((prev) => (prev ? { ...prev, content: val } : prev))}
           />
         )}
+        </Modal>
+
+        <Modal
+          open={participantModalOpen && !codeMode}
+          title="Приєднатися як людина"
+          okText="Приєднатися"
+          cancelText="Скасувати"
+          onOk={joinAsParticipant}
+          onCancel={() => setParticipantModalOpen(false)}
+        >
+          <p className="participant-join-lead">
+            Агенти бачитимуть твоє імʼя біля наступних реплік і знатимуть, що в розмові є людина.
+          </p>
+          <Input
+            autoFocus
+            maxLength={48}
+            value={participantDraft}
+            onChange={(event) => setParticipantDraft(event.target.value)}
+            onPressEnter={joinAsParticipant}
+            placeholder="Наприклад, Олена"
+            aria-label="Імʼя учасника"
+          />
         </Modal>
 
         {/* Проєкт: чати цього проєкту + бібліотека (картинки й файли). */}
