@@ -48,6 +48,10 @@ Thumbs.db
 *.pid
 service_logs/
 
+# ---- Manual verification artifacts ----
+Virtual Bot/final.png
+Virtual Bot/r2.json
+
 # ---- Pi subagent runtime artifacts ----
 .pi-subagents/
 

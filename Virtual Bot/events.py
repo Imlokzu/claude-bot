@@ -182,9 +182,13 @@ def publish_log(entry: dict) -> None:
     publish({"type": "log", **entry})
 
 
-def recent_logs() -> list:
-    """Останні лог-рядки консолі (для початкового завантаження)."""
-    return list(_LOG_RING)
+def recent_logs(session_id: str | None = None) -> list:
+    """Останні лог-рядки; за сесією не повертаємо глобальний шум."""
+    entries = list(_LOG_RING)
+    if session_id is not None:
+        clean = str(session_id).strip()
+        entries = [entry for entry in entries if clean and entry.get("session") == clean]
+    return entries
 
 
 def subscribers_count() -> int:

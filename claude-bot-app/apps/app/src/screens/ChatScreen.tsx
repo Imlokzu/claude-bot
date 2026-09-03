@@ -52,6 +52,15 @@ export function ChatScreen() {
   const [sessions, setSessions] = React.useState<SessionSummary[]>([]);
   const [sessionsLoading, setSessionsLoading] = React.useState(true);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  /* Старе завантаження не має повернути історію після «Нова розмова» або
+     перемикання між Agent Talk і кодингом. */
+  const conversationVersionRef = React.useRef(0);
+
+  const invalidateConversation = React.useCallback(() => {
+    conversationVersionRef.current += 1;
+    setBusy(false);
+    return conversationVersionRef.current;
+  }, []);
 
   /* Колонка чи шухляда — залежить від ширини, а не від платформи: планшет
      і вікно Electron бувають і широкими, і вузькими, тому вирішує саме
@@ -106,9 +115,11 @@ export function ChatScreen() {
   const openSession = async (id: string) => {
     setDrawerOpen(false);
     if (id === sessionId) return;
+    const version = invalidateConversation();
     setBusy(true);
     try {
-      const d = await client.session(id);
+      const d = await client.session(id, mode);
+      if (version !== conversationVersionRef.current) return;
       setSessionId(id);
       setRows((d.messages || []).map((m, i) => ({
         ...m,
@@ -117,17 +128,18 @@ export function ChatScreen() {
         // типовим: краще нейтральна назва, ніж вигадана модель.
       })));
     } catch (e) {
+      if (version !== conversationVersionRef.current) return;
       const msg = e instanceof ApiError ? e.message : String(e);
       setRows([{ key: `e${Date.now()}`, role: 'assistant', content: msg, error: true }]);
     } finally {
-      setBusy(false);
+      if (version === conversationVersionRef.current) setBusy(false);
     }
   };
 
   const removeSession = async (id: string) => {
     setSessions((list) => list.filter((s) => s.id !== id));   // оптимістично
     try {
-      await client.deleteSession(id);
+      await client.deleteSession(id, mode);
       if (id === sessionId) { setSessionId(''); setRows([]); }
     } catch {
       void loadSessions();   // не вийшло — повертаємо справжній стан
@@ -135,7 +147,16 @@ export function ChatScreen() {
   };
 
   const newSession = () => {
+    invalidateConversation();
     setDrawerOpen(false);
+    setRows([]);
+    setSessionId('');
+  };
+
+  const changeMode = (nextMode: ChatMode) => {
+    if (nextMode === mode || busy) return;
+    invalidateConversation();
+    setMode(nextMode);
     setRows([]);
     setSessionId('');
   };
@@ -167,6 +188,8 @@ export function ChatScreen() {
   const send = async () => {
     const text = draft.trim();
     if (!text || busy) return;
+    const version = conversationVersionRef.current;
+    const requestSessionId = sessionId;
     setDraft('');
     setBusy(true);
     const mine: Row = { key: `u${Date.now()}`, role: 'user', content: text };
@@ -175,8 +198,9 @@ export function ChatScreen() {
       // Історію віддаємо самі: бекенд тримає її за session_id, але на першому
       // ході id ще немає, і без цього бот втратив би контекст.
       const history = rows.map((r) => ({ role: r.role, content: r.content }));
-      const res = await client.chat({ message: text, session_id: sessionId, history });
-      if (res.session_id && res.session_id !== sessionId) setSessionId(res.session_id);
+      const res = await client.chat({ message: text, session_id: requestSessionId, history });
+      if (version !== conversationVersionRef.current) return;
+      if (res.session_id && res.session_id !== requestSessionId) setSessionId(res.session_id);
       setRows((r) => [
         ...r,
         {
@@ -188,10 +212,11 @@ export function ChatScreen() {
         },
       ]);
     } catch (e) {
+      if (version !== conversationVersionRef.current) return;
       const msg = e instanceof ApiError ? e.message : String(e);
       setRows((r) => [...r, { key: `e${Date.now()}`, role: 'assistant', content: msg, error: true }]);
     } finally {
-      setBusy(false);
+      if (version === conversationVersionRef.current) setBusy(false);
       // Назва розмови й час оновлюються на бекенді після відповіді
       void loadSessions();
     }
@@ -267,7 +292,7 @@ export function ChatScreen() {
             <Segmented
               label="Режим розмови"
               value={mode}
-              onChange={setMode}
+              onChange={changeMode}
               options={[
                 { value: 'chat', label: 'Чат', icon: 'chat' },
                 { value: 'code', label: 'Код', icon: 'code' },

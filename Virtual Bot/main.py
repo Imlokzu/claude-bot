@@ -359,6 +359,11 @@ class ChatRequest(BaseModel):
     history: list[dict[str, str]] = Field(default_factory=list)
     reasoning_effort: str = Field(default="none", pattern="^(none|low|medium|high)$")
     attachments: list[dict[str, str]] = Field(default_factory=list, max_length=8)
+    participant_name: str = Field(default="", max_length=48)
+
+
+class ParticipantJoinRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=48)
 
 
 class MemorySaveRequest(BaseModel):
@@ -914,6 +919,13 @@ def _get_history(sid: str, req_history: list[dict[str, str]]) -> list[dict[str, 
     return chat_store.history(sid, cfg.CHAT_HISTORY_LIMIT)
 
 
+def _participant_message(message: str, participant_name: str) -> str:
+    """Позначаємо репліку людини для агентів, але не засмічуємо UI-префіксом."""
+    if not participant_name:
+        return message
+    return f"Учасник «{participant_name}» каже:\n{message}"
+
+
 def _save_history(
     sid: str,
     history: list[dict[str, str]],
@@ -921,15 +933,16 @@ def _save_history(
     assistant: str,
     steps: list | None = None,
     attachments: list[dict] | None = None,
+    participant_name: str = "",
 ) -> None:
     """Дописує обмін до історії сесії: у памʼять процесу і на диск."""
-    history.append({"role": "user", "content": user})
+    history.append({"role": "user", "content": _participant_message(user, participant_name)})
     history.append({"role": "assistant", "content": assistant})
     with _sessions_lock:
         _cleanup_stale_sessions()
         _sessions[sid] = (history[-cfg.CHAT_HISTORY_LIMIT:], time.monotonic())
     try:
-        chat_store.append(sid, user, assistant, steps, attachments)
+        chat_store.append(sid, user, assistant, steps, attachments, participant_name)
     except Exception:  # noqa: BLE001 — збереження історії не має валити відповідь
         log.exception("Не вдалося зберегти чат на диск")
 
@@ -1100,12 +1113,23 @@ async def api_chat(request: Request, req: ChatRequest):
     message = req.message.strip()
     images = await asyncio.to_thread(_load_chat_images, req.attachments)
     sid = _get_or_create_session_id(req)
+    participant_name = chat_store.normalize_participant_name(req.participant_name)
+    if participant_name:
+        # Прямий API-клієнт може пропустити UI-крок «приєднатися», але агент
+        # все одно має побачити людину й session має зберегти цю подію.
+        with brain_context.set_clerk_user(clerk_uid):
+            participant, _joined = chat_store.add_participant(sid, participant_name)
+        # Імʼя могло не пройти (порожнє після чистки або зарезервоване за
+        # ботом) — тоді репліка йде без підпису, а не під чужим імʼям.
+        participant_name = participant["name"] if participant else ""
+    agent_message = _participant_message(message, participant_name)
     log.info("→ Запит у чат: session=%s user=%s %s", sid, clerk_uid[:8], message[:120])
     # Хід для окремої консолі (/console): звідки прийшла репліка видно за
     # Referer — з екрана пристрою чи з панелі. Далі до цього ходу чіпляються
     # кроки мозків (див. brains.chat) і кроки тулзів.
     turn_source = "screen" if "/screen" in (request.headers.get("referer") or "") else "chat"
-    turn_id = trace_log.start_turn(turn_source, message, sid)
+    turn_text = f"{participant_name}: {message}" if participant_name else message
+    turn_id = trace_log.start_turn(turn_source, turn_text, sid)
     try:
         vision_watcher.note_interaction()  # будить бота з дрімоти
     except Exception:  # noqa: BLE001 — інтеграція не має права зламати чат
@@ -1120,7 +1144,7 @@ async def api_chat(request: Request, req: ChatRequest):
             with trace_log.bind(turn_id):
                 try:
                     reply, emotion, mode, tool_results = await brains.chat(
-                        message, history, **_chat_image_kwargs(images),
+                        agent_message, history, **_chat_image_kwargs(images),
                         **_chat_reasoning_kwargs(req.reasoning_effort),
                     )
                 except Exception as exc:  # noqa: BLE001 — хід треба закрити, помилку віддаємо далі
@@ -1129,7 +1153,10 @@ async def api_chat(request: Request, req: ChatRequest):
                 final_emotion = emotions.settled_emotion(emotion)
                 trace_log.end_turn(mode=mode, model=brains.get_last_model(), emotion=final_emotion)
             log.info("Чат (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
-            _save_history(sid, history, message, reply, attachments=req.attachments)
+            _save_history(
+                sid, history, message, reply,
+                attachments=req.attachments, participant_name=participant_name,
+            )
             # Назву чату генеруємо у фоні — відповідь на неї не чекає
             asyncio.create_task(_autoname_chat(sid, message, reply))
 
@@ -1201,7 +1228,7 @@ async def api_chat(request: Request, req: ChatRequest):
                 await event_queue.put(event)
 
             chat_task = asyncio.create_task(brains.chat(
-                message, history, emit=emit, **_chat_image_kwargs(images),
+                agent_message, history, emit=emit, **_chat_image_kwargs(images),
                 **_chat_reasoning_kwargs(req.reasoning_effort),
             ))
 
@@ -1220,7 +1247,10 @@ async def api_chat(request: Request, req: ChatRequest):
                 final_emotion = emotions.settled_emotion(emotion)
                 trace_log.end_turn(mode=mode, model=brains.get_last_model(), emotion=final_emotion)
                 log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
-                _save_history(sid, history, message, reply, attachments=req.attachments)
+                _save_history(
+                    sid, history, message, reply,
+                    attachments=req.attachments, participant_name=participant_name,
+                )
                 asyncio.create_task(_autoname_chat(sid, message, reply))
 
                 # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом)
@@ -1305,6 +1335,41 @@ async def api_session_get(session_id: str, request: Request, kind: str = Query(d
         if not chat_store.is_valid_id(session_id):
             raise HTTPException(status_code=400, detail="Некоректний id сесії")
         return chat_store.load(session_id)
+
+
+@app.post("/api/sessions/{session_id}/participants")
+async def api_session_join_participant(
+    session_id: str,
+    request: Request,
+    req: ParticipantJoinRequest,
+    kind: str = Query(default=""),
+) -> dict:
+    """Додає людину до сесії та лишає подію для timeline."""
+    clerk_uid = await _require_user(request)
+    with brain_context.set_clerk_user(clerk_uid), chat_store.set_kind(_chat_kind(kind)):
+        if not chat_store.is_valid_id(session_id):
+            raise HTTPException(status_code=400, detail="Некоректний id сесії")
+        participant, joined = chat_store.add_participant(session_id, req.name)
+        if participant is None:
+            if chat_store.is_reserved_participant_name(req.name):
+                raise HTTPException(status_code=400, detail="Це імʼя належить боту — виберіть інше")
+            raise HTTPException(status_code=400, detail="Вкажіть імʼя учасника")
+        return {"participant": participant, "joined": joined}
+
+
+@app.post("/api/sessions/{session_id}/participants/leave")
+async def api_session_leave_participant(
+    session_id: str,
+    request: Request,
+    req: ParticipantJoinRequest,
+    kind: str = Query(default=""),
+) -> dict:
+    """Прибирає людину з присутніх; повторний вихід — не помилка, а left=false."""
+    clerk_uid = await _require_user(request)
+    with brain_context.set_clerk_user(clerk_uid), chat_store.set_kind(_chat_kind(kind)):
+        if not chat_store.is_valid_id(session_id):
+            raise HTTPException(status_code=400, detail="Некоректний id сесії")
+        return {"left": chat_store.remove_participant(session_id, req.name)}
 
 
 class SessionStepsRequest(BaseModel):
@@ -1587,19 +1652,19 @@ async def api_asr_partial(request: Request, audio: UploadFile = File(...)) -> di
 
 
 @app.get("/api/console")
-def api_console() -> dict:
-    """Останні рядки консолі (історія для початкового завантаження панелі)."""
-    return {"logs": events.recent_logs()}
+def api_console(session_id: Optional[str] = Query(default=None, max_length=64)) -> dict:
+    """Логи Watch; за session_id не тягнемо історію інших розмов."""
+    return {"logs": events.recent_logs(session_id)}
 
 
 @app.get("/api/trace")
-def api_trace() -> dict:
+def api_trace(session_id: Optional[str] = Query(default=None, max_length=64)) -> dict:
     """
     Хід розмови по кроках для окремої консолі (/console): які мозки пробувались,
-    скільки тривала кожна спроба, які тули смикались. Історія — щоб консоль,
-    відкрита посеред розмови, показала не порожньо; далі йдуть живі SSE-події.
+    скільки тривала кожна спроба, які тули смикались. За session_id повертаємо
+    лише поточну розмову; без нього — повний буфер для сумісних API-клієнтів.
     """
-    return trace_log.recent()
+    return trace_log.recent(session_id)
 
 
 @app.get("/api/processes")

@@ -20,6 +20,8 @@ const PROC_POLL_MS = 3000;
 const state = {
   paused: false,
   booted: false,         // історія вже намальована?
+  sessionId: "",         // Watch дивиться лише на активну розмову
+  viewStartedAt: 0,       // не приймаємо старий turn під час перемикання
   bootBuffer: [],        // живі події, що прийшли ДО того (див. boot())
   pending: [],           // події, що прийшли на паузі
   turns: new Map(),      // turn_id -> {turn, el}
@@ -27,6 +29,21 @@ const state = {
   logFilter: "",
   onlyProblems: false,
 };
+let viewLoadVersion = 0;
+
+function activeSessionId() {
+  try {
+    const kind = localStorage.getItem("virtual_bot_active_session_kind") === "code" ? "code" : "chat";
+    const key = kind === "code" ? "virtual_bot_code_session_id" : "virtual_bot_session_id";
+    return localStorage.getItem(key) || "";
+  } catch (err) {
+    return "";
+  }
+}
+
+function scopedUrl(path, sessionId) {
+  return `${path}?session_id=${encodeURIComponent(sessionId)}`;
+}
 
 /* ---------- дрібні хелпери ---------- */
 
@@ -299,6 +316,19 @@ async function pollProcesses() {
 /* ---------- живі події ---------- */
 
 function handle(ev) {
+  const kind = ev?.type;
+  if (kind === "trace" || kind === "log") {
+    const eventSession = kind === "trace"
+      ? ev.turn?.session || (ev.turn_id && state.turns.get(ev.turn_id)?.turn.session) || ""
+      : ev.session || "";
+    /* Без активної сесії чекаємо наступний turn_start. Це залишає Watch
+       порожнім у новій розмові й не повертає стару глобальну історію. */
+    if (!state.sessionId && kind === "trace" && ev.event === "turn_start" && eventSession) {
+      if ((ev.turn?.t || 0) < state.viewStartedAt) return;
+      state.sessionId = eventSession;
+    }
+    if (!state.sessionId || eventSession !== state.sessionId) return;
+  }
   // Поки вантажиться історія, живі події чекають: інакше рядок, що прийшов
   // за секунду до відповіді /api/console, ліг би ВИЩЕ за годинну історію —
   // і час у колонці стрибав би назад.
@@ -370,10 +400,13 @@ function connect() {
 
 /* ---------- історія при відкритті ---------- */
 
-async function loadHistory() {
+async function loadHistory(version) {
   let lastLogT = 0;
+  const sessionId = activeSessionId();
+  state.sessionId = sessionId;
   try {
-    const resp = await fetch("/api/trace", { cache: "no-store" });
+    const resp = await fetch(scopedUrl("/api/trace", sessionId), { cache: "no-store" });
+    if (version !== viewLoadVersion) return lastLogT;
     if (resp.ok) {
       const data = await resp.json();
       const rows = [
@@ -387,7 +420,8 @@ async function loadHistory() {
   } catch (err) { /* порожня консоль — не біда */ }
 
   try {
-    const resp = await fetch("/api/console", { cache: "no-store" });
+    const resp = await fetch(scopedUrl("/api/console", sessionId), { cache: "no-store" });
+    if (version !== viewLoadVersion) return lastLogT;
     if (resp.ok) {
       const data = await resp.json();
       for (const entry of data.logs || []) {
@@ -397,6 +431,32 @@ async function loadHistory() {
     }
   } catch (err) { /* те саме */ }
   return lastLogT;
+}
+
+function clearView(message = "Поки тихо. Наступна репліка зʼявиться тут.") {
+  $("flow").textContent = "";
+  $("logs").textContent = "";
+  state.turns.clear();
+  loosePending.clear();
+  state.logs.length = 0;
+  state.pending.length = 0;
+  $("flow").append(el("p", "empty", message));
+}
+
+async function bootSessionView() {
+  const version = ++viewLoadVersion;
+  state.viewStartedAt = Date.now() / 1000;
+  state.booted = false;
+  state.bootBuffer.length = 0;
+  clearView("Поточна розмова ще не має подій.");
+  const lastLogT = await loadHistory(version);
+  if (version !== viewLoadVersion) return;
+  const queued = state.bootBuffer.splice(0);
+  state.booted = true;
+  for (const ev of queued) {
+    if (ev.type === "log" && ev.t !== undefined && ev.t <= lastLogT) continue;
+    handle(ev);
+  }
 }
 
 /* ---------- керування ---------- */
@@ -414,13 +474,7 @@ $("pauseBtn").addEventListener("click", (e) => {
 });
 
 $("clearBtn").addEventListener("click", () => {
-  $("flow").textContent = "";
-  $("logs").textContent = "";
-  state.turns.clear();
-  loosePending.clear();
-  state.logs.length = 0;
-  state.pending.length = 0;
-  $("flow").append(el("p", "empty", "Очищено. Наступна репліка зʼявиться тут."));
+  clearView("Очищено. Наступна подія зʼявиться тут.");
 });
 
 $("logFilter").addEventListener("input", (e) => {
@@ -445,14 +499,15 @@ setInterval(() => {
  */
 async function boot() {
   connect();
-  const lastLogT = await loadHistory();
-  const queued = state.bootBuffer.splice(0);
-  state.booted = true;
-  for (const ev of queued) {
-    if (ev.type === "log" && ev.t !== undefined && ev.t <= lastLogT) continue;
-    handle(ev);
-  }
+  await bootSessionView();
 }
+
+/* Agent Talk змінює session_id у localStorage. Якщо Watch відкритий окремим
+   вікном, storage-подія перемикає його без ручного перезавантаження. */
+window.addEventListener("storage", (event) => {
+  if (!["virtual_bot_session_id", "virtual_bot_code_session_id", "virtual_bot_active_session_kind"].includes(event.key)) return;
+  void bootSessionView();
+});
 
 boot();
 pollProcesses();

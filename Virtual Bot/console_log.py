@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 
 import events
+import trace_log
 
 
 def _is_noise(record: logging.LogRecord, msg: str) -> bool:
@@ -41,6 +42,7 @@ class _ConsoleHandler(logging.Handler):
                 "level": record.levelname,
                 "name": record.name,
                 "msg": msg,
+                "session": trace_log.current_session(),
             })
         except Exception:  # noqa: BLE001 — консоль НІКОЛИ не має права зламати логер
             pass

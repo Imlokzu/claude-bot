@@ -14,6 +14,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 import main
+import events
 import trace_log
 
 
@@ -47,6 +48,25 @@ class TraceLogTests(unittest.TestCase):
         self.assertEqual(data["turns"], [])
         self.assertEqual(len(data["events"]), 1)
         self.assertEqual(data["events"][0]["stage"], "asr")
+
+    def test_recent_can_be_scoped_to_one_session(self) -> None:
+        first = trace_log.start_turn("chat", "перше", "s1")
+        with trace_log.bind(first):
+            trace_log.end_turn(mode="demo")
+        second = trace_log.start_turn("chat", "друге", "s2")
+        with trace_log.bind(second):
+            trace_log.end_turn(mode="demo")
+
+        scoped = trace_log.recent("s1")
+        self.assertEqual([turn["session"] for turn in scoped["turns"]], ["s1"])
+        self.assertEqual(trace_log.recent("")["turns"], [])
+
+    def test_log_history_can_be_scoped_to_one_session(self) -> None:
+        events.publish_log({"session": "log-s1", "t": 1, "level": "INFO", "name": "test", "msg": "one"})
+        events.publish_log({"session": "log-s2", "t": 2, "level": "INFO", "name": "test", "msg": "two"})
+
+        self.assertEqual([entry["msg"] for entry in events.recent_logs("log-s1")], ["one"])
+        self.assertEqual(events.recent_logs(""), [])
 
     def test_end_turn_is_idempotent(self) -> None:
         turn_id = trace_log.start_turn("chat", "текст")

@@ -113,6 +113,164 @@ body {
   white-space: nowrap;
 }
 
+/* Учасники — окремий рядок між шапкою й стрічкою. Це не повідомлення і не
+   налаштування моделі: тут одразу видно, що в розмові є людина та агент. */
+.chat-presence-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -4px 2px 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-card) 86%, transparent);
+}
+
+.chat-presence-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chat-participant,
+.chat-join-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 8px 4px 5px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: var(--bg-panel);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chat-participant.active {
+  border-color: color-mix(in srgb, var(--green) 55%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--green) 10%, var(--bg-panel));
+}
+
+.chat-participant small {
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: .04em;
+}
+
+.chat-participant-mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  color: #fff;
+  background: var(--blue);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+
+.chat-participant-agent .chat-participant-mark {
+  background: var(--green);
+}
+
+.chat-join-btn {
+  cursor: pointer;
+  color: var(--green);
+  border-style: dashed;
+  font: inherit;
+}
+
+.chat-join-btn:hover,
+.chat-join-btn:focus-visible {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 8%, var(--bg-panel));
+  outline: none;
+}
+
+.chat-join-btn kbd {
+  padding: 1px 4px;
+  border: 1px solid var(--border-bright);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.chat-turn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  flex: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.chat-turn b {
+  color: var(--ok);
+  font-size: 11px;
+}
+
+.chat-turn.agent-turn b { color: var(--green); }
+
+.participant-event-notice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--ok) 35%, var(--border));
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--ok) 8%, var(--bg-panel));
+  font-size: 11px;
+}
+
+.participant-event-notice svg { color: var(--ok); }
+.participant-event-notice b { color: var(--text); font-weight: 600; }
+.participant-event-notice time { color: var(--text-muted); font-family: var(--font-mono); font-size: 10px; }
+.participant-event-left { border-color: var(--border); background: var(--bg-panel); }
+.participant-event-left svg { color: var(--text-muted); }
+.participant-join-lead { margin: 0 0 12px; color: var(--text-muted); line-height: 1.5; }
+
+/* Системні рядки Bubble.System — по центру стрічки, без аватара. */
+.chat-messages .ant-bubble-system { justify-content: center; }
+
+/* Аватари бульбашок — свої: в antd-x 2.x avatar є слотом, не Avatar. */
+.bubble-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+.bubble-avatar-user { background: var(--blue); }
+.bubble-avatar-ai { background: var(--green); }
+
+.chat-participant.pending { border-style: dashed; }
+
+.chat-leave-btn {
+  color: var(--text-muted);
+  border-style: solid;
+}
+.chat-leave-btn:hover,
+.chat-leave-btn:focus-visible {
+  color: var(--danger, #c0392b);
+  border-color: currentColor;
+  background: var(--bg-panel);
+}
+
 /* Стрічка повідомлень і поле вводу — ОДНА картка: текст «провалюється»
    під смугу вводу, а не впирається в другу рамку, тож місця більше. */
 .chat-body {
@@ -2802,6 +2960,15 @@ body {
   .chat-panel-header {
     padding: 8px 12px 10px;
   }
+
+  .chat-presence-bar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+    margin: -2px 12px 0;
+  }
+
+  .chat-turn { padding-left: 2px; }
 
   /* Друга картка зникає повністю */
   .chat-body {
