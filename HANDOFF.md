@@ -164,3 +164,23 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 - Перевірки: `PYTHONPATH=. .venv/bin/pytest -q` → **214 passed, 1 skipped**;
   `npm run build` у `Virtual Bot/chat-panel`, `npm run typecheck`
   у `claude-bot-app` та `node --check` для Watch — чисті.
+
+## 9. Сесія 2026-09-03: учасники розмови (в роботі)
+
+- У гілці `feat/bot-tools-workspace-and-chat-ui` з HEAD `070ef2b` є
+  незакомічена фіча явних учасників Agent Talk: `participants[]`, `events[]`,
+  `participant_name` у чаті, рядок присутності та системні події в панелі.
+- Базовий зріз цієї роботи перевірено: `.venv/bin/pytest -q` → **218 passed,
+  1 skipped**; `npm run build` у `Virtual Bot/chat-panel` — чистий, assets
+  синхронні з вихідниками.
+- Узгоджений leave-контракт: `POST /api/sessions/{id}/participants/leave`
+  з тілом `{"name":"…"}` повертає `{"left":true|false}` і HTTP 200;
+  успішний leave прибирає ім’я з активних `participants` та додає подію
+  `participant_left` до `events`. Повторний leave є ідемпотентним.
+- До коміту ще потрібні: санітизація рамкових/керівних символів імені та
+  відсікання імені бота, коректне очищення порожніх сесій без обходу `_prune`,
+  UI-виправлення гарячої клавіші й системних бульбашок, повні тести та
+  ручний smoke test.
+- Учасники наразі свідомо належать режиму «Чат»; code mode не приймає
+  `participant_name`. Документація має залишатися синхронною після фінального
+  коміту фічі.
