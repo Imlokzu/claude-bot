@@ -1,0 +1,11 @@
+{
+  "id": "device-settings",
+  "type": "app",
+  "label": "Підключення",
+  "icon": "settings",
+  "tint": "#86a8ff",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Bluetooth, Wi‑Fi, заряд і гучність окремих джерел.",
+  "entry": "index.html"
+}
