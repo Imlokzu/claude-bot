@@ -212,14 +212,17 @@
       } catch (_) {}
     }
     appRoot.addEventListener("pointerdown", (event) => {
-      if (swipeStart || event.target.closest("button, input, select, textarea")) return;
+      if (swipeStart || event.target.closest("input, select, textarea")) return;
+      const onButton = !!event.target.closest("button");
       swipeStart = {
         x: event.clientX,
         y: event.clientY,
         pointerId: event.pointerId,
         scrollable: !!event.target.closest(".content"),
       };
-      try { appRoot.setPointerCapture(event.pointerId); } catch (_) {}
+      if (!onButton) {
+        try { appRoot.setPointerCapture(event.pointerId); } catch (_) {}
+      }
     });
     function finishSwipe(event) {
       if (!swipeStart || swipeStart.pointerId !== event.pointerId) return;
@@ -235,6 +238,8 @@
     }
     appRoot.addEventListener("pointerup", finishSwipe);
     appRoot.addEventListener("pointercancel", finishSwipe);
+    window.addEventListener("pointerup", finishSwipe);
+    window.addEventListener("pointercancel", finishSwipe);
     appRoot.addEventListener("lostpointercapture", (event) => {
       if (swipeStart?.pointerId === event.pointerId) swipeStart = null;
     });

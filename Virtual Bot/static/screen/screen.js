@@ -226,17 +226,21 @@ function releaseStagePointer(pointerId) {
   } catch (e) {}
 }
 
-/* Дотик, що починається на керуванні або в прокрутці, — НЕ жест екрана:
-   інакше тягнення повзунка гортало б тайли, а скрол чату відкривав шар. */
+/* Повзунки й прокручувані області лишаємо їхнім власним жестам. Усе інше,
+   включно з картками та кнопками, може бути початком свайпу: тап і далі
+   обробляється самим контролом, а навігація спрацьовує лише після порогу. */
 function isInteractive(el) {
   return !!(el && el.closest &&
-    el.closest("input, button, textarea, select, .chat-log, .feed, .qs-slider, .face-photo"));
+    el.closest("input, textarea, select, .chat-log, .feed, .qs-slider, .face-photo, .say-text"));
 }
 
 stage.addEventListener("pointerdown", (e) => {
   if (ptrStart || isInteractive(e.target)) return;
+  const onButton = !!e.target.closest?.("button");
   ptrStart = { x: e.clientX, y: e.clientY, t: Date.now(), pointerId: e.pointerId };
-  try { stage.setPointerCapture(e.pointerId); } catch (e) {}
+  if (!onButton) {
+    try { stage.setPointerCapture(e.pointerId); } catch (e) {}
+  }
 });
 
 function finishStagePointer(e) {
@@ -272,11 +276,14 @@ function finishStagePointer(e) {
 }
 
 stage.addEventListener("pointerup", finishStagePointer);
-stage.addEventListener("pointercancel", (e) => {
+function cancelStagePointer(e) {
   if (ptrStart?.pointerId !== e.pointerId) return;
   releaseStagePointer(ptrStart.pointerId);
   ptrStart = null;
-});
+}
+stage.addEventListener("pointercancel", cancelStagePointer);
+window.addEventListener("pointerup", finishStagePointer);
+window.addEventListener("pointercancel", cancelStagePointer);
 stage.addEventListener("lostpointercapture", (e) => {
   if (ptrStart?.pointerId === e.pointerId) ptrStart = null;
 });
@@ -2163,7 +2170,7 @@ document.querySelector("[data-apps-close]").addEventListener("click", closeApps)
 (function initAppsGesture() {
   let holdTimer = 0;
   stage.addEventListener("pointerdown", (e) => {
-    if (isInteractive(e.target) || appsOpen()) return;
+    if (isInteractive(e.target) || e.target.closest?.("button") || appsOpen()) return;
     const pointerId = e.pointerId;
     holdTimer = setTimeout(() => {
       if (ptrStart?.pointerId === pointerId) {
