@@ -3409,7 +3409,7 @@ function postStoreAppSkin(frame = null) {
       type: "botSkin",
       vars: currentSkinVars(),
       theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
-    }, "*");
+    }, window.location.origin);
   } catch (e) {}
 }
 
@@ -3427,7 +3427,7 @@ function openStoreApp(entry) {
 
 window.addEventListener("message", (event) => {
   const frame = layerApp.querySelector(".storeapp-frame");
-  if (!frame || event.source !== frame.contentWindow) return;
+  if (!frame || event.source !== frame.contentWindow || event.origin !== window.location.origin) return;
   if (event.data?.type === "closeStoreApp") closeAppLayer();
   if (event.data?.type === "storeAppSwipe" && ["left", "right", "down"].includes(event.data.direction)) closeAppLayer();
 });

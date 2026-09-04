@@ -202,7 +202,7 @@
       clearTimeout(state.toastTimer);
       state.toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
     }
-    function post(type, payload = {}) { window.parent.postMessage({ type, ...payload }, "*"); }
+    function post(type, payload = {}) { window.parent.postMessage({ type, ...payload }, window.location.origin); }
     const appRoot = $(".app");
     let swipeStart = null;
     function releaseSwipe(pointerId) {
@@ -212,22 +212,32 @@
       } catch (_) {}
     }
     appRoot.addEventListener("pointerdown", (event) => {
-      if (event.target.closest("button, input, select, textarea")) return;
-      swipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+      if (swipeStart || event.target.closest("button, input, select, textarea")) return;
+      swipeStart = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId: event.pointerId,
+        scrollable: !!event.target.closest(".content"),
+      };
       try { appRoot.setPointerCapture(event.pointerId); } catch (_) {}
     });
-    appRoot.addEventListener("pointerup", (event) => {
+    function finishSwipe(event) {
       if (!swipeStart || swipeStart.pointerId !== event.pointerId) return;
       const start = swipeStart;
       swipeStart = null;
       releaseSwipe(start.pointerId);
+      if (event.type === "pointercancel" && start.scrollable) return;
       const dx = event.clientX - start.x;
       const dy = event.clientY - start.y;
       if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
       if (Math.abs(dx) >= Math.abs(dy)) post("storeAppSwipe", { direction: dx < 0 ? "left" : "right" });
       else if (dy > 0) post("storeAppSwipe", { direction: "down" });
+    }
+    appRoot.addEventListener("pointerup", finishSwipe);
+    appRoot.addEventListener("pointercancel", finishSwipe);
+    appRoot.addEventListener("lostpointercapture", (event) => {
+      if (swipeStart?.pointerId === event.pointerId) swipeStart = null;
     });
-    appRoot.addEventListener("pointercancel", () => { swipeStart = null; });
     function signal(value) {
       const filled = Math.max(0, Math.min(4, Math.round(Number(value || 0) / 25)));
       return `<span class="signal" aria-label="Сигнал ${value}%">${[1, 2, 3, 4].map((item) => `<i class="${item <= filled ? "on" : ""}"></i>`).join("")}</span>`;
@@ -338,7 +348,7 @@
     });
     $("#close").addEventListener("click", () => post("closeStoreApp"));
     window.addEventListener("message", (event) => {
-      if (event.data?.type !== "botSkin") return;
+      if (event.source !== window.parent || event.origin !== window.location.origin || event.data?.type !== "botSkin") return;
       if (event.data.vars) Object.entries(event.data.vars).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
       document.documentElement.dataset.theme = event.data.theme === "light" ? "light" : "dark";
     });
