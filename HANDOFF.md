@@ -213,6 +213,11 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   палітру `device-settings` перевірено headless-рендером; bridge приймає
   повідомлення лише від батьківського `/screen` з тим самим origin, а
   вертикальний скрол списку не закриває застосунок випадково.
+- 2026-09-04 комітом `070b096` swipe-зона розширена на всю сцену й store app:
+  картки та кнопки можуть починати горизонтальний/вертикальний swipe, але
+  tap по кнопках не губиться; input/select/textarea, повзунки та прокрутка
+  залишаються інтерактивними. Для кнопок Pointer Capture не забирається, а
+  завершення жесту добирається через `window`.
 - Після fix: `pytest -q tests/test_screen_store.py tests/test_system_status.py`
   → **17 passed**; `node --check` для обох JS-контурів чистий; живий smoke
   на `8100`: `/screen`, статика застосунку, `/api/system/status` → 200,
