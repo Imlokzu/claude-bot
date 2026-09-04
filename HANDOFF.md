@@ -207,3 +207,13 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   Клод Бота (`#16181a`, `#1e2124`, мідний `#d17a58`, оливковий `#8ca879`),
   ущільнено header/tabs, виправлено злипання title/subtitle і залишено
   прокручувані touch-картки для малого екрану.
+- 2026-09-04 комітами `2c242b2` і `931ba43` виправлено жести та тему:
+  карусель і шари використовують Pointer Capture, застосунок у iframe має
+  власний swipe-bridge, а `light` передається разом із skin-змінними. Білу
+  палітру `device-settings` перевірено headless-рендером; bridge приймає
+  повідомлення лише від батьківського `/screen` з тим самим origin, а
+  вертикальний скрол списку не закриває застосунок випадково.
+- Після fix: `pytest -q tests/test_screen_store.py tests/test_system_status.py`
+  → **17 passed**; `node --check` для обох JS-контурів чистий; живий smoke
+  на `8100`: `/screen`, статика застосунку, `/api/system/status` → 200,
+  спроба `static/../main.py` → 404.
