@@ -15,8 +15,30 @@
       --accent: #d17a58;
       --accent-soft: rgba(209, 122, 88, .14);
       --ok: #8ca879;
+      --ok-soft: rgba(139, 213, 168, .13);
       --warn: #d7a65b;
+      --warn-soft: rgba(242, 199, 119, .13);
       --off: #6b7175;
+      --route-icon-bg: rgba(255, 255, 255, .05);
+      color-scheme: dark;
+    }
+
+    :root[data-theme="light"] {
+      --bg: #efe7d9;
+      --panel: #fbf6ec;
+      --panel-strong: #f2e8d8;
+      --line: #ddcdb2;
+      --text: #2f271f;
+      --muted: #7d6d5c;
+      --accent: #b95f3d;
+      --accent-soft: rgba(185, 95, 61, .12);
+      --ok: #6f8b5f;
+      --ok-soft: rgba(111, 139, 95, .14);
+      --warn: #9a6b27;
+      --warn-soft: rgba(154, 107, 39, .14);
+      --off: #a8998a;
+      --route-icon-bg: rgba(85, 65, 42, .06);
+      color-scheme: light;
     }
 
     * { box-sizing: border-box; }
@@ -34,7 +56,7 @@
 
     button, input { font: inherit; }
     button { color: inherit; }
-    .app { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 7px 8px 8px; gap: 5px; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 7px 8px 8px; gap: 5px; touch-action: pan-y; }
     .topbar { display: flex; align-items: center; justify-content: space-between; flex: none; min-height: 25px; }
     .brand { display: flex; align-items: center; min-width: 0; gap: 7px; }
     .brand-mark { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
@@ -48,7 +70,7 @@
     .summary-copy { min-width: 0; }
     .summary-name { overflow: hidden; font-size: 13px; font-weight: 750; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
     .summary-sub { display: flex; align-items: center; gap: 5px; margin-top: 2px; color: var(--muted); font-size: 9px; }
-    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(139, 213, 168, .12); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
     .battery { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
     .battery-top { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
     .battery-shell { position: relative; width: 42px; height: 10px; padding: 2px; border: 1px solid var(--muted); border-radius: 4px; }
@@ -69,8 +91,8 @@
     .connection-card { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 47px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); text-align: left; cursor: pointer; }
     .connection-card:active, .device-row:active { transform: translateY(1px); background: var(--panel-strong); }
     .icon-box { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 7px; background: var(--accent-soft); color: var(--accent); }
-    .icon-box.green { background: rgba(139, 213, 168, .13); color: var(--ok); }
-    .icon-box.amber { background: rgba(242, 199, 119, .13); color: var(--warn); }
+    .icon-box.green { background: var(--ok-soft); color: var(--ok); }
+    .icon-box.amber { background: var(--warn-soft); color: var(--warn); }
     .copy { min-width: 0; flex: 1; }
     .title { display: block; overflow: hidden; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
     .subtitle { display: block; overflow: hidden; margin-top: 2px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
@@ -97,14 +119,14 @@
     .mixer-hint { max-width: 145px; color: var(--muted); font-size: 9px; line-height: 1.3; text-align: right; }
     .route-list { display: grid; gap: 6px; margin-top: 8px; }
     .route-row { display: grid; grid-template-columns: 23px minmax(0, 1fr) auto; align-items: center; gap: 7px; }
-    .route-icon { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; background: rgba(255, 255, 255, .05); color: var(--muted); }
+    .route-icon { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; background: var(--route-icon-bg); color: var(--muted); }
     .route-copy { min-width: 0; }
     .route-name { overflow: hidden; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
     .route-controls { display: flex; align-items: center; gap: 5px; }
     .route-range { width: 67px; height: 4px; accent-color: var(--accent); cursor: pointer; }
     .route-value { min-width: 22px; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; text-align: right; }
     .mute { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
-    .mute.on { border-color: rgba(242, 199, 119, .5); background: rgba(242, 199, 119, .12); color: var(--warn); }
+    .mute.on { border-color: var(--warn-soft); background: var(--warn-soft); color: var(--warn); }
     .action { width: 100%; min-height: 27px; border: 1px solid var(--accent); border-radius: 14px; background: transparent; color: var(--accent); font-size: 9px; font-weight: 700; cursor: pointer; }
     .action:active { background: var(--accent-soft); }
     .back { display: flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 4px; border: 0; background: transparent; color: var(--accent); font-size: 10px; font-weight: 700; cursor: pointer; }
@@ -117,7 +139,7 @@
     .empty { padding: 18px 10px; color: var(--muted); text-align: center; }
     .toast { position: fixed; right: 9px; bottom: 8px; left: 9px; min-height: 26px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-strong); color: var(--text); font-size: 10px; opacity: 0; pointer-events: none; transform: translateY(5px); transition: opacity .16s ease, transform .16s ease; }
     .toast.show { opacity: 1; transform: translateY(0); }
-    .toast.error { border-color: rgba(242, 199, 119, .55); color: var(--warn); }
+    .toast.error { border-color: var(--warn-soft); color: var(--warn); }
 
     svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
     .brand-mark svg { width: 16px; height: 16px; }
@@ -181,6 +203,31 @@
       state.toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
     }
     function post(type, payload = {}) { window.parent.postMessage({ type, ...payload }, "*"); }
+    const appRoot = $(".app");
+    let swipeStart = null;
+    function releaseSwipe(pointerId) {
+      if (pointerId == null || typeof appRoot.hasPointerCapture !== "function") return;
+      try {
+        if (appRoot.hasPointerCapture(pointerId)) appRoot.releasePointerCapture(pointerId);
+      } catch (_) {}
+    }
+    appRoot.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button, input, select, textarea")) return;
+      swipeStart = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+      try { appRoot.setPointerCapture(event.pointerId); } catch (_) {}
+    });
+    appRoot.addEventListener("pointerup", (event) => {
+      if (!swipeStart || swipeStart.pointerId !== event.pointerId) return;
+      const start = swipeStart;
+      swipeStart = null;
+      releaseSwipe(start.pointerId);
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+      if (Math.abs(dx) >= Math.abs(dy)) post("storeAppSwipe", { direction: dx < 0 ? "left" : "right" });
+      else if (dy > 0) post("storeAppSwipe", { direction: "down" });
+    });
+    appRoot.addEventListener("pointercancel", () => { swipeStart = null; });
     function signal(value) {
       const filled = Math.max(0, Math.min(4, Math.round(Number(value || 0) / 25)));
       return `<span class="signal" aria-label="Сигнал ${value}%">${[1, 2, 3, 4].map((item) => `<i class="${item <= filled ? "on" : ""}"></i>`).join("")}</span>`;
@@ -291,7 +338,9 @@
     });
     $("#close").addEventListener("click", () => post("closeStoreApp"));
     window.addEventListener("message", (event) => {
-      if (event.data?.type === "botSkin" && event.data.vars) Object.entries(event.data.vars).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
+      if (event.data?.type !== "botSkin") return;
+      if (event.data.vars) Object.entries(event.data.vars).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
+      document.documentElement.dataset.theme = event.data.theme === "light" ? "light" : "dark";
     });
     refresh();
   </script>

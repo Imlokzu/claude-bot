@@ -219,6 +219,13 @@ function stageScale() {
   return stage.getBoundingClientRect().width / STAGE_W || 1;
 }
 
+function releaseStagePointer(pointerId) {
+  if (pointerId == null || typeof stage.hasPointerCapture !== "function") return;
+  try {
+    if (stage.hasPointerCapture(pointerId)) stage.releasePointerCapture(pointerId);
+  } catch (e) {}
+}
+
 /* Дотик, що починається на керуванні або в прокрутці, — НЕ жест екрана:
    інакше тягнення повзунка гортало б тайли, а скрол чату відкривав шар. */
 function isInteractive(el) {
@@ -227,14 +234,17 @@ function isInteractive(el) {
 }
 
 stage.addEventListener("pointerdown", (e) => {
-  ptrStart = isInteractive(e.target) ? null : { x: e.clientX, y: e.clientY, t: Date.now() };
+  if (ptrStart || isInteractive(e.target)) return;
+  ptrStart = { x: e.clientX, y: e.clientY, t: Date.now(), pointerId: e.pointerId };
+  try { stage.setPointerCapture(e.pointerId); } catch (e) {}
 });
 
-stage.addEventListener("pointerup", (e) => {
+function finishStagePointer(e) {
   const s = ptrStart;
+  if (!s || s.pointerId !== e.pointerId) return;
   ptrStart = null;
+  releaseStagePointer(s.pointerId);
   wake();
-  if (!s) return;
 
   const k = stageScale();
   const dx = (e.clientX - s.x) / k;
@@ -259,6 +269,16 @@ stage.addEventListener("pointerup", (e) => {
     if (layer === "apps") openLayer(null);
     else if (!layer) openLayer("quick");
   }
+}
+
+stage.addEventListener("pointerup", finishStagePointer);
+stage.addEventListener("pointercancel", (e) => {
+  if (ptrStart?.pointerId !== e.pointerId) return;
+  releaseStagePointer(ptrStart.pointerId);
+  ptrStart = null;
+});
+stage.addEventListener("lostpointercapture", (e) => {
+  if (ptrStart?.pointerId === e.pointerId) ptrStart = null;
 });
 
 // Клавіші — лише для перевірки з десктопа, на Pi їх немає
@@ -2144,7 +2164,14 @@ document.querySelector("[data-apps-close]").addEventListener("click", closeApps)
   let holdTimer = 0;
   stage.addEventListener("pointerdown", (e) => {
     if (isInteractive(e.target) || appsOpen()) return;
-    holdTimer = setTimeout(() => { ptrStart = null; openApps(); }, 600);
+    const pointerId = e.pointerId;
+    holdTimer = setTimeout(() => {
+      if (ptrStart?.pointerId === pointerId) {
+        releaseStagePointer(pointerId);
+        ptrStart = null;
+      }
+      openApps();
+    }, 600);
   });
   const cancel = () => clearTimeout(holdTimer);
   stage.addEventListener("pointerup", cancel);
@@ -3350,6 +3377,7 @@ function applySkinVars(vars) {
     });
   }
   repaintPixels();
+  postStoreAppSkin();
 }
 
 function applySkin(manifest) {
@@ -3373,6 +3401,18 @@ function currentSkinVars() {
   try { return JSON.parse(readPref(SKIN_VARS_KEY, "null")) || {}; } catch (e) { return {}; }
 }
 
+function postStoreAppSkin(frame = null) {
+  const target = frame || layerApp.querySelector(".storeapp-frame");
+  if (!target?.contentWindow) return;
+  try {
+    target.contentWindow.postMessage({
+      type: "botSkin",
+      vars: currentSkinVars(),
+      theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+    }, "*");
+  } catch (e) {}
+}
+
 function openStoreApp(entry) {
   openAppLayer(entry.title || "app.head", (box) => {
     box.classList.add("storeapp-body");
@@ -3380,16 +3420,17 @@ function openStoreApp(entry) {
     frame.className = "storeapp-frame";
     frame.src = "/store-apps/" + encodeURIComponent(entry.pkg) + "/index.html";
     frame.title = entry.title || entry.pkg;
-    // CSS-змінні крізь iframe не проходять — скін шлемо повідомленням;
-    // застосунок підхоплює його слухачем message (див. docs/SCREEN-PLATFORM.md)
-    frame.addEventListener("load", () => {
-      try {
-        frame.contentWindow.postMessage({ type: "botSkin", vars: currentSkinVars() }, "*");
-      } catch (e) { /* застосунок може і не чекати скіна */ }
-    });
+    frame.addEventListener("load", () => postStoreAppSkin(frame));
     box.appendChild(frame);
   });
 }
+
+window.addEventListener("message", (event) => {
+  const frame = layerApp.querySelector(".storeapp-frame");
+  if (!frame || event.source !== frame.contentWindow) return;
+  if (event.data?.type === "closeStoreApp") closeAppLayer();
+  if (event.data?.type === "storeAppSwipe" && ["left", "right", "down"].includes(event.data.direction)) closeAppLayer();
+});
 
 function storeIconEl(name) {
   // Іконка рядка магазину: той самий drawerIcon, що й у шухляді
