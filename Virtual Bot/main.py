@@ -66,6 +66,7 @@ import emotions
 import events
 import music
 import screen_store
+import system_status
 import piper_voice
 import memory
 import openclaw_store
@@ -746,6 +747,7 @@ app.mount(
     StaticFiles(directory=cfg.STORE_DIR / "installed" / "apps", check_dir=False),
     name="store-apps",
 )
+app.include_router(system_status.router)
 
 
 # ------------------------------------------------------------------ музика (Now Playing)
