@@ -184,3 +184,21 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 - Учасники наразі свідомо належать режиму «Чат»; code mode не приймає
   `participant_name`. Документація має залишатися синхронною після фінального
   коміту фічі.
+
+## 10. Сесія 2026-09-04: virtual device settings
+
+- Закомічено ізольований шар `56b3536` (`feat(screen): add virtual device
+  settings package`) без змін у зайнятих `main.py`, `screen.js`, `screen.css`,
+  `i18n.js`, ASR або YouTube-файлах.
+- `Virtual Bot/system_status.py` надає роутер із `/api/system/status`,
+  `/api/system/audio/devices` і `/api/system/network`. У `virtual` snapshot є
+  назва/заряд бота, Wi‑Fi, Bluetooth/навушники, мікрофон/динамік і маршрути
+  гучності для бота, YouTube, будильника та сповіщень.
+- `Virtual Bot/store/packages/device-settings/` — готовий 320×240 застосунок
+  магазину: вкладки «Звʼязок»/«Звук», картки Wi‑Fi/Bluetooth, вибір аудіо,
+  per-app повзунки та mute. Значення гучності зберігаються локально й
+  передаються майбутньому native-мікшеру через `postMessage`.
+- Перевірки ізольованої частини: `17 passed`, Python compile і JS syntax
+  чисті. Для повної інтеграції потрібно додати в `main.py` імпорт
+  `system_status` та один рядок `app.include_router(system_status.router)`;
+  це робиться власником shared-ділянки після завершення його правок.
