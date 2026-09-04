@@ -284,7 +284,8 @@
       const range = event.target.closest("[data-route]");
       if (!range) return;
       const value = Number(range.value);
-      const label = $(`[data-value="${CSS.escape(range.dataset.route)}"]`);
+      const label = Array.from(document.querySelectorAll("[data-value]"))
+        .find((node) => node.dataset.value === range.dataset.route);
       if (label) label.textContent = `${value}%`;
       updateRoute(range.dataset.route, { volume: value, muted: false });
     });

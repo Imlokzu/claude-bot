@@ -92,6 +92,11 @@ def _virtual_status() -> dict[str, Any]:
         "virtual": True,
         "battery": 76 if headphones_connected else None,
     }
+    bluetooth_headphones = {
+        **headphones_device,
+        "kind": "headphones",
+        "last_seen": "щойно" if headphones_connected else "сьогодні о 09:42",
+    }
     return {
         "mode": "virtual",
         "updated_at": _now(),
@@ -124,9 +129,7 @@ def _virtual_status() -> dict[str, Any]:
             "discoverable": False,
             "devices": [
                 {
-                    **headphones_device,
-                    "battery": 76 if headphones_connected else None,
-                    "last_seen": "щойно" if headphones_connected else "сьогодні о 09:42",
+                    **bluetooth_headphones,
                 },
                 {
                     **_virtual_device("Клавіатура", "keyboard", "keyboard", False),

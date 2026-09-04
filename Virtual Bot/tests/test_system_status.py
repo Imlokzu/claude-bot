@@ -22,6 +22,7 @@ def test_virtual_status_has_connection_and_audio_contract() -> None:
     assert payload["device"]["battery"]["level"] == 82
     assert payload["wifi"]["status"] == "connected"
     assert payload["bluetooth"]["enabled"] is True
+    assert payload["bluetooth"]["devices"][0]["kind"] == "headphones"
     assert payload["audio"]["output"]["kind"] == "output"
     assert {route["id"] for route in payload["audio"]["routes"]} >= {
         "bot",
