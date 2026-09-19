@@ -205,7 +205,12 @@ surprised | love | sleepy`). Бекенд парсить тег і прибир�
 | GET | `/` | Панель (роздає `static/index.html`) |
 | GET | `/api/status` | `{"omni","openclaw","anthropic","chat2api","vision","display","mode"}` |
 | POST | `/api/chat` | `{"message"}` → `{"reply","emotion"}` |
-| GET | `/api/models` | `{"models":[{"id","label"}],"selected","default"}` — моделі Omni |
+| GET | `/api/models` | `{"models":[{"id","label"}],"selected","default"}` — моделі Omni (картинки + прямий виклик) |
+| GET | `/api/brain/models` | моделі САМОГО OpenClaw (`openclaw models list`) + вибір і рівень думання — те, чим бот реально відповідає в чаті |
+| POST | `/api/brain/model` | перекриває модель OpenClaw (заголовок `x-openclaw-model`) |
+| POST | `/api/brain/thinking` | рівень думання OpenClaw (`agents.defaults.thinkingDefault`) |
+| GET | `/api/chat/context` | з чого складається контекст наступного запиту, у символах |
+| POST | `/api/sessions/{id}/compact` | стискає розмову в переказ (оригінал — у `pre-compact/`) |
 | POST | `/api/model` | `{"model":"<id>"}` → перемкнути модель Omni (лише зі списку) |
 | GET | `/api/vision/snapshot` | Проксі JSON з Vision Agent; `503` якщо офлайн |
 | GET | `/api/memory/list` | `{"files":[{"path","title"}]}` |

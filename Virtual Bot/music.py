@@ -139,11 +139,27 @@ def _search_sync(query: str, limit: int) -> list[dict[str, Any]]:
     for entry in entries:
         if not entry or not entry.get("id"):
             continue
+        # Пошук YouTube повертає не лише відео: перший рядок на запит по
+        # імені — це майже завжди КАНАЛ (id виду UC…, 24 символи). Такий
+        # «трек» не грає нічим і ніколи — саме він і був «відео не
+        # вмикається» у списку. Відео — рівно 11 символів id.
+        if len(str(entry["id"])) != 11:
+            continue
+        if str(entry.get("_type") or "url") in {"channel", "playlist"}:
+            continue
+        # Прямий ефір: у нього немає аудіо-itag'а (тільки HLS), тож
+        # заграти його ми не можемо — але клієнт має це ПОКАЗАТИ, а не
+        # дізнаватись тишею після тапу.
+        live = bool(entry.get("is_live")) or str(entry.get("live_status") or "") == "is_live"
         out.append({
             "id": entry["id"],
             "title": entry.get("title") or "Без назви",
             "uploader": entry.get("uploader") or entry.get("channel") or "",
             "duration": int(entry["duration"]) if entry.get("duration") else 0,
+            # Превʼю беремо з i.ytimg.com за id: у flat-пошуку yt-dlp мініатюри
+            # приходять не завжди, а ця схема стабільна роками.
+            "thumb": f"https://i.ytimg.com/vi/{entry['id']}/mqdefault.jpg",
+            "live": live,
             "provider": "youtube",
         })
     return out
@@ -193,12 +209,22 @@ def _pick_audio_url(info: dict[str, Any]) -> str:
     return url
 
 
+class LiveStreamUnsupported(RuntimeError):
+    """Прямий ефір: аудіо-доріжки (itag 140) в нього немає, тільки HLS."""
+
+
 def _extract_sync(video_id: str) -> str:
     opts = dict(_YDL_BASE)
     opts["format"] = "bestaudio/best"
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-    return _pick_audio_url(info or {})
+    info = info or {}
+    # Прямий ефір відрізаємо тут, поки причина ще відома: далі по стеку
+    # лишиться тільки «жодне джерело не відповіло», і за цим текстом уже не
+    # видно, що справа не в мережі, а в тому, що аудіо-доріжки просто немає.
+    if info.get("is_live") or str(info.get("live_status") or "") == "is_live":
+        raise LiveStreamUnsupported(video_id)
+    return _pick_audio_url(info)
 
 
 # ---------------------------------------------------------------- Invidious
@@ -337,6 +363,13 @@ async def open_audio_stream(video_id: str, range_header: str | None, attempts: i
             await asyncio.sleep(1.0)
             continue
         if status < 500:
+            # 200 із Content-Length: 0 — саме так виглядає прямий ефір:
+            # інстанс не має чого віддати по itag 140. Раніше це доїжджало
+            # до плеєра як «успішний» порожній потік, і трек просто не грав,
+            # НІЧОГО не сказавши. Ретраї тут не помагають — це не флап.
+            if headers.get("content-length") == "0":
+                await body.aclose()
+                raise LiveStreamUnsupported(video_id)
             return status, headers, body
         # 5xx від інстансу: закриваємо і ретраїмо з новою ссилкою
         await body.aclose()
@@ -345,6 +378,95 @@ async def open_audio_stream(video_id: str, range_header: str | None, attempts: i
         _URL_CACHE.pop(video_id, None)
         await asyncio.sleep(1.0)
     raise last_exc or RuntimeError("стрім не відкрився")
+
+
+# ------------------------------------------------------------------- відео
+#
+# Тут інша механіка, ніж в аудіо, і не з примхи. Аудіо ми беремо через
+# Invidious (`itag=140&local=true`), і для ВІДЕО той самий шлях не працює:
+# перевірено на всіх трьох інстансах із конфігу — `itag=18` віддає
+# text/html (504 / 502 / сторінку помилки), тобто змукшованої доріжки вони
+# просто не проксюють.
+#
+# Робочий шлях — yt-dlp з КЛІЄНТОМ `android`. Це не «магія»: у web-клієнта
+# googlevideo тепер вимагає PO-токен, і пряме посилання віддає 403 навіть із
+# правильними заголовками (перевірено: web, tv, mweb, web_safari, ios — усі
+# або 403, або «page needs to be reloaded»). Android-клієнт токена не
+# вимагає, і itag 18 (mp4 360p, відео+звук в одному файлі) віддає 206 з
+# `video/mp4`. 360p для екрана 320×240 — з запасом.
+#
+# Чому саме ЗМУКШОВАНИЙ itag, а не окремі доріжки: <video> у браузері не
+# зіллє два потоки без MSE, а MSE на Raspberry Pi 3 — це вже плеєр, а не
+# сторінка. Один файл грає штатний тег.
+
+_ITAG_MUXED = 18
+# Ті самі 30 хвилин, що й для аудіо, але СВІЙ кеш: інакше перемикання
+# «дивитись → слухати» на тому самому відео віддавало б відео-ссилку в
+# аудіо-плеєр (і навпаки), бо ключ у них один — id.
+_VIDEO_CACHE: dict[str, tuple[float, str, dict[str, str]]] = {}
+
+
+def _extract_video_sync(video_id: str) -> tuple[str, dict[str, str]]:
+    """Блокуючий витяг ссилки на відео+звук. Повертає (url, заголовки)."""
+    opts = dict(_YDL_BASE)
+    # 480 як стеля, а не 360: якщо itag 18 для відео недоступний, хай візьме
+    # найближчий змукшований, а не 1080p, який Pi не декодує.
+    opts["format"] = f"{_ITAG_MUXED}/best[acodec!=none][vcodec!=none][height<=480]"
+    opts["extractor_args"] = {"youtube": {"player_client": ["android"]}}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+    info = info or {}
+    if info.get("is_live") or str(info.get("live_status") or "") == "is_live":
+        raise LiveStreamUnsupported(video_id)
+    url = info.get("url") or ""
+    if not url:
+        raise RuntimeError("yt-dlp не віддав ссилку на відео")
+    # http_headers обов'язкові: без User-Agent android-клієнта той самий
+    # лінк відповідає 403.
+    headers = {
+        name: value
+        for name, value in (info.get("http_headers") or {}).items()
+        if name.lower() in ("user-agent", "accept", "accept-language", "sec-fetch-mode")
+    }
+    return url, headers
+
+
+async def video_stream_url(video_id: str) -> tuple[str, dict[str, str]]:
+    """Ссилка на потік відео+звук із кешем на 30 хвилин."""
+    if yt_dlp is None:
+        raise RuntimeError("yt-dlp недоступний — відео вміємо тільки з ним")
+    cached = _VIDEO_CACHE.get(video_id)
+    if cached and time.monotonic() - cached[0] < _URL_TTL_S:
+        return cached[1], cached[2]
+    url, headers = await asyncio.to_thread(_extract_video_sync, video_id)
+    _VIDEO_CACHE[video_id] = (time.monotonic(), url, headers)
+    return url, headers
+
+
+async def open_video_stream(video_id: str, range_header: str | None, attempts: int = 2):
+    """Відкриває потік відео з одним ретраєм по свіжій ссилці.
+
+    Ссилки googlevideo мають строк життя (`expire` у query), і прострочена
+    віддає 403. Тому невдача скидає кеш і пробує ще раз — інакше відео,
+    поставлене на паузу на пів години, більше не запускалось.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(attempts):
+        url, headers = await video_stream_url(video_id)
+        try:
+            status, resp_headers, body = await open_stream(url, range_header, client_headers=headers)
+        except Exception as exc:  # noqa: BLE001 — прострочена ссилка: беремо нову
+            last_exc = exc
+            _VIDEO_CACHE.pop(video_id, None)
+            log.warning("Відео %s (спроба %d) не відкрилось: %s", video_id, attempt + 1, exc)
+            continue
+        if status in (200, 206):
+            return status, resp_headers, body
+        await body.aclose()
+        last_exc = RuntimeError(f"джерело віддало {status}")
+        _VIDEO_CACHE.pop(video_id, None)
+        log.warning("Відео %s (спроба %d): джерело віддало %d", video_id, attempt + 1, status)
+    raise last_exc or RuntimeError("відео не відкрилось")
 
 
 # ---------------------------------------------------------------- транскрайб

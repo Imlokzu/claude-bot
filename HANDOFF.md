@@ -184,3 +184,41 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 - Учасники наразі свідомо належать режиму «Чат»; code mode не приймає
   `participant_name`. Документація має залишатися синхронною після фінального
   коміту фічі.
+
+## 10. Сесія 2026-09-04: virtual device settings
+
+- Закомічено ізольований шар `56b3536` (`feat(screen): add virtual device
+  settings package`) без змін у зайнятих `main.py`, `screen.js`, `screen.css`,
+  `i18n.js`, ASR або YouTube-файлах.
+- `Virtual Bot/system_status.py` надає роутер із `/api/system/status`,
+  `/api/system/audio/devices` і `/api/system/network`. У `virtual` snapshot є
+  назва/заряд бота, Wi‑Fi, Bluetooth/навушники, мікрофон/динамік і маршрути
+  гучності для бота, YouTube, будильника та сповіщень.
+- `Virtual Bot/store/packages/device-settings/` — готовий 320×240 застосунок
+  магазину: вкладки «Звʼязок»/«Звук», картки Wi‑Fi/Bluetooth, вибір аудіо,
+  per-app повзунки та mute. Значення гучності зберігаються локально й
+  передаються майбутньому native-мікшеру через `postMessage`.
+- Перевірки ізольованої частини: `17 passed`, Python compile і JS syntax
+  чисті. Для повної інтеграції потрібно додати в `main.py` імпорт
+  `system_status` та один рядок `app.include_router(system_status.router)`;
+  це робиться власником shared-ділянки після завершення його правок.
+- 2026-09-04 зроблено візуальний pass після реального headless-рендеру
+  320×240: `device-settings` переведено з синьої dashboard-палітри в токени
+  Клод Бота (`#16181a`, `#1e2124`, мідний `#d17a58`, оливковий `#8ca879`),
+  ущільнено header/tabs, виправлено злипання title/subtitle і залишено
+  прокручувані touch-картки для малого екрану.
+- 2026-09-04 комітами `2c242b2` і `931ba43` виправлено жести та тему:
+  карусель і шари використовують Pointer Capture, застосунок у iframe має
+  власний swipe-bridge, а `light` передається разом із skin-змінними. Білу
+  палітру `device-settings` перевірено headless-рендером; bridge приймає
+  повідомлення лише від батьківського `/screen` з тим самим origin, а
+  вертикальний скрол списку не закриває застосунок випадково.
+- 2026-09-04 комітом `070b096` swipe-зона розширена на всю сцену й store app:
+  картки та кнопки можуть починати горизонтальний/вертикальний swipe, але
+  tap по кнопках не губиться; input/select/textarea, повзунки та прокрутка
+  залишаються інтерактивними. Для кнопок Pointer Capture не забирається, а
+  завершення жесту добирається через `window`.
+- Після fix: `pytest -q tests/test_screen_store.py tests/test_system_status.py`
+  → **17 passed**; `node --check` для обох JS-контурів чистий; живий smoke
+  на `8100`: `/screen`, статика застосунку, `/api/system/status` → 200,
+  спроба `static/../main.py` → 404.

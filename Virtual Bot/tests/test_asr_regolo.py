@@ -114,6 +114,7 @@ class RegoloAsrApiTests(unittest.TestCase):
     def test_transcription_preserves_browser_contract(self) -> None:
         transcribe = AsyncMock(return_value="Привіт")
         with (
+            patch.object(main.cfg, "ASR_PROVIDER", "regolo"),
             patch.object(main.asr_regolo, "is_available", return_value=True),
             patch.object(main.asr_regolo, "transcribe", transcribe),
             TestClient(main.app) as client,
@@ -130,6 +131,7 @@ class RegoloAsrApiTests(unittest.TestCase):
     def test_empty_audio_is_bad_request(self) -> None:
         transcribe = AsyncMock()
         with (
+            patch.object(main.cfg, "ASR_PROVIDER", "regolo"),
             patch.object(main.asr_regolo, "is_available", return_value=True),
             patch.object(main.asr_regolo, "transcribe", transcribe),
             TestClient(main.app) as client,
@@ -171,6 +173,7 @@ class RegoloAsrApiTests(unittest.TestCase):
 
     def test_provider_failure_does_not_disclose_upstream_error(self) -> None:
         with (
+            patch.object(main.cfg, "ASR_PROVIDER", "regolo"),
             patch.object(main.asr_regolo, "is_available", return_value=True),
             patch.object(main.asr_regolo, "transcribe", AsyncMock(side_effect=RuntimeError("test-key upstream detail"))),
             TestClient(main.app) as client,
@@ -181,8 +184,12 @@ class RegoloAsrApiTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json(), {"error": "ASR помилка"})
+        # Текст говіркий (щоб на екрані було видно ПРИЧИНУ, а не безлике «ASR
+        # помилка»), але деталі від провайдера в нього не потрапляють —
+        # саме це й перевіряє наступний рядок.
+        self.assertEqual(response.json(), {"error": "Хмарне розпізнавання недоступне"})
         self.assertNotIn("test-key", response.text)
+        self.assertNotIn("upstream", response.text)
 
 
 class RegoloOmniModelsTests(unittest.TestCase):

@@ -1,0 +1,80 @@
+/*
+ * Джерело: https://www.aicss.dev/r/file-diff.json (реєстр shadcn).
+ *
+ * Змінено ТІЛЬКИ кольори: в оригіналі вони зашиті шістнадцятковими
+ * значеннями під світлу демо-сторінку, змінних компонент не віддає. Реєстр
+ * копіює файли в проєкт саме для правок, тож вони тут — на наших токенах.
+ * Геометрія, розкладка й анімація — як в оригіналі.
+ */
+.diff { border-radius: 12px; background: var(--c-surface); box-shadow: 0 1px 2px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.02), 0 0 0 0.5px rgba(0,0,0,0.08); padding: 12px 16px 16px; overflow: hidden; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+.diffHead {
+  display: flex; align-items: center; gap: 8px;
+  margin: -12px -16px 0; padding: 10px 12px 10px 12px;
+  background: transparent; border-bottom: 0.5px solid var(--c-border); font-size: 12.5px;
+}
+.diffFileWrap { display: inline-flex; align-items: center; gap: 7px; }
+.diffIcon { display: block; width: 15px; height: 15px; color: var(--c-text-3); flex: none; }
+.diffFile { color: var(--c-text); line-height: 1; }
+.diffStat { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; line-height: 1; }
+.diffStat .add { color: var(--c-ok); }
+.diffStat .del { color: var(--c-err); }
+.diffBody {
+  position: relative;
+  margin: 0 -16px -16px; overflow-x: auto; overflow-y: hidden;
+  padding: 4px 0; font-size: 12.5px; line-height: 20px;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.diffBody::-webkit-scrollbar { display: none; }
+.diffLines { position: relative; width: max-content; min-width: 100%; }
+/* full-height gutter divider at the line-number edge (32px + 32px).
+   Lives on the inner track so it stays aligned while the body scrolls. */
+.diffLines::before { content: ""; position: absolute; top: 0; bottom: 0; left: 64px; width: 0.5px; background: var(--c-border); z-index: 1; pointer-events: none; }
+.diffRow {
+  position: relative;
+  display: grid; grid-template-columns: 32px 32px 18px 1fr; align-items: stretch;
+}
+.diffRow .ln, .diffRow .sign { user-select: none; color: var(--c-text-3); font-size: 11px; }
+.diffRow .ln { text-align: right; padding: 0 7px; }
+.diffRow .sign { text-align: center; }
+.diffRow code { white-space: pre; padding: 0 12px 0 8px; color: var(--c-text-3); }
+/* left accent bar: solid green for additions, red hatch for deletions */
+.diffRow.add::before, .diffRow.del::before {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px;
+}
+.diffRow.add::before { background: var(--c-ok); }
+.diffRow.del::before {
+  background: repeating-linear-gradient(45deg, var(--c-err) 0, var(--c-err) 1.5px, transparent 1.5px, transparent 3px);
+}
+.diffRow.add { background: rgba(26, 127, 55, 0.09); }
+.diffRow.add .sign, .diffRow.add .new { color: var(--c-ok); }
+.diffRow.add code { color: var(--c-text); }
+.diffRow.del { background: rgba(207, 34, 46, 0.09); }
+.diffRow.del .sign, .diffRow.del .old { color: var(--c-err); }
+.diffRow.del code { color: var(--c-text); }
+.diffRow code .kw { color: #cf222e; }
+.diffRow code .str { color: #0a3069; }
+.diffRow code .fn { color: #8250df; }
+.diffRow code .num { color: #0550ae; }
+.diffRow code .cm { color: #6e7781; }
+/*
+ * Темна тема.
+ *
+ * Тут лишилась ЛИШЕ палітра підсвітки коду: решту (тло, рамки, «+/-») уже
+ * дають токени, а вони міняються разом із темою самі — дублювати їх означало
+ * б мати два джерела правди про один колір.
+ *
+ * Селектори — наші: тему перемикає атрибут data-theme на корені, і одна лише
+ * системна схема промахнулась би щоразу, коли людина обрала тему вручну.
+ */
+:global(:root[data-theme='dark']) .diffRow code .kw { color: #ff7b72; }
+:global(:root[data-theme='dark']) .diffRow code .str { color: #a5d6ff; }
+:global(:root[data-theme='dark']) .diffRow code .fn { color: #d2a8ff; }
+:global(:root[data-theme='dark']) .diffRow code .num { color: #79c0ff; }
+:global(:root[data-theme='dark']) .diffRow code .cm { color: #8b949e; }
+@media (prefers-color-scheme: dark) {
+  :global(:root:not([data-theme='light'])) .diffRow code .kw { color: #ff7b72; }
+  :global(:root:not([data-theme='light'])) .diffRow code .str { color: #a5d6ff; }
+  :global(:root:not([data-theme='light'])) .diffRow code .fn { color: #d2a8ff; }
+  :global(:root:not([data-theme='light'])) .diffRow code .num { color: #79c0ff; }
+  :global(:root:not([data-theme='light'])) .diffRow code .cm { color: #8b949e; }
+}

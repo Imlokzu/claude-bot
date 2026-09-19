@@ -15,10 +15,17 @@ _TRANSCRIPT_PATH = "/audio/transcriptions"
 
 
 def is_available() -> bool:
-    """Чи налаштований активний Regolo ASR без розкриття ключа."""
-    return (
-        cfg.ASR_PROVIDER == "regolo"
-        and bool(cfg.get_regolo_asr_key() and cfg.REGOLO_ASR_BASE_URL and cfg.REGOLO_ASR_MODEL)
+    """Чи НАЛАШТОВАНИЙ Regolo ASR (ключ + адреса + модель), без розкриття ключа.
+
+    Раніше тут стояла ще й умова `cfg.ASR_PROVIDER == "regolo"` — і саме через
+    неї при `provider: auto` бот НІКОЛИ не брав хмару: `_asr_backend()` питав
+    «ти доступний?», отримував False (бо в конфізі стоїть «auto», а не
+    «regolo») і тихо лишався на локальному whisper, хоч ключ лежав у .env.
+    Вибір провайдера — справа `_asr_backend()`; цей модуль відповідає лише на
+    питання «мене є чим запустити».
+    """
+    return bool(
+        cfg.get_regolo_asr_key() and cfg.REGOLO_ASR_BASE_URL and cfg.REGOLO_ASR_MODEL
     )
 
 

@@ -10,7 +10,7 @@ from typing import Awaitable, Callable
 from tools.currency import get_common_rates, get_rate
 from tools.facts import get_fact
 from tools.images import search_images
-from tools import music_tools, screen_tools, ui_tools, workspace_tools
+from tools import music_tools, screen_tools, ui_tools, video_tools, workspace_tools
 from tools.search import search_web
 from tools.weather import get_weather
 import memory
@@ -139,6 +139,8 @@ _TOOL_SCHEMAS: list[dict] = [
     *screen_tools.SCHEMAS,
     # Музика й відео: Now Playing на екрані + транскрайб YouTube
     *music_tools.SCHEMAS,
+    # Відео з картинкою в застосунку youtube: показати, керувати, адблок
+    *video_tools.SCHEMAS,
 ]
 
 async def _currency_handler(base: str, target: str = "UAH") -> dict:
@@ -210,6 +212,7 @@ _HANDLERS: dict[str, ToolHandler] = {
     **ui_tools.HANDLERS,
     **screen_tools.HANDLERS,
     **music_tools.HANDLERS,
+    **video_tools.HANDLERS,
 }
 
 
@@ -220,6 +223,11 @@ def list_tools() -> list[dict]:
 
 def _tool_names() -> list[str]:
     return [t["function"]["name"] for t in _TOOL_SCHEMAS]
+
+
+def tool_names() -> frozenset[str]:
+    """Імена всіх виконуваних тулзів — щоб інші модулі не лізли у _HANDLERS."""
+    return frozenset(_HANDLERS)
 
 
 async def execute_tool(name: str, args: dict) -> dict:

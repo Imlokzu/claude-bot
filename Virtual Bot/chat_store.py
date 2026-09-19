@@ -507,6 +507,61 @@ def clear_project(project: str) -> None:
             tmp.unlink(missing_ok=True)
 
 
+def compact(session_id: str, summary: str) -> dict | None:
+    """
+    Стискає розмову: усі репліки замінює ОДНИМ переказом від бота.
+
+    Оригінал не зникає — він лягає в підтеку `pre-compact/<id>-<час>.json`.
+    Стискання, після якого не можна подивитись, що саме викинули, — це не
+    стискання, а втрата: повернути розмову має бути можливо руками.
+
+    Саме ПІДТЕКА, а не сусідній файл: `list_sessions` бере `*.json` з теки
+    чатів, і архів поруч показався б у списку другою копією розмови.
+
+    Повертає {"before", "after", "archive"} або None, якщо стискати нічого.
+    """
+    clean = " ".join((summary or "").split())
+    if not clean:
+        return None
+    try:
+        path = _path(session_id)
+    except ValueError:
+        return None
+    data = load(session_id)
+    messages = data.get("messages", [])
+    if len(messages) < 2:
+        return None
+
+    now = int(time.time())
+    archive = path.parent / "pre-compact" / f"{path.stem}-{now}.json"
+    try:
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    except OSError:
+        log.exception("Не вдалося зберегти архів перед стисканням %s", session_id)
+        return None
+
+    data["messages"] = [{
+        "role": "assistant",
+        "content": summary.strip(),
+        "ts": now,
+        # Позначка для панелі: цю репліку бот не «казав» у розмові, це
+        # переказ. Без прапорця вона виглядала б як звичайна відповідь.
+        "compacted": True,
+        "compacted_from": len(messages),
+    }]
+    data["updated"] = now
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        log.exception("Не вдалося зберегти стиснутий чат %s", session_id)
+        tmp.unlink(missing_ok=True)
+        return None
+    return {"before": len(messages), "after": 1, "archive": f"pre-compact/{archive.name}"}
+
+
 def delete(session_id: str) -> bool:
     try:
         path = _path(session_id)

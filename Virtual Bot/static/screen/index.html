@@ -27,9 +27,21 @@
       <div class="face-label" id="faceLabel" data-i18n="emo.idle">Очікування</div>
 
       <!-- Розмова просто на циферблаті: що кажеш ти і що відповідає бот -->
-      <div class="face-caption hidden" id="faceCaption"></div>
+      <div class="face-caption hidden" id="faceCaption">
+        <!-- Хрестик — ДИТИНА рамки (position: sticky), тому тримається її
+             верхнього краю в обох розкладках і не з’їжджає з текстом.
+             Текст живе в окремому вузлі: рендер markdown його очищає, а
+             кнопка мусить це переживати. -->
+        <button class="caption-close hidden" id="captionClose" type="button"
+                data-i18n-aria="caption.close" aria-label="Закрити субтитр">✕</button>
+        <div class="caption-text" id="faceCaptionText"></div>
+      </div>
       <!-- «1/3»: показуємо ЛИШЕ коли репліка не влізла — інакше зайвий шум -->
       <div class="caption-page hidden" id="captionPage"></div>
+      <!-- Що бот РОБИТЬ просто зараз: думає, шукає, читає файл. Окремий
+           рядок, а не субтитр: субтитр показує СЛОВА (твої й бота), а тут
+           дія — інакше після «розпізнав» екран мовчав до самої відповіді. -->
+      <div class="face-busy hidden" id="faceBusy"><span class="busy-dot"></span><span class="busy-text" id="faceBusyText"></span></div>
       <!-- Бот показує картинку: ОДНА рамка, одна картинка, гортання -->
       <div class="face-photo hidden" id="facePhoto">
         <img id="facePhotoImg" alt="">
@@ -212,9 +224,17 @@
         <span data-i18n="icons.head">Іконки</span>
         <button class="layer-back" data-icons-close type="button">✕</button>
       </div>
+      <button class="mode-row" data-icons="auto" type="button">
+        <span class="mode-name" data-i18n="icons.auto">Авто (за темою)</span>
+        <span class="mode-hint" data-i18n="icons.auto.hint">Темна — наші, світла — монохром</span>
+      </button>
       <button class="mode-row" data-icons="pixel" type="button">
         <span class="mode-name" data-i18n="icons.pixel">Наші (піксельні)</span>
         <span class="mode-hint" data-i18n="icons.pixel.hint">Одна мова з крабом і годинником</span>
+      </button>
+      <button class="mode-row" data-icons="pack" type="button">
+        <span class="mode-name" data-i18n="icons.pack">Pixel (з паку)</span>
+        <span class="mode-hint" data-i18n="icons.pack.hint">Кольорові, як у лаунчері Pixel</span>
       </button>
       <button class="mode-row" data-icons="line" type="button">
         <span class="mode-name" data-i18n="icons.line">Звичайні</span>
@@ -223,6 +243,10 @@
       <button class="mode-row" data-icons="color" type="button">
         <span class="mode-name" data-i18n="icons.color">Кольорові</span>
         <span class="mode-hint" data-i18n="icons.color.hint">Ті самі, але кожна у своєму відтінку</span>
+      </button>
+      <button class="mode-row" data-icons="white" type="button">
+        <span class="mode-name" data-i18n="icons.white">Монохромні</span>
+        <span class="mode-hint" data-i18n="icons.white.hint">Білі на темній, темні на світлій</span>
       </button>
     </div>
   </div>
@@ -255,6 +279,9 @@
       <!-- Перемотка: для живого радіо ховається (його не можна мотати) -->
       <input type="range" class="np-seek" id="npSeek" min="0" max="1000" value="0" data-i18n-aria="music.seek" aria-label="Позиція трека">
       <div class="np-times" id="npTimes"><span id="npCur">0:00</span><span id="npDur">0:00</span></div>
+
+      <!-- Швидкість відтворення: 1× … 2×. Для радіо недоступна (живий потік). -->
+      <div class="np-rates" id="npRates"></div>
 
       <div class="np-controls">
         <button class="np-btn" id="npPrev" type="button" data-i18n-aria="music.prev" aria-label="Попередній"><span class="ico-slot" id="npPrevIco"></span></button>

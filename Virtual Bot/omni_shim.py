@@ -288,6 +288,65 @@ async def _ask_regolo(model_id: str, system: str, text: str, files: list[dict] |
     return reply
 
 
+async def _stream_regolo(model: str, model_id: str, system: str, text: str):
+    """SSE зі СПРАВЖНІМИ токенами Regolo.
+
+    Сесійне API opencode віддає відповідь цілком, тому для нього стрім лишається
+    імітацією (див. chat_completions). А Regolo — звичайний OpenAI-сумісний
+    ендпоінт, до якого ми ходимо напряму, тож його чанки можна просто
+    перекладати далі. Саме заради цього шляху все й затівалось: бот починає
+    озвучувати першу фразу, поки модель ще договорює решту.
+    """
+    key = cfg.get_regolo_asr_key()
+    if not key:
+        raise HTTPException(502, "немає ключа Regolo (env REGOLO_ASR_API_KEY)")
+
+    messages = ([{"role": "system", "content": system}] if system else []) + \
+               [{"role": "user", "content": text}]
+    base = {
+        "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",
+        "object": "chat.completion.chunk",
+        "created": int(time.time()),
+        "model": model,
+    }
+
+    def chunk(delta: dict, finish=None) -> str:
+        payload = {**base, "choices": [{"index": 0, "delta": delta, "finish_reason": finish}]}
+        return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    got_any = False
+    async with httpx.AsyncClient(timeout=REGOLO_TIMEOUT_S) as client:
+        async with client.stream(
+            "POST", f"{REGOLO_BASE_URL}/chat/completions",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": model_id, "messages": messages, "stream": True},
+        ) as r:
+            if r.status_code != 200:
+                body = (await r.aread())[:200].decode(errors="replace")
+                raise HTTPException(502, f"Regolo відмовив ({r.status_code}): {body}")
+            yield chunk({"role": "assistant", "content": ""})
+            async for line in r.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    piece = json.loads(data)["choices"][0]["delta"].get("content")
+                except (KeyError, IndexError, ValueError):
+                    continue  # службовий чанк (роль, usage) — не наша справа
+                if piece:
+                    got_any = True
+                    yield chunk({"content": piece})
+
+    if not got_any:
+        # Мовчання модель нам не віддає як помилку, але для бота це поломка:
+        # порожня репліка виглядає як «відповів і нічого не сказав».
+        raise HTTPException(502, "модель повернула порожню відповідь")
+    yield chunk({}, finish="stop")
+    yield "data: [DONE]\n\n"
+
+
 async def _ask(model: str, system: str, text: str, files: list[dict] | None = None) -> str:
     """Один запит до opencode: нова сесія → повідомлення → текст відповіді."""
     if "/" not in model:
@@ -348,19 +407,32 @@ def _openai_response(model: str, reply: str) -> dict:
 async def chat_completions(req: ChatReq):
     # Regolo ходить повз opencode — не піднімаємо його заради такого запиту
     # (інакше найшвидша модель платила б за чужий холодний старт).
-    if not req.model.startswith(f"{REGOLO_PROVIDER}/"):
+    is_regolo = req.model.startswith(f"{REGOLO_PROVIDER}/")
+    if not is_regolo:
         await _ensure_opencode()
     system, text, files = _split(req.messages)
     if not text and not files:
         raise HTTPException(400, "Порожнє повідомлення")
+
+    # Прямий шлях у Regolo вміє справжні токени — віддаємо їх як є.
+    # Картинок ці моделі не приймають, тому з файлами йдемо звичайним шляхом,
+    # де _ask_regolo чесно поскаржиться і бот піде до vision-моделі.
+    if req.stream and is_regolo and not files:
+        _, _, model_id = req.model.partition("/")
+        return StreamingResponse(
+            _stream_regolo(req.model, model_id, system, text),
+            media_type="text/event-stream",
+        )
+
     reply = await _ask(req.model, system, text or "Опиши зображення.", files)
 
     if not req.stream:
         return _openai_response(req.model, reply)
 
-    # Стрімінг «одним куском»: сесійне API opencode віддає відповідь цілком,
-    # тому справжніх токенів у нас немає. Але формат SSE тримаємо — інакше
-    # бот витрачав би одну невдалу спробу стріму на кожен запит.
+    # Стрімінг «одним куском» — лише для opencode: його сесійне API віддає
+    # відповідь цілком, справжніх токенів там немає. Формат SSE все одно
+    # тримаємо, інакше бот витрачав би невдалу спробу стріму на кожен запит.
+    # Для Regolo сюди вже не потрапляємо — див. гілку вище.
     async def sse():
         base = {
             "id": f"chatcmpl-{uuid.uuid4().hex[:24]}",

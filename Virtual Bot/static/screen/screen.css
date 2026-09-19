@@ -187,6 +187,27 @@ html, body {
 }
 .face-caption::-webkit-scrollbar { display: none; }
 
+/* Хрестик «закрити субтитр» — лише в ручному режимі (set.caption = manual).
+   sticky + float: тримається верхнього правого кута рамки, поки текст під
+   ним прокручується; position: absolute тут поїхало б разом із текстом. */
+.caption-close {
+  position: sticky;
+  top: 0;
+  float: right;
+  margin: -2px -2px 0 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.caption-close:active { background: var(--line); color: var(--text); }
+
 /* Лічильник сторінок субтитра. Сидить НАД рамкою, а не в ній: усередині він
    би їхав разом із текстом і зникав з першою ж прокруткою. */
 .caption-page {
@@ -202,6 +223,107 @@ html, body {
   letter-spacing: 0.06em;
   pointer-events: none;                  /* тап має діставатись рамки під ним */
 }
+
+/* Рядок «що бот робить просто зараз». Поки субтитра немає — стоїть на його
+   місці (унизу, де людина й читає), а щойно з’явився субтитр — піднімається
+   над рамкою. Інакше рядок висів би просто посеред краба.
+   right: 46px — щоб не наїжджати ні на мікрофон (34px + 8), ні на «1/3».
+   Анімуємо ТІЛЬКИ opacity — на A53 будь-що інше коштує кадрів. */
+.face-busy {
+  position: absolute;
+  left: 8px;
+  right: 46px;
+  bottom: 16px;                          /* місце субтитра, поки його нема */
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 6px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+.face-busy .busy-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;               /* довга дія не має рвати рамку */
+}
+.busy-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: busy-pulse 1.1s ease-in-out infinite;
+}
+@keyframes busy-pulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .busy-dot { animation: none; opacity: 0.8; }
+}
+
+/* Markdown у виводі поза тайлом «Розмова»: субтитр на циферблаті і тайл
+   «Бот сказав» показували СИРИЙ текст — «**важливо**» замість жирного,
+   «- пункт» замість списку. Ті самі правила, що для .msg, лише щільніші:
+   у рамці 84px кожен зайвий margin — це зʼїдений рядок. */
+.face-caption p,
+.say-text p { margin: 0 0 3px; }
+.face-caption p:last-child,
+.say-text p:last-child { margin-bottom: 0; }
+.face-caption h1, .face-caption h2, .face-caption h3,
+.face-caption h4, .face-caption h5, .face-caption h6 {
+  font-size: 12px;
+  margin: 0 0 3px;
+}
+.say-text h1, .say-text h2, .say-text h3,
+.say-text h4, .say-text h5, .say-text h6 {
+  font-size: 15px;
+  margin: 0 0 3px;
+}
+/* Списки в центрованому субтитрі вирівнюємо влів: маркери по центру
+   перетворюють список на драбинку. */
+.face-caption ul, .face-caption ol { margin: 0 0 3px 14px; text-align: left; }
+.say-text ul, .say-text ol { margin: 0 0 3px 15px; }
+.face-caption li, .say-text li { margin-bottom: 1px; }
+.face-caption code, .say-text code {
+  font: 400 11px/1.4 var(--mono);
+  background: var(--line);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+.face-caption pre, .say-text pre {
+  background: var(--line);
+  border-radius: 7px;
+  padding: 4px 6px;
+  margin: 0 0 3px;
+  overflow-x: auto;
+  text-align: left;
+}
+.face-caption pre code, .say-text pre code { background: none; padding: 0; }
+.face-caption a, .say-text a { color: var(--accent); }
+.face-caption blockquote, .say-text blockquote {
+  margin: 0 0 3px;
+  padding-left: 6px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  text-align: left;
+}
+.face-caption table, .say-text table { border-collapse: collapse; font-size: 10px; }
+.face-caption td, .face-caption th,
+.say-text td, .say-text th { border: 1px solid var(--line); padding: 1px 3px; }
+.face-caption hr, .say-text hr {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 3px 0;
+}
+/* Картинки з репліки малюються окремими рамками (splitImages), тому
+   всередині тексту їх бути не мусить — але як запобіжник обмежимо. */
+.face-caption img, .say-text img { max-width: 100%; max-height: 64px; object-fit: contain; }
 
 /* Картинки з репліки — прямо на циферблаті, над субтитром.
    object-fit: contain, бо картинку треба показати ПОВНІСТЮ: обрізане фото
@@ -354,6 +476,12 @@ html, body {
   height: auto;
 }
 
+/* Субтитр займає всю ліву колонку, тож рядок дії ставимо ПІД ним — і на цей
+   час укорочуємо саму рамку на його висоту. Покласти рядок поверх рамки
+   означало б накрити рядок тексту, а він тут головний. */
+.tile-face.captioned:not(.photo) .face-busy { right: 112px; }
+.tile-face.captioned.busy:not(.photo) .face-caption { bottom: 36px; }
+
 /* Лічильник сторінок їде до краба: над текстом він накрив би перший рядок */
 .tile-face.captioned:not(.photo) .caption-page {
   right: 10px;
@@ -381,12 +509,18 @@ html, body {
 .say-text {
   font-size: 15px;
   line-height: 1.45;
-  /* Глянсова картка: 5 рядків максимум, решта — три крапки */
-  display: -webkit-box;
-  -webkit-line-clamp: 5;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  /* Репліку тут ЧИТАЮТЬ, а не підглядають: тайл віддає під текст усе вільне
+     місце й прокручується пальцем. Було обрізання по 5 рядках — на довгій
+     відповіді від неї лишався перший абзац, і тайл втрачав будь-який сенс.
+     (Жест гортання екрана її не крати: .say-text у списку isInteractive.) */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
+.say-text::-webkit-scrollbar { display: none; }
 
 /* Тайл 3 — стан */
 .state-list { list-style: none; display: flex; flex-direction: column; gap: 7px; }
@@ -750,6 +884,25 @@ html, body {
 
 .svgicon-big { width: 24px; height: 24px; }
 
+/* Іконка з паку Pixel: сама собі кружечок, тож малюємо її на всю плитку.
+   38px, а не 42: інакше вона впритул торкається краю там, де в піксельних
+   іконок лишається поле, і в сітці плитки читались би різного розміру. */
+.pack-icon {
+  width: 38px;
+  height: 38px;
+  display: block;
+  object-fit: contain;
+  user-select: none;
+}
+/* Під готовим кружечком наше тло й обідок зайві — див. app-icon-bare
+   в renderApps. */
+.app-icon-bare {
+  background: none !important;
+  border-color: transparent !important;
+}
+.app-tile:active .app-icon-bare,
+.app-tile.on .app-icon-bare { background: none !important; }
+
 .pixel-pack-icon {
   width: 30px;
   height: 30px;
@@ -882,14 +1035,24 @@ html, body {
   color: var(--muted);
 }
 
+/* grid-auto-rows: 1fr ділив висоту на СКІЛЬКИ Є рядків — тому кожна нова
+   плитка стискала всі інші. На восьми плитках (3 рядки) виходило ~29px і
+   ледве вміщало іконку з підписом; щойно їх стало десять (4 рядки) — рядок
+   упав до 20px, іконки обрізало по низу, а підписи зникли зовсім.
+   minmax дає плитці мінімум, у який вона фізично вміщається (20 іконка +
+   3 проміжок + 9 підпис = 32), а зайве віддає прокрутці. */
 .qs-grid {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-auto-rows: 1fr;
+  grid-auto-rows: minmax(34px, 1fr);
   gap: 6px;
   min-height: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  scrollbar-width: none;
 }
+.qs-grid::-webkit-scrollbar { display: none; }
 
 .qs-tile {
   display: flex;
@@ -906,6 +1069,12 @@ html, body {
   cursor: pointer;
   overflow: hidden;
 }
+/* Контурна іконка в плитці мусить лишитись 20×20. Плитка — flex-колонка з
+   align-items: center, і без flex: none svg тягнеться в ширину, а по висоті
+   стискається: заміряно 48×17 замість 20×20, тобто іконку розплющувало.
+   Піксельний стиль цього не показував, бо canvas має власний розмір —
+   тому баг і жив непоміченим, поки піксельні були типовими. */
+.qs-tile .svgicon { flex: none; width: 20px; height: 20px; }
 .qs-tile:active { border-color: var(--accent); }
 .qs-tile.on { border-color: var(--accent); color: var(--accent); background: var(--line); }
 .qs-tile:disabled { opacity: 0.35; }
@@ -1376,13 +1545,18 @@ html, body {
    бар з'їв би чверть тайла). Коли він є, він ЗАМІНЮЄ крапки-індикатори,
    а тайли піднімають свій вміст, щоб кнопки не сховались під баром. */
 
+/* Бар живе НАГОРІ. Знизу він накривав усе, що там і так тісно: мікрофон
+   (bottom: 16), рядок «що роблю» (bottom: 16), субтитр і лічильник сторінок.
+   Padding тайлів тут не помагав — ті елементи позиційовані абсолютно, тобто
+   padding їх не рухає взагалі. */
 .nowplaying {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
+  top: 0;
+  bottom: auto;
   background: color-mix(in srgb, var(--panel) 88%, transparent);
-  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 
 .np-progress {
@@ -1447,9 +1621,14 @@ html, body {
   to { transform: translate3d(-50%, 0, 0); }
 }
 
-/* Бар на екрані → крапки не потрібні, вміст тайлів піднімаємо */
-.stage.np .dots { opacity: 0; }
-.stage.np .tile { padding-bottom: 48px; }
+/* Бар на екрані → вміст тайлів опускаємо під нього. Крапки внизу тепер
+   нікому не мішають, тож лишаються видимими. */
+.stage.np .tile { padding-top: 38px; }
+/* Годинник і крапка звʼязку на циферблаті — теж під бар (вони absolute) */
+.stage.np .tile-face .face-top { top: 36px; }
+/* Субтитр у двоколонковій розкладці починався під годинником — тепер під
+   баром із годинником */
+.stage.np .tile-face.captioned:not(.photo) .face-caption { top: 56px; }
 .stage.np.layered .nowplaying { opacity: 0; transition: opacity 150ms ease; }
 
 /* ---------- Шіт плеєра ---------- */
@@ -1547,6 +1726,42 @@ html, body {
 }
 .np-row-item.on { color: var(--accent); }
 .np-row-item .np-item-sub { color: var(--muted); font-size: 9px; flex: none; }
+/* Швидкість відтворення. Саме чипи, а не повзунок: на резистивному тачі
+   у 320 px повзунок із крком 0.25 не влучається пальцем, а тут кожен крок —
+   окрема мішень. playbackRate міняє темп, не висоту (preservesPitch). */
+.np-rates {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.np-rate {
+  flex: 1;
+  padding: 3px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font: 400 10px/1.2 var(--font);
+  cursor: pointer;
+}
+.np-rate.on { border-color: var(--accent); color: var(--accent); }
+.np-rate:disabled { opacity: 0.4; }
+
+/* Стан «вантажу»: поки yt-dlp розвʼязує ссилку, у барі має бути видно, що
+   бот НЕ завис. Раніше тап по плей не давав нічого — ні звуку, ні таймлайну,
+   ні пояснення, і виглядало це поломкою. */
+.np-loading .np-progress i {
+  width: 30% !important;
+  animation: np-load 1.1s ease-in-out infinite;
+}
+@keyframes np-load {
+  0%   { transform: translate3d(-100%, 0, 0); }
+  100% { transform: translate3d(333%, 0, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .np-loading .np-progress i { animation: none; width: 100% !important; opacity: 0.4; }
+}
+
 .np-hint {
   font: 400 10px/1.35 var(--font);
   color: var(--muted);
@@ -1611,10 +1826,12 @@ html, body {
 .skin-dots i { width: 9px; height: 9px; border-radius: 50%; }
 
 /* Встановлений store-застосунок: iframe на весь вміст шару */
-.storeapp-body { padding: 0; gap: 0; }
+.storeapp-body { min-height: 0; padding: 0; gap: 0; overflow: hidden; }
 .storeapp-frame {
   flex: 1;
   width: 100%;
+  display: block;
+  min-height: 0;
   border: none;
   background: var(--bg);
 }

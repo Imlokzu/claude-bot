@@ -6,6 +6,8 @@
 - {"type": "say", "text": "...", "emotion": "<...>"}     — бот сам щось каже
 - {"type": "vision", "event": "face_appeared"|"face_gone"|"motion", "faces": N}
 - {"type": "log", "t": <unix>, "level": "...", "name": "...", "msg": "..."} — рядок консолі
+- {"type": "music", "action": "play"|"stop", "track": {...}}  — Now Playing
+- {"type": "video", "action": "play"|"pause"|"seek"|…, ...}    — плеєр застосунку youtube
 
 Keep-alive: коментар ": ping\n\n" кожні ~15 секунд.
 Кілька клієнтів підтримуються (у кожного своя asyncio.Queue);
@@ -145,6 +147,18 @@ def publish_music(track: dict, action: str = "play") -> None:
         "action": "stop" if action == "stop" else "play",
         "track": clean,
     })
+
+
+def publish_video(command: dict) -> None:
+    """
+    Керувати ВІДЕО-плеєром на екрані пристрою (застосунок youtube).
+
+    Відрізняється від publish_music тим, що це не «поставити трек у бар», а
+    команда живому плеєру: пауза, перемотка, кінець. Екран, отримавши її,
+    сам відкриє застосунок, якщо той закритий, — інакше «перемотай вперед»
+    працювало б лише тоді, коли людина вже стоїть у потрібному застосунку.
+    """
+    publish({"type": "video", **dict(command or {})})
 
 
 def publish_ui(kind: str, data: dict) -> None:

@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Підключення — Клод Бот</title>
+  <style>
+    :root {
+      --bg: #16181a;
+      --panel: #1e2124;
+      --panel-strong: #292d30;
+      --line: #2f3438;
+      --text: #e8e4dc;
+      --muted: #8e9498;
+      --accent: #d17a58;
+      --accent-soft: rgba(209, 122, 88, .14);
+      --ok: #8ca879;
+      --ok-soft: rgba(139, 213, 168, .13);
+      --warn: #d7a65b;
+      --warn-soft: rgba(242, 199, 119, .13);
+      --off: #6b7175;
+      --route-icon-bg: rgba(255, 255, 255, .05);
+      color-scheme: dark;
+    }
+
+    :root[data-theme="light"] {
+      --bg: #efe7d9;
+      --panel: #fbf6ec;
+      --panel-strong: #f2e8d8;
+      --line: #ddcdb2;
+      --text: #2f271f;
+      --muted: #7d6d5c;
+      --accent: #b95f3d;
+      --accent-soft: rgba(185, 95, 61, .12);
+      --ok: #6f8b5f;
+      --ok-soft: rgba(111, 139, 95, .14);
+      --warn: #9a6b27;
+      --warn-soft: rgba(154, 107, 39, .14);
+      --off: #a8998a;
+      --route-icon-bg: rgba(85, 65, 42, .06);
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg, #12161d);
+      color: var(--text, #edf2f8);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 12px;
+      -webkit-font-smoothing: antialiased;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 7px 8px 8px; gap: 5px; overflow-y: auto; touch-action: pan-y; scrollbar-width: none; }
+    .app::-webkit-scrollbar { display: none; }
+
+    .summary { display: flex; align-items: center; justify-content: space-between; flex: none; min-height: 39px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .summary-copy { min-width: 0; }
+    .summary-name { overflow: hidden; font-size: 13px; font-weight: 750; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+    .summary-sub { display: flex; align-items: center; gap: 5px; margin-top: 2px; color: var(--muted); font-size: 9px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+    .battery { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+    .battery-top { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+    .battery-shell { position: relative; width: 42px; height: 10px; padding: 2px; border: 1px solid var(--muted); border-radius: 4px; }
+    .battery-shell::after { position: absolute; top: 2px; right: -4px; width: 2px; height: 4px; border-radius: 0 2px 2px 0; background: var(--muted); content: ""; }
+    .battery-fill { width: 82%; height: 100%; border-radius: 2px; background: var(--ok); }
+    .charge { color: var(--ok); font-size: 9px; }
+
+    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: transparent; }
+    .tab { min-height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+    .tab.active { background: var(--panel-strong); color: var(--text); box-shadow: 0 2px 8px rgba(0, 0, 0, .16); }
+
+    .content { min-height: 0; flex: none; overflow: visible; padding: 1px 1px 4px; touch-action: pan-y; }
+    .stack { display: grid; gap: 6px; }
+    .section-label { display: flex; align-items: baseline; justify-content: space-between; padding: 1px 3px 0; color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+    .virtual-badge { color: var(--accent); font-size: 8px; letter-spacing: .05em; }
+    .card { border: 1px solid var(--line); border-radius: 13px; background: var(--panel); }
+    .connection-card { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 47px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); text-align: left; cursor: pointer; }
+    .connection-card:active, .device-row:active { transform: translateY(1px); background: var(--panel-strong); }
+    .icon-box { display: grid; place-items: center; flex: none; width: 28px; height: 28px; border-radius: 7px; background: var(--accent-soft); color: var(--accent); }
+    .icon-box.green { background: var(--ok-soft); color: var(--ok); }
+    .icon-box.amber { background: var(--warn-soft); color: var(--warn); }
+    .copy { min-width: 0; flex: 1; }
+    .title { display: block; overflow: hidden; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    .subtitle { display: block; overflow: hidden; margin-top: 2px; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .state { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+    .state-text { color: var(--ok); font-size: 9px; font-weight: 700; }
+    .state-text.ready { color: var(--warn); }
+    .signal { display: flex; align-items: flex-end; gap: 2px; height: 10px; }
+    .signal i { display: block; width: 3px; border-radius: 2px 2px 0 0; background: var(--line); }
+    .signal i:nth-child(1) { height: 3px; }
+    .signal i:nth-child(2) { height: 5px; }
+    .signal i:nth-child(3) { height: 7px; }
+    .signal i:nth-child(4) { height: 10px; }
+    .signal i.on { background: var(--ok); }
+    .chevron { flex: none; color: var(--off); font-size: 16px; }
+
+    .audio-card { padding: 8px; }
+    .audio-device { display: flex; align-items: center; gap: 8px; }
+    .audio-device .copy { flex: 1; }
+    .device-meta { color: var(--ok); font-size: 9px; }
+    .select-pill { padding: 5px 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-strong); color: var(--accent); font-size: 9px; font-weight: 700; }
+    .divider { height: 1px; margin: 8px 0; background: var(--line); }
+    .mixer-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 7px; }
+    .mixer-title { font-size: 11px; font-weight: 750; }
+    .mixer-hint { max-width: 145px; color: var(--muted); font-size: 9px; line-height: 1.3; text-align: right; }
+    .route-list { display: grid; gap: 6px; margin-top: 8px; }
+    .route-row { display: grid; grid-template-columns: 23px minmax(0, 1fr) auto; align-items: center; gap: 7px; }
+    .route-icon { display: grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; background: var(--route-icon-bg); color: var(--muted); }
+    .route-copy { min-width: 0; }
+    .route-name { overflow: hidden; font-size: 10px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+    .route-controls { display: flex; align-items: center; gap: 5px; }
+    .route-range { width: 67px; height: 4px; accent-color: var(--accent); cursor: pointer; }
+    .route-value { min-width: 22px; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; text-align: right; }
+    .mute { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; }
+    .mute.on { border-color: var(--warn-soft); background: var(--warn-soft); color: var(--warn); }
+    .action { width: 100%; min-height: 27px; border: 1px solid var(--accent); border-radius: 14px; background: transparent; color: var(--accent); font-size: 9px; font-weight: 700; cursor: pointer; }
+    .action:active { background: var(--accent-soft); }
+    .back { display: flex; align-items: center; gap: 5px; min-height: 26px; padding: 0 4px; border: 0; background: transparent; color: var(--accent); font-size: 10px; font-weight: 700; cursor: pointer; }
+    .device-list { overflow: hidden; }
+    .device-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 46px; padding: 7px 9px; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+    .device-row:last-child { border-bottom: 0; }
+    .device-row .icon-box { width: 27px; height: 27px; }
+    .device-action { color: var(--accent); font-size: 9px; font-weight: 700; }
+    .note { padding: 1px 3px; color: var(--muted); font-size: 9px; line-height: 1.35; }
+    .empty { padding: 18px 10px; color: var(--muted); text-align: center; }
+    .toast { position: fixed; right: 9px; bottom: 8px; left: 9px; min-height: 26px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-strong); color: var(--text); font-size: 10px; opacity: 0; pointer-events: none; transform: translateY(5px); transition: opacity .16s ease, transform .16s ease; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.error { border-color: var(--warn-soft); color: var(--warn); }
+
+    svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+    @media (prefers-reduced-motion: reduce) { .connection-card:active, .device-row:active, .toast { transition: none; transform: none; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="summary" id="summary"></section>
+    <nav class="tabs" aria-label="Налаштування пристрою">
+      <button class="tab active" type="button" data-tab="connections">Звʼязок</button>
+      <button class="tab" type="button" data-tab="audio">Звук</button>
+    </nav>
+    <main class="content" id="content"></main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const state = { data: null, tab: "connections", detail: null, toastTimer: null };
+    const storageKey = "device-settings.audio-routes";
+    const outputKey = "device-settings.output";
+
+    const icons = {
+      bot: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="13" rx="3"/><path d="M8 6V4m8 2V4M8 13h.01M16 13h.01M9 17h6"/></svg>',
+      wifi: '<svg viewBox="0 0 24 24"><path d="M3 8.5a14 14 0 0 1 18 0M6.5 12a8.5 8.5 0 0 1 11 0M10 15.5a3.5 3.5 0 0 1 4 0M12 19h.01"/></svg>',
+      bluetooth: '<svg viewBox="0 0 24 24"><path d="m8 7 8 10-4 3V4l4 4-8 9"/></svg>',
+      headphones: '<svg viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><path d="M4 14h3v5H5a1 1 0 0 1-1-1zM20 14h-3v5h2a1 1 0 0 0 1-1z"/></svg>',
+      speaker: '<svg viewBox="0 0 24 24"><path d="M4 10h4l5-4v12l-5-4H4zM17 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/></svg>',
+      mic: '<svg viewBox="0 0 24 24"><rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3m-4 0h8"/></svg>',
+      youtube: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="3"/><path d="m10 10 5 2-5 2z"/></svg>',
+      alarm: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 9v4l2 1M5 5 3 7m16-2 2 2"/></svg>',
+      bell: '<svg viewBox="0 0 24 24"><path d="M6 17h12l-1.5-2v-4a4.5 4.5 0 0 0-9 0v4zM10 20h4"/></svg>',
+      refresh: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.8-3L3 11m0 0V6m0 5h5M4 13a8 8 0 0 0 14.8 3L21 13m0 0v5m0-5h-5"/></svg>',
+      arrow: '<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></svg>',
+      back: '<svg viewBox="0 0 24 24"><path d="m14 5-7 7 7 7M7 12h13"/></svg>',
+      volume: '<svg viewBox="0 0 24 24"><path d="M4 10h4l5-4v12l-5-4H4zM17 9a4 4 0 0 1 0 6"/></svg>',
+      mute: '<svg viewBox="0 0 24 24"><path d="M4 10h4l5-4v12l-5-4H4zM18 9l3 3m0-3-3 3"/></svg>'
+    };
+
+    function icon(name) { return icons[name] || icons.bot; }
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+    }
+    function loadJson(key, fallback) {
+      try { return JSON.parse(localStorage.getItem(key) || "") || fallback; } catch (_) { return fallback; }
+    }
+    function saveJson(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {} }
+    function showToast(message, error = false) {
+      const toast = $("#toast");
+      toast.textContent = message;
+      toast.classList.toggle("error", error);
+      toast.classList.add("show");
+      clearTimeout(state.toastTimer);
+      state.toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
+    }
+    function post(type, payload = {}) { window.parent.postMessage({ type, ...payload }, window.location.origin); }
+    const appRoot = $(".app");
+    let swipeStart = null;
+    function releaseSwipe(pointerId) {
+      if (pointerId == null || typeof appRoot.hasPointerCapture !== "function") return;
+      try {
+        if (appRoot.hasPointerCapture(pointerId)) appRoot.releasePointerCapture(pointerId);
+      } catch (_) {}
+    }
+    appRoot.addEventListener("pointerdown", (event) => {
+      if (swipeStart || event.target.closest("input, select, textarea")) return;
+      const onButton = !!event.target.closest("button");
+      swipeStart = {
+        x: event.clientX,
+        y: event.clientY,
+        pointerId: event.pointerId,
+        scrollable: true,
+      };
+      if (!onButton) {
+        try { appRoot.setPointerCapture(event.pointerId); } catch (_) {}
+      }
+    });
+    function finishSwipe(event) {
+      if (!swipeStart || swipeStart.pointerId !== event.pointerId) return;
+      const start = swipeStart;
+      swipeStart = null;
+      releaseSwipe(start.pointerId);
+      if (event.type === "pointercancel" && start.scrollable) return;
+      const dx = event.clientX - start.x;
+      const dy = event.clientY - start.y;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+      if (Math.abs(dx) >= Math.abs(dy)) post("storeAppSwipe", { direction: dx < 0 ? "left" : "right" });
+      else if (dy > 0) post("storeAppSwipe", { direction: "down" });
+    }
+    appRoot.addEventListener("pointerup", finishSwipe);
+    appRoot.addEventListener("pointercancel", finishSwipe);
+    window.addEventListener("pointerup", finishSwipe);
+    window.addEventListener("pointercancel", finishSwipe);
+    appRoot.addEventListener("lostpointercapture", (event) => {
+      if (swipeStart?.pointerId === event.pointerId) swipeStart = null;
+    });
+    function signal(value) {
+      const filled = Math.max(0, Math.min(4, Math.round(Number(value || 0) / 25)));
+      return `<span class="signal" aria-label="Сигнал ${value}%">${[1, 2, 3, 4].map((item) => `<i class="${item <= filled ? "on" : ""}"></i>`).join("")}</span>`;
+    }
+    function renderIconNodes() {
+      document.querySelectorAll("[data-icon]").forEach((node) => { node.innerHTML = icon(node.dataset.icon); });
+    }
+    function renderSummary() {
+      const data = state.data || {};
+      const device = data.device || {};
+      const battery = device.battery || {};
+      $("#summary").innerHTML = `
+        <div class="summary-copy"><div class="summary-name">${escapeHtml(device.name || "Клод Бот")}</div>
+          <div class="summary-sub"><span class="dot"></span>${data.mode === "virtual" ? "віртуальний пристрій" : "система підключена"}</div></div>
+        <div class="battery"><div class="battery-top"><span>${battery.level ?? 82}%</span><span class="battery-shell"><span class="battery-fill" style="width:${Math.max(0, Math.min(100, battery.level ?? 82))}%"></span></span></div>
+          <span class="charge">${battery.charging ? "заряджається" : "від батареї"}</span></div>`;
+    }
+    function renderConnections() {
+      const data = state.data || {};
+      if (state.detail === "wifi") return renderWifiDetail(data.wifi || {});
+      if (state.detail === "bluetooth") return renderBluetoothDetail(data.bluetooth || {});
+      const wifi = data.wifi || {};
+      const bluetooth = data.bluetooth || {};
+      const headphones = (bluetooth.devices || []).find((device) => device.kind === "headphones");
+      $("#content").innerHTML = `<div class="stack">
+        <div class="section-label"><span>Підключення</span><span class="virtual-badge">${data.mode === "virtual" ? "DEMO MODE" : "LIVE"}</span></div>
+        <button class="connection-card" type="button" data-detail="wifi"><span class="icon-box green">${icon("wifi")}</span><span class="copy"><span class="title">Wi‑Fi</span><span class="subtitle">${escapeHtml(wifi.ssid || "Мережу не вибрано")} · ${escapeHtml(wifi.ip || "без IP")}</span></span><span class="state"><span class="state-text">${wifi.status === "connected" ? "підключено" : "готово"}</span>${signal(wifi.signal)}</span><span class="chevron">${icon("arrow")}</span></button>
+        <button class="connection-card" type="button" data-detail="bluetooth"><span class="icon-box ${headphones?.connected ? "green" : ""}">${icon("bluetooth")}</span><span class="copy"><span class="title">Bluetooth</span><span class="subtitle">${headphones?.connected ? escapeHtml(headphones.name) + " · " + (headphones.battery ?? 0) + "%" : "готовий до підключення"}</span></span><span class="state"><span class="state-text ${headphones?.connected ? "" : "ready"}">${headphones?.connected ? "підключено" : "увімкнено"}</span></span><span class="chevron">${icon("arrow")}</span></button>
+        <div class="card audio-card"><div class="section-label" style="padding:0"><span>Аудіо зараз</span><span class="virtual-badge">вхід · вихід</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box">${icon((data.audio || {}).output?.icon || "speaker")}</span><span class="copy"><span class="title">${escapeHtml((data.audio || {}).output?.name || "Вбудований динамік")}</span><span class="subtitle">Вихід для голосу бота</span></span><span class="device-meta">активний</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box amber">${icon("mic")}</span><span class="copy"><span class="title">${escapeHtml((data.audio || {}).input?.name || "Вбудований мікрофон")}</span><span class="subtitle">Вхід для розпізнавання</span></span><span class="device-meta">активний</span></div></div>
+        <button class="action" type="button" data-action="refresh">${icon("refresh")} &nbsp;Оновити стан</button>
+        <div class="note">У віртуальному режимі підключення імітуються. На Raspberry Pi ці самі картки покажуть реальний стан.</div>
+      </div>`;
+    }
+    function renderWifiDetail(wifi) {
+      const networks = wifi.networks || [];
+      $("#content").innerHTML = `<div class="stack"><button class="back" type="button" data-action="back">${icon("back")} Назад до підключень</button><div class="section-label"><span>Wi‑Fi мережі</span><span class="virtual-badge">${wifi.status === "connected" ? "підключено" : "вимкнено"}</span></div><div class="card device-list">${networks.map((network) => `<button class="device-row" type="button" data-network="${escapeHtml(network.ssid)}"><span class="icon-box ${network.known ? "green" : ""}">${icon("wifi")}</span><span class="copy"><span class="title">${escapeHtml(network.ssid)}</span><span class="subtitle">${network.secured ? "Захищена мережа" : "Відкрита мережа"}</span></span>${signal(network.signal)}<span class="device-action">${network.known ? "активна" : "обрати"}</span></button>`).join("")}</div><div class="note">Тап по мережі збереже вибір локально у virtual mode. Реальне підключення додасть native-адаптер.</div></div>`;
+    }
+    function renderBluetoothDetail(bluetooth) {
+      const devices = bluetooth.devices || [];
+      $("#content").innerHTML = `<div class="stack"><button class="back" type="button" data-action="back">${icon("back")} Назад до підключень</button><div class="section-label"><span>Bluetooth пристрої</span><span class="virtual-badge">${bluetooth.enabled ? "увімкнено" : "вимкнено"}</span></div><div class="card device-list">${devices.map((device) => `<button class="device-row" type="button" data-device="${escapeHtml(device.id)}"><span class="icon-box ${device.connected ? "green" : ""}">${icon(device.icon)}</span><span class="copy"><span class="title">${escapeHtml(device.name)}</span><span class="subtitle">${device.battery == null ? "не підключено" : "заряд " + device.battery + "%"}</span></span><span class="device-action">${device.connected ? "підключено" : "підключити"}</span></button>`).join("")}</div><button class="action" type="button" data-action="scan">${icon("refresh")} &nbsp;Сканувати ще раз</button><div class="note">Пошук і сполучення стануть реальними після підключення Bluetooth-модуля бота.</div></div>`;
+    }
+    function routes() {
+      const defaults = (state.data?.audio?.routes || []).map((route) => ({ ...route }));
+      const saved = loadJson(storageKey, {});
+      return defaults.map((route) => ({ ...route, ...(saved[route.id] || {}) }));
+    }
+    function renderAudio() {
+      const audio = state.data?.audio || {};
+      const devices = (audio.devices || []).filter((device) => device.kind === "output");
+      const output = audio.output || devices[0] || { name: "Вбудований динамік", icon: "speaker" };
+      $("#content").innerHTML = `<div class="stack"><div class="section-label"><span>Аудіомаршрути</span><span class="virtual-badge">окремо для кожного джерела</span></div><div class="card audio-card"><div class="audio-device"><span class="icon-box">${icon(output.icon || "speaker")}</span><span class="copy"><span class="title">${escapeHtml(output.name)}</span><span class="subtitle">Вихід відтворення</span></span><span class="select-pill" data-action="output">змінити</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box amber">${icon(audio.input?.icon || "mic")}</span><span class="copy"><span class="title">${escapeHtml(audio.input?.name || "Вбудований мікрофон")}</span><span class="subtitle">Вхід розпізнавання</span></span><span class="select-pill" data-action="input">налаштувати</span></div></div><div class="card audio-card"><div class="mixer-head"><span class="mixer-title">Гучність по застосунках</span><span class="mixer-hint">Тап по повзунку — точний рівень</span></div><div class="route-list">${routes().map((route) => `<div class="route-row"><span class="route-icon">${icon(route.icon)}</span><span class="route-copy"><span class="route-name">${escapeHtml(route.label)}</span><input class="route-range" type="range" min="0" max="100" value="${Math.max(0, Math.min(100, route.volume ?? 0))}" data-route="${escapeHtml(route.id)}" aria-label="Гучність: ${escapeHtml(route.label)}"></span><span class="route-controls"><span class="route-value" data-value="${escapeHtml(route.id)}">${route.muted ? "—" : route.volume}%</span><button class="mute ${route.muted ? "on" : ""}" type="button" data-mute="${escapeHtml(route.id)}" aria-label="${route.muted ? "Увімкнути" : "Вимкнути"} ${escapeHtml(route.label)}">${icon(route.muted ? "mute" : "volume")}</button></span></div>`).join("")}</div></div><div class="note">Налаштування зберігаються локально у virtual mode. Пізніше вони передаватимуться реальному мікшеру бота.</div></div>`;
+    }
+    function render() {
+      renderSummary();
+      document.querySelectorAll(".tab").forEach((tab) => tab.classList.toggle("active", tab.dataset.tab === state.tab));
+      if (state.tab === "audio") renderAudio(); else renderConnections();
+      renderIconNodes();
+    }
+    async function refresh() {
+      try {
+        const response = await fetch("/api/system/status", { cache: "no-store" });
+        if (!response.ok) throw new Error("status");
+        state.data = await response.json();
+      } catch (_) {
+        state.data = { mode: "virtual", device: { name: "Клод Бот", battery: { level: 82, charging: true } }, wifi: { status: "connected", ssid: "Claude-Bot", ip: "192.168.1.42", signal: 86, networks: [] }, bluetooth: { enabled: true, devices: [] }, audio: { output: { name: "Вбудований динамік", icon: "speaker" }, input: { name: "Вбудований мікрофон", icon: "mic" }, routes: [{ id: "bot", label: "Голос бота", icon: "bot", volume: 72 }, { id: "youtube", label: "YouTube", icon: "youtube", volume: 58 }, { id: "alarm", label: "Будильник", icon: "alarm", volume: 84 }] } };
+        showToast("Поки показую virtual mode", true);
+      }
+      render();
+    }
+    function updateRoute(id, changes) {
+      const saved = loadJson(storageKey, {});
+      saved[id] = { ...(saved[id] || {}), ...changes };
+      saveJson(storageKey, saved);
+      post("botAudioRoute", { routeId: id, ...changes });
+    }
+    document.addEventListener("click", (event) => {
+      const tab = event.target.closest("[data-tab]");
+      if (tab) { state.tab = tab.dataset.tab; state.detail = null; render(); return; }
+      const detail = event.target.closest("[data-detail]");
+      if (detail) { state.detail = detail.dataset.detail; render(); return; }
+      const action = event.target.closest("[data-action]");
+      if (action) {
+        if (action.dataset.action === "back") { state.detail = null; render(); }
+        if (action.dataset.action === "refresh" || action.dataset.action === "scan") refresh();
+        if (action.dataset.action === "output") { state.tab = "connections"; state.detail = "bluetooth"; render(); showToast("Оберіть вихід у Bluetooth-пристроях"); }
+        if (action.dataset.action === "input") showToast("Мікрофон налаштовано для ASR");
+        return;
+      }
+      const mute = event.target.closest("[data-mute]");
+      if (mute) {
+        const route = routes().find((item) => item.id === mute.dataset.mute);
+        updateRoute(mute.dataset.mute, { muted: !route?.muted });
+        render();
+      }
+      const device = event.target.closest("[data-device]");
+      if (device) { post("botBluetoothDevice", { deviceId: device.dataset.device }); showToast("Запит на підключення збережено"); }
+      const network = event.target.closest("[data-network]");
+      if (network) { post("botWifiNetwork", { ssid: network.dataset.network }); showToast(`Мережу ${network.dataset.network} обрано`); }
+    });
+    document.addEventListener("input", (event) => {
+      const range = event.target.closest("[data-route]");
+      if (!range) return;
+      const value = Number(range.value);
+      const label = Array.from(document.querySelectorAll("[data-value]"))
+        .find((node) => node.dataset.value === range.dataset.route);
+      if (label) label.textContent = `${value}%`;
+      updateRoute(range.dataset.route, { volume: value, muted: false });
+    });
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent || event.origin !== window.location.origin || event.data?.type !== "botSkin") return;
+      if (event.data.vars) Object.entries(event.data.vars).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
+      document.documentElement.dataset.theme = event.data.theme === "light" ? "light" : "dark";
+    });
+    refresh();
+  </script>
+</body>
+</html>
