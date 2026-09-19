@@ -90,7 +90,46 @@ explicitly told you to. If unsure, ask — do not guess an identity.
 
 ---
 
-## 5. Review process (owner requirement)
+## 5. Language policy
+
+### The language of the request does not set the language of the code
+
+An agent may be prompted in Ukrainian, English, or anything else. **That says
+nothing about what language the artifacts should be in.** Do not mirror the
+prompt. The rules below apply no matter how the task was phrased.
+
+### What goes in which language
+
+| Artifact | Language | Why |
+|---|---|---|
+| Identifiers, types, API fields, file names | **English** | they are read by every tool, linter and library in the stack |
+| Commit messages, this file, `CONTRIBUTING.md` | **English** | every coding tool reads them |
+| Code comments | **Ukrainian** | this repo's comments explain *why*, and the owner reads them. Keep the convention |
+| Anything a user can see | **never hardcoded** | see below |
+
+### User-visible strings are always keys, never literals
+
+A string that reaches a human eye — a label, a button, a toast, an error, a
+placeholder — **must not be written inline in any language**. It gets a key and
+lives in the locale file.
+
+The screen is the reference implementation: `Virtual Bot/static/screen/i18n.js`
+holds 604 keys in `uk` and `en`, used as `t("state.head")`, with
+`applyStatic()` filling `data-i18n` attributes in HTML. Copy that shape.
+
+A new screen or panel that ships hardcoded text is **not done**, even if the
+text is correct and in the right language.
+
+### Known debt — do not add to it
+
+The dashboard (`Virtual Bot/dashboard/`) has **no i18n at all**: Ukrainian is
+hardcoded across all 52 `.tsx` files. Do not extend that pattern. If you touch
+a dashboard file and it is cheap to lift its strings into a locale module, do
+it; if it is not cheap, at least do not add new literals.
+
+---
+
+## 6. Review process (owner requirement)
 
 Every working agent's output should be verified by a separate adversarial
 reviewer agent (Fable, max effort) that hunts for and **fixes** bugs, followed by
@@ -99,7 +138,7 @@ expecting 400, verify static assets, then shut processes down).
 
 ---
 
-## 6. Agents that build features and screen apps
+## 7. Agents that build features and screen apps
 
 This section is for an agent doing **product work** — a feature, a module, or a
 screen app — usually with no human watching each step. Everything above still
@@ -158,7 +197,7 @@ the same change. The owner decides what gets built.
 
 ---
 
-## 7. Quick checklist before you finish a task
+## 8. Quick checklist before you finish a task
 
 - [ ] `git status` reviewed — only intended files staged
 - [ ] No secrets in the diff
