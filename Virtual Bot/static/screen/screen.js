@@ -42,6 +42,9 @@ const SWIPE_MIN = 28;         // поріг жесту в пікселях сц�
 const stage = $("stage");
 const rail = $("rail");
 const tiles = Array.from(rail.querySelectorAll(".tile"));
+// Індекс шукаємо за data-tile, а не пишемо числом: секції в HTML ще
+// переставлятимуть, і «4» тихо поїхала б на чужий тайл.
+const CHAT_TILE = Math.max(0, tiles.findIndex((el) => el.dataset.tile === "chat"));
 const layerQuick = $("layerQuick");
 const dimmer = $("dimmer");
 
@@ -355,6 +358,9 @@ function brainLabel(mode) {
   if (BRAIN_LABELS[mode]) return BRAIN_LABELS[mode];
   if (mode === "demo") return t("state.demo");
   if (mode === "offline") return t("state.nobrain");
+  // «unknown» — справжньої відповіді ще не було. Пінг сюди не рахується:
+  // порт може відповідати, а шлюз не вміти відповісти.
+  if (mode === "unknown") return t("state.unknown");
   return mode;
 }
 
@@ -371,7 +377,7 @@ async function refreshStatus() {
     const r = await fetch("/api/status");
     if (!r.ok) throw new Error("status " + r.status);
     const s = await r.json();
-    setState($("stBrain"), s.mode !== "demo" && s.mode !== "offline", brainLabel(s.mode) || "—");
+    setState($("stBrain"), s.mode !== "demo" && s.mode !== "offline" && s.mode !== "unknown", brainLabel(s.mode) || "—");
     setState($("stVision"), !!s.vision, s.vision ? t("state.online") : t("state.offline"));
     setState($("stDisplay"), !!s.display, s.display ? t("state.online") : t("state.offline"));
     statusAt = Date.now();
@@ -423,6 +429,12 @@ setLink(false);
       onMusicEvent(ev);
       return;
     }
+    if (ev.type === "video") {
+      // Мозок керує ВІДЕО-плеєром (тули play_video / video_control):
+      // застосунок youtube, картинка на весь екран
+      onVideoCommand(ev);
+      return;
+    }
     if (ev.type === "emotion") {
       setEmotion(ev.emotion);
     } else if (ev.type === "reply") {
@@ -433,7 +445,8 @@ setLink(false);
       if (text) {
         showSaid(text);
         showCaption(text, "bot");
-        speak(text);
+        // Свою ж репліку екран уже читав по мірі стріму (sendChat → feedSpeech)
+        if (text !== spokenReplyText) speak(text);
       }
       setEmotion(ev.emotion || "speaking");
     } else if (ev.type === "say") {
@@ -475,11 +488,41 @@ const ICON_TINTS = [
 ];
 /* id стилю → ключ підпису: id зберігається у налаштуваннях, підпис залежить
    від мови, тому в константі лежить саме ключ, а не готовий текст */
+/* auto — ПЕРШИЙ і типовий: на темній темі стандартні (наші піксельні), на
+   світлій — монохромні. Фіксований білий тут не годиться в принципі: світла
+   тема має тло #efe7d9, і білі іконки на ньому просто зникають. */
 const ICON_STYLES = {
+  auto: "iconstyle.auto",
   pixel: "iconstyle.pixel",
+  pack: "iconstyle.pack",
   line: "iconstyle.line",
   color: "iconstyle.color",
+  white: "iconstyle.white",
 };
+/* Монохром — це стиль, а не ще один відтінок у палітрі: у піксельному паку
+   кольори вмальовані в самі файли (це різнобарвний піксель-арт), і
+   «побілити» його можна лише filter'ом, який на A53 коштує кадрів і
+   перетворює малюнок на білу пляму. Контур же просто малюється потрібним
+   кольором — безкоштовно. */
+const MONO_FALLBACK = "#f2f5f7";
+
+/* Колір монохромних іконок беремо з --text ПОТОЧНОЇ теми, а не з константи.
+   Тоді він сам стає білим на темній і темним на світлій — і, головне,
+   переживає користувацькі скіни, які теж перевизначають --text. Хардкод
+   двох значень довелося б правити щоразу, коли зʼявиться третя тема. */
+function monoStroke() {
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue("--text").trim();
+  return value || MONO_FALLBACK;
+}
+
+/* Що реально малюємо: auto розкривається за темою. Усі рендери питають
+   САМЕ цю функцію, а `iconStyle` лишається тим, що вибрав користувач —
+   інакше в налаштуваннях підсвічувався б «Піксельні» замість «Авто». */
+function activeIconStyle() {
+  if (iconStyle !== "auto") return iconStyle;
+  return document.documentElement.dataset.theme === "light" ? "white" : "pixel";
+}
 const PIXEL_ICON_ASSETS = {
   face: "face.svg",
   clock: "clock.svg",
@@ -495,7 +538,23 @@ const PIXEL_ICON_ASSETS = {
   history: "chats.svg",
   store: "store.svg",
   music: "music.svg",
+  // Іконки застосунків із магазину. Без них у шухляді ці дві плитки падали
+  // у векторний фолбек — серед піксельних сусідів вони єдині виглядали
+  // «з іншого набору».
+  pencil: "pencil.svg",
+  youtube: "youtube.svg",
 };
+/* Іконки з паку Pixel: готові кольорові кружечки, витягнуті з APK і
+   зменшені до 64px. Діють ТІЛЬКИ в шухляді: у швидких діях іконка
+   малюється 20px, і повноколірний логотип там перетворюється на кляксу,
+   а на «плюс», «список» чи «контраст» у паку картинок і немає. Тому за
+   межами шухляди цей стиль поводиться як контурний. */
+const PACK_ICON_SLOTS = [
+  "face", "clock", "mic", "bubble", "gauge", "sliders", "camera", "server",
+  "monitor", "settings", "memory", "history", "store", "music", "pencil",
+  "youtube",
+];
+
 const PIXEL_ICON_TINTS = {
   face: "#4ecdc4",
   clock: "#5b9bd5",
@@ -512,26 +571,43 @@ const PIXEL_ICON_TINTS = {
   store: "#d7a65b",
   music: "#d98263",
 };
-let iconStyle = "pixel";
+let iconStyle = "auto";
 let iconTint = DEFAULT_ICON_TINT;
 
 /* Створює іконку в поточному стилі. big — велика сітка для шухляди. */
 function uiIcon(name, opts) {
   const o = opts || {};
-  if (iconStyle === "pixel") {
+  if (activeIconStyle() === "pixel") {
     return makeIcon(name, o.cell || 3, o.tint || iconColors(!!o.on)[0], "", !!o.big);
   }
   const svg = makeSvgIcon(name);
   if (o.big) svg.classList.add("svgicon-big");
-  svg.style.stroke = iconStyle === "color" ? (ICON_COLORS[name] || iconTint) : iconTint;
-  svg.dataset.colored = iconStyle === "color" ? "1" : "";
+  svg.style.stroke = strokeFor(name);
+  svg.dataset.colored = activeIconStyle() === "color" ? "1" : "";
   return svg;
 }
 
 /* Великі іконки шухляди беруться з локального pixel-паку, коли обрано
    піксельний стиль. Для двох інших стилів лишається векторний renderer. */
 function drawerIcon(name, on) {
-  if (iconStyle === "pixel") {
+  if (activeIconStyle() === "pack" && PACK_ICON_SLOTS.includes(name)) {
+    const image = document.createElement("img");
+    image.className = "pack-icon";
+    image.alt = "";
+    image.setAttribute("aria-hidden", "true");
+    image.decoding = "async";
+    image.draggable = false;
+    image.src = "/static/screen/assets/pack-icons/" + name + ".png";
+    // Немає файлу — падаємо на контурну, а не лишаємо порожнє коло
+    image.addEventListener("error", () => {
+      const svg = makeSvgIcon(name);
+      svg.classList.add("svgicon-big");
+      svg.style.stroke = iconTint;
+      image.replaceWith(svg);
+    }, { once: true });
+    return image;
+  }
+  if (activeIconStyle() === "pixel") {
     const asset = PIXEL_ICON_ASSETS[name];
     const fallback = () => {
       const fallbackName = name === "server" ? "gear" : name;
@@ -561,13 +637,24 @@ function drawerIcon(name, on) {
   }
   const svg = makeSvgIcon(name);
   svg.classList.add("svgicon-big");
-  svg.style.stroke = iconStyle === "color" ? (ICON_COLORS[name] || iconTint) : iconTint;
+  svg.style.stroke = strokeFor(name);
   return svg;
+}
+
+/* Колір контуру для поточного стилю. Один хелпер на всі місця, де раніше
+   стояв той самий тернарник: інакше додавання стилю треба було б не забути
+   в трьох файлах-місцях, і одне з них щоразу лишалось старим. */
+function strokeFor(name) {
+  const style = activeIconStyle();
+  if (style === "white") return monoStroke();
+  if (style === "pack") return iconTint;
+  if (style === "color") return ICON_COLORS[name] || iconTint;
+  return iconTint;
 }
 
 /* Фон круглої плитки в шухляді: у кольоровому стилі — у тон іконці */
 function iconTileBg(name) {
-  if (iconStyle !== "color") return "";
+  if (activeIconStyle() !== "color") return "";
   const c = ICON_COLORS[name];
   return c ? "color-mix(in srgb, " + c + " 26%, var(--line))" : "";
 }
@@ -664,7 +751,10 @@ const CLOCK_FORMAT_OPTIONS = [
 let voiceOn = false;
 // Темп голосу. Piper типово говорить неквапно — для короткої репліки це добре,
 // для абзацу вже втомлює, тому 1.5× і 2× виведені в швидкі дії.
-const VOICE_SPEEDS = [1, 1.5, 2];
+// Темпи залежать від ПРОВАЙДЕРА: у Piper це 1/1.5/2× (--length-scale), а
+// ElevenLabs вище 1.2× не дає взагалі. Тому список приходить із
+// /api/tts/status, а тут лишається лише розумний дефолт до першої відповіді.
+let VOICE_SPEEDS = [1, 1.5, 2];
 let voiceSpeed = 1;
 let ttsAvailable = false;
 let editing = false;
@@ -686,6 +776,12 @@ const QUICK_TILES = {
             enabled: () => ttsAvailable && voiceOn },
   apps:   { labelKey: "quick.screens", icon: "grid", toggle: () => { openLayer(null); openApps(); }, isOn: () => false },
   icons:  { labelKey: "quick.settings", icon: "settings", toggle: () => { openLayer(null); openSettings(); }, isOn: () => false },
+  // Чат живе в тайлі 4, але керувати ним хочеться з будь-якого місця —
+  // особливо коли говориш «в обличчя» на циферблаті.
+  chatNew: { labelKey: "quick.chatNew", icon: "plus",
+             toggle: () => { openLayer(null); startNewChat(); }, isOn: () => false },
+  chatPick: { labelKey: "quick.chatPick", icon: "list",
+              toggle: () => { openLayer(null); goTile(CHAT_TILE); showSessions(); }, isOn: () => false },
   full:   { labelKey: "quick.full", icon: "expand", toggle: toggleFullscreen, isOn: () => !!document.fullscreenElement },
   reload: { labelKey: "quick.reload", icon: "power", toggle: () => location.reload(), isOn: () => false },
 };
@@ -718,9 +814,126 @@ function applyMotion(value) {
 
 const voiceAudio = new Audio();
 let voiceUrl = null;
-voiceAudio.addEventListener("ended", () => { botSpeaking = false; syncMusicVolume(); });
-voiceAudio.addEventListener("pause", () => { botSpeaking = false; syncMusicVolume(); });
-voiceAudio.addEventListener("error", () => { botSpeaking = false; syncMusicVolume(); });
+
+/* ---------- Черга озвучки ----------
+   Раніше бот читав ГОТОВУ відповідь: поки мозок домовляв останнє речення,
+   екран молчав — на довгій відповіді це десятки секунд тиші, хоча перше
+   речення вже стояло на екрані. Тепер речення йдуть в озвучку по мірі
+   стріму, а черга тримає порядок: другий шматок не обриває перший.
+
+   Синтез наступного шматка стартує ПАРАЛЕЛЬНО з озвучкою цього — інакше
+   між реченнями чути паузу рівно на мережеву затримку TTS. */
+
+// ~30-50 токенів: коротше різати немає сенсу, бо перше речення ще не склалось
+const SPEAK_MIN_CHARS = 90;
+// Текст без жодного розділового знака все одно віддаємо в озвучку: краще
+// прочитати довгий рядок, ніж чекати кінця «стіни» молча.
+const SPEAK_MAX_CHARS = 700;
+
+let speechQueue = [];
+let speechRunning = false;
+let speechEpoch = 0;              // нова репліка ⇒ хвіст попередньої не грає
+let speechEnded = null;           // resolve поточного playBlob
+let spokenReplyText = "";         // що вже озвучив сам екран (щоб не читати двічі)
+
+function speechAudioDone() {
+  const resolve = speechEnded;
+  speechEnded = null;
+  if (resolve) resolve();
+}
+voiceAudio.addEventListener("ended", speechAudioDone);
+voiceAudio.addEventListener("error", speechAudioDone);
+
+/* Скидає озвучку: нова репліка не має догравати хвіст попередньої */
+function speechReset() {
+  speechEpoch += 1;
+  speechQueue = [];
+  try { voiceAudio.pause(); } catch (e) { /* ще нічого не грало */ }
+  speechAudioDone();
+  botSpeaking = false;
+  musicDucked = false;
+  syncMusicVolume();
+}
+
+async function ttsBlob(text) {
+  try {
+    const r = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Стеля — 1000 символів (стільки бере бекенд), ріжемо по межі речення:
+      // обірване на півслові звучить як збій.
+      body: JSON.stringify({ text: cutForSpeech(text, 1000), speed: voiceSpeed }),
+    });
+    if (!r.ok) return null;                  // 503 — голос просто мовчить
+    return await r.blob();
+  } catch (e) {
+    return null;                             // мережа моргнула — наступний шматок спробує
+  }
+}
+
+function playBlob(blob) {
+  return new Promise((resolve) => {
+    if (voiceUrl) URL.revokeObjectURL(voiceUrl);
+    voiceUrl = URL.createObjectURL(blob);
+    speechEnded = resolve;
+    voiceAudio.src = voiceUrl;
+    voiceAudio.volume = volume / 100;
+    voiceAudio.play().catch(() => speechAudioDone());
+  });
+}
+
+async function speechPump() {
+  if (speechRunning) return;
+  speechRunning = true;
+  const epoch = speechEpoch;
+  // Поки бот говорить — музика притихає, щоб було чутно мову
+  musicDucked = true;
+  syncMusicVolume();
+  // Прапорець ставимо ДО play(): у відкритому мікрофоні бот інакше почує
+  // власну озвучку й почне відповідати сам собі
+  botSpeaking = true;
+  captionSpeechStarted();
+  try {
+    let ready = null;                        // уже синтезований наступний шматок
+    while (epoch === speechEpoch && (ready || speechQueue.length)) {
+      const audio = ready || await ttsBlob(speechQueue.shift());
+      ready = null;
+      if (epoch !== speechEpoch) break;
+      const ahead = speechQueue.length ? ttsBlob(speechQueue.shift()) : null;
+      if (audio) await playBlob(audio);
+      if (ahead) ready = await ahead;
+    }
+  } finally {
+    speechRunning = false;
+    if (epoch === speechEpoch) {
+      botSpeaking = false;
+      musicDucked = false;
+      syncMusicVolume();
+      captionSpeechEnded();
+    }
+  }
+}
+
+/* Ставить шматок тексту в чергу озвучки (не скидаючи те, що вже грає) */
+function speechSay(raw) {
+  // Розмітку картинок вголос не читаємо: інакше диктувалось би
+  // «знак оклику дужка ейч-ті-ті-пі-ес…» замість самої репліки.
+  // Посилання й решту markdown ріже бекенд (tts_text.clean_for_speech).
+  const text = splitImages(String(raw || "")).text;
+  if (!voiceOn || !ttsAvailable || !text.trim()) return;
+  speechQueue.push(text);
+  speechPump();
+}
+
+/* Де закінчується останнє ЦІЛЕ речення: читати з півслова гірше, ніж
+   зачекати ще пів секунди стріму. */
+function speechCutIndex(text) {
+  let best = -1;
+  for (const mark of [".", "!", "?", "…", ";", ":", "\n"]) {
+    best = Math.max(best, text.lastIndexOf(mark));
+  }
+  return best;
+}
 
 /* ---- Ядро Now Playing: оголошення вгорі файлу, бо гучність (applyVolume)
    і ducking під час мови бота потрібні ДО відкриття будь-якого тайла.
@@ -748,6 +961,54 @@ const musicState = {
 
 let musicDucked = false;
 
+/* ---------- Швидкість відтворення (ютуб/подкасти) ----------
+   playbackRate міняє темп, не висоту: preservesPitch тримає тембр, інакше
+   на 2× ведучий звучить бурундуком. Для радіо це не діє — живий потік. */
+const RATE_KEY = "botScreenMusicRate";
+const MUSIC_RATES = [1, 1.25, 1.5, 1.75, 2];
+let musicRate = 1;
+
+function applyMusicRate() {
+  const live = !!(musicState && musicState.live);
+  const rate = live ? 1 : musicRate;
+  try {
+    musicAudio.preservesPitch = true;
+    musicAudio.mozPreservesPitch = true;
+    musicAudio.webkitPreservesPitch = true;
+    musicAudio.playbackRate = rate;
+  } catch (e) { /* браузер без playbackRate — просто грає як грає */ }
+}
+
+function setMusicRate(rate) {
+  if (!MUSIC_RATES.includes(rate)) return;
+  musicRate = rate;
+  writePref(RATE_KEY, String(rate));
+  applyMusicRate();
+  renderNpRates();
+}
+
+/* «1.25×», а не «1.3×»: fmtSpeed округлює до десятих (для темпу озвучки
+   1/1.5/2 це байдуже), а тут чверті — саме те, чим користуються. */
+function fmtRate(v) {
+  return String(v) + "\u00d7";
+}
+
+function renderNpRates() {
+  const host = $("npRates");
+  if (!host) return;
+  const live = !!(musicState && musicState.live);
+  host.innerHTML = "";
+  for (const rate of MUSIC_RATES) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "np-rate" + (!live && rate === musicRate ? " on" : "");
+    btn.textContent = fmtRate(rate);
+    btn.disabled = live || !musicState.track;
+    btn.addEventListener("click", (e) => { e.stopPropagation(); wake(); setMusicRate(rate); });
+    host.appendChild(btn);
+  }
+}
+
 function syncMusicVolume() {
   // Той самий повзунок гучності, що й у голосу бота; ducking — тимчасово
   const base = volume / 100;
@@ -759,6 +1020,16 @@ async function checkTts() {
     const r = await fetch("/api/tts/status");
     const d = await r.json();
     ttsAvailable = !!d.enabled;
+    if (Array.isArray(d.speeds) && d.speeds.length) {
+      VOICE_SPEEDS = d.speeds.map(Number).filter((v) => v > 0);
+      // Збережений темп може бути з іншого провайдера (1.5× у ElevenLabs
+      // немає) — тоді беремо перший доступний, а не мовчимо про підміну
+      if (!VOICE_SPEEDS.includes(voiceSpeed)) {
+        voiceSpeed = VOICE_SPEEDS[0];
+        writePref(SPEED_KEY, voiceSpeed);
+        renderQuickTiles();
+      }
+    }
   } catch (e) {
     ttsAvailable = false;
   }
@@ -782,36 +1053,10 @@ function cutForSpeech(text, limit) {
   return end > limit * 0.5 ? head.slice(0, end + 1) : head;
 }
 
-async function speak(raw) {
-  // Розмітку картинок вголос не читаємо: інакше Piper диктував би
-  // «знак оклику дужка ейч-ті-ті-пі-ес…» замість самої репліки
-  const text = splitImages(raw).text;
-  if (!voiceOn || !ttsAvailable || !text) return;
-  try {
-    const r = await fetch("/api/tts", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // Стеля — 1000 символів: рівно стільки бере piper_voice._clean, тож
-      // менший поріг просто мовчки губив би кінець і без того обрізаної фрази.
-      // Ріжемо по МЕЖІ РЕЧЕННЯ: обірване на півслові звучить як збій.
-      body: JSON.stringify({ text: cutForSpeech(text, 1000), speed: voiceSpeed }),
-    });
-    if (!r.ok) return;                       // 503 — голос просто мовчить
-    const blob = await r.blob();
-    if (voiceUrl) URL.revokeObjectURL(voiceUrl);
-    voiceUrl = URL.createObjectURL(blob);
-    voiceAudio.src = voiceUrl;
-    voiceAudio.volume = volume / 100;
-    // Поки бот говорить — музика притихає, щоб було чутно мову
-    musicDucked = true;
-    syncMusicVolume();
-    // Прапорець ставимо ДО play(): у відкритому мікрофоні бот інакше почує
-    // власну озвучку й почне відповідати сам собі
-    botSpeaking = true;
-    await voiceAudio.play().catch(() => { botSpeaking = false; });
-  } catch (e) {
-    /* голос не критичний — мовчимо */
-  }
+/* Готова репліка одним куском: хвіст попередньої скидаємо й читаємо цю */
+function speak(raw) {
+  speechReset();
+  speechSay(raw);
 }
 
 /* «1.5×» без зайвого нуля: 1× / 1.5× / 2× */
@@ -839,7 +1084,16 @@ function toggleTheme() {
   const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
   writePref(THEME_KEY, next);
+  applyTheme();
+}
+
+/* Одна точка на всі місця, де міняється тема (шторка, налаштування, старт).
+   repaintPixels перемальовує лише піксельні КАНВИ; контурні іконки — це svg
+   зі stroke, вписаним у стиль елемента, і самі вони не змінюються. Без
+   rebuildIcons монохром лишався білим на світлій темі, тобто зникав. */
+function applyTheme() {
   repaintPixels();
+  rebuildIcons();
 }
 
 function toggleFullscreen() {
@@ -970,7 +1224,10 @@ volRange.addEventListener("input", () => {
   const savedMotion = readPref(MOTION_KEY, "full");
   applyMotion(savedMotion === "reduced" ? "reduced" : "full");
 
-  const savedIconStyle = readPref(ICON_KEY, "pixel");
+  // "auto" і тут: цей рядок читається РАНІШЕ за той, що в асинхронному
+  // блоці нижче, і саме він визначає стиль першого рендера. Поки тут
+  // лишалось "pixel", типове «авто» ніколи не доживало до екрана.
+  const savedIconStyle = readPref(ICON_KEY, "auto");
   if (ICON_STYLES[savedIconStyle]) iconStyle = savedIconStyle;
   const savedIconTint = readPref(ICON_TINT_KEY, DEFAULT_ICON_TINT);
   if (ICON_TINTS.some((item) => item.value === savedIconTint)) iconTint = savedIconTint;
@@ -982,6 +1239,8 @@ volRange.addEventListener("input", () => {
   voiceOn = readPref(VOICE_KEY, "1") === "1";
   const savedSpeed = parseFloat(readPref(SPEED_KEY, "1"));
   if (VOICE_SPEEDS.includes(savedSpeed)) voiceSpeed = savedSpeed;
+  const savedRate = parseFloat(readPref(RATE_KEY, "1"));
+  if (MUSIC_RATES.includes(savedRate)) musicRate = savedRate;
 
   const saved = readPref(ORDER_KEY, null);
   if (saved) {
@@ -1061,7 +1320,16 @@ function addMsg(role, text) {
   return el;
 }
 
-async function sendChat(message) {
+/* fromVoice — репліку сказали в мікрофон. Летить у /api/chat як voice:true,
+   і мозок отримує в промпті застереження, що текст пройшов через ASR і може
+   бути перекручений. Без цього прапорця бот бачив «кван» як невідоме слово й
+   перепитував замість того, щоб зрозуміти «Qwen».
+
+   spoken — ЧИ ОЗВУЧАТЬ відповідь. Це не те саме, що fromVoice: надиктувати
+   можна з вимкненим синтезом, а набрати з клавіатури — з увімкненим. Від
+   нього залежить, чи попросять мозок писати одиниці словами: «120 км/год»
+   синтез читає як «ка-ем-скісна-риска-год», і це чути. */
+async function sendChat(message, fromVoice) {
   chatBusy = true;
   micButtons.forEach((b) => { b.classList.add("busy"); b.disabled = true; });
   addMsg("user", message);
@@ -1069,13 +1337,44 @@ async function sendChat(message) {
   const bubble = addMsg("bot", "…");
   bubble.classList.add("pending");
   let started = false;
+  /* Один статус на три місця: рядок на циферблаті, рядок під розмовою і сама
+     бульбашка, що поки чекає (доки не почався текст — їй нічого показувати,
+     крім «…»). */
+  const status = (label) => {
+    setBusy(label);
+    if (!started) bubble.textContent = label;
+  };
   let parser = null;
   let scrollPending = false;
   let streamed = "";      // що реально показали зі стріму
+  let spokenChars = 0;    // скільки символів відповіді вже пішло в озвучку
+
+  /* Озвучка НЕ чекає кінця відповіді: щойно набралось перше ціле речення
+     (від SPEAK_MIN_CHARS), воно вже читається, поки мозок домовляє решту.
+     На довгих відповідях це різниця між «бот заговорив за секунду» і
+     «бот молчав тридцять секунд, а потім прочитав усе». */
+  const feedSpeech = (final) => {
+    if (!voiceOn || !ttsAvailable) return;
+    const pending = streamed.slice(spokenChars);
+    if (!pending.trim()) return;
+    if (final) {
+      spokenChars = streamed.length;
+      speechSay(pending);
+      return;
+    }
+    if (pending.length < SPEAK_MIN_CHARS) return;
+    let cut = speechCutIndex(pending);
+    // Стіна тексту без жодного розділового знака: далі тягнути немає сенсу
+    if (cut < 0 && pending.length >= SPEAK_MAX_CHARS) cut = pending.length - 1;
+    if (cut < 0) return;
+    spokenChars += cut + 1;
+    speechSay(pending.slice(0, cut + 1));
+  };
 
   const onChunk = (chunk) => {
     if (!started) {
       started = true;
+      clearBusy();                       // пішов текст — дія скінчилась
       bubble.classList.remove("pending");
       bubble.textContent = "";
       parser = smd.parser(smd.default_renderer(bubble));
@@ -1083,6 +1382,7 @@ async function sendChat(message) {
     streamed += chunk;
     smd.parser_write(parser, chunk);
     showCaption(streamed, "bot", true);  // те саме — субтитром під обличчям (ще друкує)
+    feedSpeech(false);
     // Скрол не частіше за кадр: інакше на A53 кожен чанк дає reflow
     if (!scrollPending) {
       scrollPending = true;
@@ -1090,11 +1390,17 @@ async function sendChat(message) {
     }
   };
 
+  status(t("busy.thinking"));
+
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: message, stream: true, session_id: sessionId }),
+      body: JSON.stringify({
+        message: message, stream: true, session_id: sessionId,
+        voice: !!fromVoice,
+        spoken: voiceOn && ttsAvailable,
+      }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
 
@@ -1121,6 +1427,11 @@ async function sendChat(message) {
             onChunk(payload.chunk);
           } else if (eventType === "emotion") {
             setEmotion(payload.emotion);
+          } else if (eventType === "tool_start" || eventType === "tool_progress") {
+            status(toolBusyLabel(payload));
+          } else if (eventType === "tool_done" || eventType === "tool_result") {
+            // Тулз відпрацював — мозок знову думає (і, можливо, візьме наступний)
+            status(t("busy.thinking"));
           } else if (eventType === "done") {
             /* done.reply — ГОЛОВНІШИЙ за стрім, так каже сам бекенд
                (main.py: «текст розійшовся … done нижче все одно це замінить»).
@@ -1133,12 +1444,22 @@ async function sendChat(message) {
               bubble.classList.remove("pending");
               bubble.textContent = "";
               parser = smd.parser(smd.default_renderer(bubble));
+              // Озвучене вголос могло бути ІНШИМ текстом (мозок відкинув
+              // відповідь шлюзу й узяв наступний) — тоді читаємо заново,
+              // інакше просто доберемо хвіст у feedSpeech(true) нижче.
+              if (!payload.reply.startsWith(streamed.slice(0, spokenChars))) {
+                speechReset();
+                spokenChars = 0;
+              }
               streamed = payload.reply;
               started = true;
               smd.parser_write(parser, payload.reply);
               showCaption(payload.reply, "bot");
               chatScrollDown();
             }
+            feedSpeech(true);
+            // Подія `reply` прилетить на цей самий текст — хай не читає вдруге
+            spokenReplyText = streamed;
             setEmotion(payload.emotion);
           } else if (eventType === "error") {
             throw new Error(payload.error || t("chat.brainError"));
@@ -1158,6 +1479,7 @@ async function sendChat(message) {
     crab.showDefeat();
   } finally {
     chatBusy = false;
+    clearBusy();
     micButtons.forEach((b) => { b.classList.remove("busy"); b.disabled = false; });
     chatScrollDown();
     wake();
@@ -1262,9 +1584,28 @@ const SR_WINDOW_MS = 10000;
    це підпис під обличчям, а не читалка. */
 
 let captionTimer = 0;
+// Активний smd-парсер субтитра і текст, який у нього вже пішов: разом вони
+// дають дописування стріму замість перемальовування рамки з нуля.
+let captionParser = null;
+let captionRaw = "";
 const CAPTION_HOLD_MS = 9000;        // база: стільки висить коротка репліка
 const CAPTION_MS_PER_CHAR = 45;      // + на кожен символ, щоб абзац устигли прочитати
 const CAPTION_HOLD_MAX_MS = 45000;   // але не назавжди — це все ж циферблат
+
+/* Головне про час життя субтитра: він НЕ зникає, поки бот читає репліку
+   вголос. Раніше таймер стартував від показу тексту — і на довгій відповіді
+   субтитр гас посеред читання, тобто саме тоді, коли людина його слухала й
+   дочитувала очима. Тепер під час озвучки таймера немає взагалі, а після
+   останнього слова текст лежить іще CAPTION_AFTER_SPEECH_MS. */
+const CAPTION_AFTER_SPEECH_MS = 15000;
+
+const CAPTION_MODE_KEY = "botScreenCaptionMode";
+const CAPTION_MODE_OPTIONS = [
+  { value: "auto", key: "set.caption.auto" },
+  { value: "manual", key: "set.caption.manual" },
+];
+// manual — субтитр висить, доки не закриєш хрестиком (нікуди не спішить)
+let captionMode = validOption(readPref(CAPTION_MODE_KEY, "auto"), CAPTION_MODE_OPTIONS, "auto");
 
 /* Картинки в репліці бота: ![підпис](https://…). Тайл «Розмова» рендерить
    markdown сам (smd), а циферблат і «Бот сказав» показували СИРИЙ текст —
@@ -1287,6 +1628,24 @@ function splitImages(raw) {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return { text: text, images: images };
+}
+
+/* ---------- Markdown у виводі екрана ----------
+   Тайл «Розмова» малює відповідь стрімовим парсером (smd) — а циферблат і
+   «Бот сказав» показували СИРИЙ текст: людина бачила «**важливо**» замість
+   жирного і «- пункт» замість списку. Тому той самий smd віддаємо і сюди.
+
+   default_renderer лише ДОДАЄ вузли, тож «перемалювати» = почистити рамку
+   й почати новий парсер. */
+function mdStart(el) {
+  el.textContent = "";
+  return smd.parser(smd.default_renderer(el));
+}
+
+function mdWhole(el, text) {
+  const parser = mdStart(el);
+  smd.parser_write(parser, String(text || ""));
+  smd.parser_end(parser);
 }
 
 /* ---------- Бот показує картинку ----------
@@ -1435,6 +1794,11 @@ function renderPhotos(box, images) {
    знову на початок — щоб перечитати можна було, не чекаючи нової репліки. */
 
 const captionPage = $("captionPage");
+const faceCaptionText = $("faceCaptionText");
+const captionClose = $("captionClose");
+
+// Хрестик: закриває субтитр і не пускає тап у карусель під ним
+captionClose.addEventListener("click", (e) => { e.stopPropagation(); hideCaption(); });
 
 // Поточна сторінка тримаємо ЧИСЛОМ, а не рахуємо зі scrollTop. Через
 // scroll-behavior: smooth прокрутка доїжджає асинхронно, тож лічильник,
@@ -1468,7 +1832,7 @@ function pageCaption() {
   scrollCaptionTo((captionPageIdx + 1) % pages);       // з кінця — знову на початок
   // Людина читає — субтитр не має зникнути з-під пальця на півслові
   clearTimeout(captionTimer);
-  captionTimer = setTimeout(hideCaption, CAPTION_HOLD_MAX_MS);
+  if (captionMode !== "manual") captionTimer = setTimeout(hideCaption, CAPTION_HOLD_MAX_MS);
 }
 
 // Тап по рамці = наступна сторінка. stopPropagation — щоб той самий тап не
@@ -1483,7 +1847,30 @@ function showCaption(text, kind, live) {
   // Текст НЕ ріжемо: рамка субтитра прокручується, і сама з’їжджає донизу —
   // раніше довга репліка лишалась обрізаною хвостом у 140 символів, тобто
   // початок відповіді на екрані просто не існував.
-  faceCaption.textContent = t;
+  //
+  // Слова бота — markdown; поки бот ДРУКУЄ (live), доливаємо в парсер лише
+  // дельту. Повний ре-парс на кожен чанк означав би перебудову всього DOM
+  // рамки — на A53 це видно оком.
+  if (kind === "user") {
+    // Те, що кажеш ти, markdown'ом не читаємо: диктуючи «2 * 3 * 4», людина
+    // не просить курсив.
+    faceCaptionText.textContent = t;
+    captionParser = null;
+    captionRaw = "";
+  } else if (live && captionParser && t.startsWith(captionRaw)) {
+    if (t.length > captionRaw.length) {
+      smd.parser_write(captionParser, t.slice(captionRaw.length));
+      captionRaw = t;
+    }
+  } else if (live) {
+    captionParser = mdStart(faceCaptionText);
+    smd.parser_write(captionParser, t);
+    captionRaw = t;
+  } else {
+    mdWhole(faceCaptionText, t);
+    captionParser = null;
+    captionRaw = "";
+  }
   faceCaption.className = "face-caption " + (kind || "bot");
   showFacePhotos(parts.images);
   faceLabel.classList.add("hidden");
@@ -1501,25 +1888,102 @@ function showCaption(text, kind, live) {
   } else {
     scrollCaptionTo(0);
   }
-  // Довгу репліку тримаємо довше: 9с вистачало на рядок, але не на абзац,
-  // який ще треба прокрутити.
-  const hold = Math.min(CAPTION_HOLD_MAX_MS, CAPTION_HOLD_MS + t.length * CAPTION_MS_PER_CHAR);
+  armCaptionHide(t.length);
+}
+
+/* ---------- Коли субтитр зникає ----------
+   manual  — ніколи сам: тільки хрестиком;
+   озвучка — таймера немає, його поставить captionSpeechEnded();
+   інакше  — за довжиною тексту (9 с + 45 мс на символ), як і раніше:
+             це груба, але робоча оцінка часу на прочитання. */
+function armCaptionHide(len) {
+  clearTimeout(captionTimer);
+  captionClose.classList.toggle("hidden", captionMode !== "manual");
+  if (captionMode === "manual") return;
+  if (botSpeaking) return;
+  const hold = Math.min(CAPTION_HOLD_MAX_MS, CAPTION_HOLD_MS + (len || 0) * CAPTION_MS_PER_CHAR);
   captionTimer = setTimeout(hideCaption, hold);
 }
 
-/* Тайл «Бот сказав»: текст без markdown-розмітки + самі картинки */
+/* Бот почав читати — знімаємо будь-який таймер: поки говорить, текст живе */
+function captionSpeechStarted() {
+  if (captionMode === "manual") return;
+  clearTimeout(captionTimer);
+}
+
+/* Дочитав — саме звідси починаються ті 15 секунд на «дочитати очима» */
+function captionSpeechEnded() {
+  if (captionMode === "manual") return;
+  if (faceCaption.classList.contains("hidden")) return;
+  clearTimeout(captionTimer);
+  captionTimer = setTimeout(hideCaption, CAPTION_AFTER_SPEECH_MS);
+}
+
+/* Тайл «Бот сказав»: markdown + самі картинки окремими рамками */
 function showSaid(raw) {
   const parts = splitImages(raw);
-  $("sayText").textContent = parts.text || t("say.noText");
+  if (parts.text) mdWhole($("sayText"), parts.text);
+  else $("sayText").textContent = t("say.noText");
   renderPhotos($("sayPhoto"), parts.images);
   sayAt = Date.now();
   updateAges();
 }
 
+/* ---------- Що бот РОБИТЬ просто зараз ----------
+   Раніше між «розпізнав фразу» і першим словом відповіді екран мовчав:
+   людина сказала — і не знала, чи бот думає, чи не почув (а мозок міг
+   думати десятки секунд, якщо пішов у тулзи). Тепер видно і сам факт
+   роботи, і конкретну дію: бекенд шле tool_start / tool_progress /
+   tool_done, ми ліпимо з них рядок «шукаю в інтернеті · DuckDuckGo: …».
+
+   Рядок живе на циферблаті (де людина й говорить) і дублюється в тайлі
+   розмови — але НЕ поверх живого розпізнавання, інакше він перебивав би
+   те, що людина саме зараз диктує. */
+const faceBusy = $("faceBusy");
+const faceBusyText = $("faceBusyText");
+let busyLabel = "";
+
+function setBusy(label) {
+  busyLabel = String(label || "");
+  if (!busyLabel) return clearBusy();
+  faceBusyText.textContent = busyLabel;
+  faceBusy.classList.remove("hidden");
+  // Клас на тайлі: у двоколонковій розкладці субтитр має вкоротитись, щоб
+  // звільнити рядок під себе (CSS: .tile-face.captioned.busy .face-caption)
+  faceTile.classList.add("busy");
+  if (!listening) chatLive.textContent = busyLabel;
+}
+
+function clearBusy() {
+  faceBusy.classList.add("hidden");
+  faceBusyText.textContent = "";
+  faceTile.classList.remove("busy");
+  // Чистимо тільки СВІЙ рядок: там уже може бути чернетка розпізнавання
+  if (chatLive.textContent === busyLabel) chatLive.textContent = "";
+  busyLabel = "";
+}
+
+/* Подія тулза → людська дія. Невідомий інструмент даємо як «працюю…»:
+   список тулзів на бекенді росте швидше, ніж підписи на цьому екрані.
+   detail приходить готовим рядком з бекенда (запит, місто, шлях) — саме
+   він і відповідає на питання «а що воно там робить». */
+function toolBusyLabel(ev) {
+  const name = ev && ev.tool ? String(ev.tool) : "";
+  const key = "busy.tool." + name;
+  let label = t(key);
+  if (label === key) label = t("busy.working");
+  const detail = ev && ev.detail ? String(ev.detail).trim() : "";
+  if (!detail) return label;
+  return label + " · " + (detail.length > 40 ? detail.slice(0, 39) + "…" : detail);
+}
+
 function hideCaption() {
   clearTimeout(captionTimer);
   faceCaption.className = "face-caption hidden";
-  faceCaption.textContent = "";
+  faceCaptionText.textContent = "";
+  captionClose.classList.add("hidden");
+  captionParser = null;
+  captionRaw = "";
   captionPage.classList.add("hidden");
   showFacePhotos([]);
   faceLabel.classList.remove("hidden");
@@ -1550,8 +2014,15 @@ function hideCaption() {
     if (name) { wakeWord = name.split(/\s+/)[0]; wakeWordFromBot = true; }
   } catch (e) { /* лишається типове слово поточної мови */ }
 
-  iconStyle = readPref(ICON_KEY, "pixel");
-  if (!ICON_STYLES[iconStyle]) iconStyle = "pixel";
+  // initPrefs уже виставив стиль до першого рендера; тут лишається
+  // страховка на випадок, коли значення в сховищі змінилось між ними, і
+  // ОБОВʼЯЗКОВЕ перемалювання — інакше нове значення висіло б у змінній,
+  // а на екрані лишалися б іконки, намальовані попереднім стилем.
+  const lateStyle = readPref(ICON_KEY, "auto");
+  if (ICON_STYLES[lateStyle] && lateStyle !== iconStyle) {
+    iconStyle = lateStyle;
+    rebuildIcons();
+  }
   voiceMode = readPref(MODE_KEY, "push");
   if (!MODES[voiceMode]) voiceMode = "push";
   renderMode();
@@ -1655,11 +2126,11 @@ function handleFinalText(said) {
       return;
     }
     wakeArmed = false;                           // команду прийняли
-    sendChat(command);
+    sendChat(command, true);
     return;
   }
 
-  sendChat(text);
+  sendChat(text, true);
 }
 
 /* Браузерний SR: єдиний шлях із проміжними результатами */
@@ -1795,14 +2266,24 @@ async function sendToAsr(blob, continuous) {
   clearTimeout(recTimer);
   if (!continuous) showLive(t("voice.recognizing"));
   let text = "";
+  /* Розпізнавання рахує ХМАРА (asr.provider: regolo), локального падіння
+     немає навмисне. Тому відмову треба СКАЗАТИ: раніше помилка тут просто
+     ковталась, і зламана хмара виглядала точно так само, як мовчазний
+     мікрофон — фраза зникала в нікуди без жодного слова на екрані. */
+  let failure = "";
   try {
     const fd = new FormData();
     fd.append("audio", blob, "voice.webm");
     const r = await fetch("/api/asr", { method: "POST", body: fd });
-    const d = await r.json();
+    const d = await r.json().catch(() => ({}));
     if (r.ok) text = d.text || "";
+    else failure = d.error || t("voice.asrFail");
   } catch (e) {
-    text = "";
+    failure = t("voice.asrOffline");
+  }
+  if (failure) {
+    showLive("");
+    showCaption(failure, "bot");
   }
   if (continuous) {
     showLive("");
@@ -2039,14 +2520,16 @@ async function showSessions() {
 $("sessionsBtn").addEventListener("click", () => { wake(); showSessions(); });
 $("sessionsClose").addEventListener("click", () => sessionsPanel.classList.add("hidden"));
 
-$("chatNew").addEventListener("click", () => {
-  wake();
+function startNewChat() {
   sessionId = "screen-" + Math.random().toString(16).slice(2, 10);
   writePref(SESSION_KEY, sessionId);
   setSessionTitle("");
   renderHistory([]);
   sessionsPanel.classList.add("hidden");
-});
+  goTile(CHAT_TILE);               // нова розмова — одразу в тайл розмови
+}
+
+$("chatNew").addEventListener("click", () => { wake(); startNewChat(); });
 
 /* Іконки шапки й мікрофона — тим самим піксельним набором */
 $("sessionsIco").appendChild(uiIcon("list", { cell: 2 }));
@@ -2114,11 +2597,22 @@ function renderApps() {
     const circle = document.createElement("span");
     circle.className = "app-icon";
     circle.dataset.icon = scr.icon;
-    const tint = scr.tint || (iconStyle === "color"
-      ? (ICON_COLORS[scr.icon] || iconTint)
-      : iconStyle === "pixel"
-        ? (PIXEL_ICON_TINTS[scr.icon] || iconTint)
-        : iconTint);
+    /* Колір КІЛЬЦЯ плитки. У білій темі білий переважує навіть власний
+       колір застосунку з магазину: інакше серед сірих кружечків двоє
+       (метроном, малювання) світились золотим і бірюзовим — і виглядало це
+       не як задум, а як недомитий стиль. */
+    const style = activeIconStyle();
+    // У стилі паку іконка вже сама кольоровий кружечок, тому наше кільце
+    // під нею дало б кружечок у кружечку — як значок на значку. Клас
+    // app-icon-bare прибирає тло й обідок, і плитка виглядає як у лаунчері.
+    circle.classList.toggle("app-icon-bare", style === "pack" && PACK_ICON_SLOTS.includes(scr.icon));
+    const tint = style === "white"
+      ? monoStroke()
+      : scr.tint || (style === "color"
+        ? (ICON_COLORS[scr.icon] || iconTint)
+        : style === "pixel"
+          ? (PIXEL_ICON_TINTS[scr.icon] || iconTint)
+          : iconTint);
     circle.style.setProperty("--app-tint", tint);
     circle.appendChild(drawerIcon(scr.icon, here));
     btn.appendChild(circle);
@@ -2196,6 +2690,13 @@ const layerApp = $("layerApp");
 const appBody = $("appBody");
 let camTimer = 0;
 
+/* Пакет, у якому живе відео-плеєр, і команда, що чекає на завантаження
+   його iframe. Оголошені тут, а не поруч із onVideoCommand нижче: ними
+   користується closeAppLayer, і тримати об'яву після першого вжитку —
+   значить залежати від того, що скрипт устигне доїхати до кінця. */
+const VIDEO_PKG = "youtube";
+let videoPending = null;
+
 /* titleKey — ключ словника; невідомий ключ t() віддає як є, тому сюди
    спокійно йде і власна назва застосунку з магазину. Пару (ключ, build)
    памʼятаємо: після зміни мови шар перезбирається тим самим build. */
@@ -2215,6 +2716,17 @@ function openAppLayer(titleKey, build) {
 
 function closeAppLayer() {
   clearTimeout(camTimer);
+  // Плеєр відео вмирає разом з iframe, тож про це треба сказати бекенду
+  // САМЕ тут: інакше бот ще пів хвилини відповідав би «грає ролик про…»,
+  // дивлячись на застарілий стан (unload в iframe не гарантований).
+  if (layerApp.querySelector(".storeapp-frame")?.dataset.pkg === VIDEO_PKG) {
+    videoPending = null;
+    fetch("/api/video/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ closed: true }),
+    }).catch(() => {});
+  }
   openApp = null;
   layerApp.classList.remove("open");
   appBody.innerHTML = "";                 // MJPEG-стрім інакше тягнеться далі
@@ -2631,7 +3143,7 @@ function resetScreenPrefs() {
     .forEach(removePref);
   document.documentElement.dataset.theme = "dark";
   document.documentElement.dataset.motion = "full";
-  iconStyle = "pixel";
+  iconStyle = "auto";
   iconTint = DEFAULT_ICON_TINT;
   bright = 100;
   volume = 70;
@@ -2676,6 +3188,7 @@ function openSettings() {
     const idleHomeSelect = document.createElement("select");
     const idleSleepSelect = document.createElement("select");
     const clockFormatSelect = document.createElement("select");
+    const captionModeSelect = document.createElement("select");
     const dateToggle = document.createElement("button");
     const motionToggle = document.createElement("button");
     const note = document.createElement("div");
@@ -2806,7 +3319,7 @@ function openSettings() {
       button.addEventListener("click", () => {
         document.documentElement.dataset.theme = id;
         writePref(THEME_KEY, id);
-        repaintPixels();
+        applyTheme();
         sync();
       });
       themeButtons.push({ id, button });
@@ -2861,6 +3374,20 @@ function openSettings() {
       sync();
     });
     clockRow.appendChild(clockFormatSelect);
+
+    // Субтитр: сам зникає чи чекає на хрестик. Рядок саме тут, а не в
+    // «Вигляді»: це поведінка, а не оформлення.
+    const captionRow = row(behavior, t("set.caption"), t("set.caption.hint"));
+    fillSelect(captionModeSelect, CAPTION_MODE_OPTIONS);
+    captionModeSelect.addEventListener("change", () => {
+      captionMode = validOption(captionModeSelect.value, CAPTION_MODE_OPTIONS, "auto");
+      writePref(CAPTION_MODE_KEY, captionMode);
+      // Перемикач діє на субтитр, що вже на екрані: у ручному режимі
+      // з’являється хрестик, в авто — знову вмикається таймер
+      if (!faceCaption.classList.contains("hidden")) armCaptionHide(captionRaw.length);
+      sync();
+    });
+    captionRow.appendChild(captionModeSelect);
 
     const dateRow = row(behavior, t("set.date"), t("set.date.hint"));
     setupSwitch(dateToggle, t("set.date.on"), t("set.date.off"), () => {
@@ -2971,6 +3498,7 @@ function openSettings() {
       idleHomeSelect.value = String(idleHomeMs);
       idleSleepSelect.value = String(idleSleepMs);
       clockFormatSelect.value = clockFormat;
+      captionModeSelect.value = captionMode;
       dateToggle.textContent = showClockDate ? dateToggle.dataset.onText : dateToggle.dataset.offText;
       dateToggle.classList.toggle("on", showClockDate);
       dateToggle.setAttribute("aria-pressed", String(showClockDate));
@@ -3040,7 +3568,11 @@ function npClipEl(kind) {
 }
 
 /* Стрічка-заголовок: дві копії тексту, поки влазить — одна. Швидкість
-   пропорційна довжині (однакова швидкість пікселів/с), межі 5..30 с. */
+   пропорційна довжині (однакова швидкість пікселів/с), межі 10..60 с.
+
+   Було 22 px/с — назву фізично не встигали прочитати, вона проскакувала
+   швидше, ніж око доходить до кінця. 10 px/с — це темп рядка, який читаєш
+   спокійно; для 320 px екрана повний прохід виходить ~30 с. */
 function npMarquee(holder, clip) {
   const trackEl = clip.querySelector(".np-track");
   const textEl = trackEl.querySelector(".np-text");
@@ -3056,7 +3588,7 @@ function npMarquee(holder, clip) {
   if (oneCopy > clip.clientWidth - 4) {
     holder.classList.add("rolling");
     trackEl.classList.remove("single");
-    holder.style.setProperty("--np-dur", Math.max(5, Math.min(30, oneCopy / 22)) + "s");
+    holder.style.setProperty("--np-dur", Math.max(10, Math.min(60, oneCopy / 10)) + "s");
   } else {
     holder.classList.remove("rolling");
     trackEl.classList.add("single");
@@ -3113,14 +3645,24 @@ function updateNpSeek() {
   const seek = $("npSeek");
   const isLive = musicState.live && musicState.track;
   seek.disabled = isLive || !musicState.track;
-  $("npCur").textContent = musicState.track ? fmtTime(musicAudio.currentTime) : "—:—";
-  $("npDur").textContent = musicState.track ? (isLive ? "LIVE" : fmtTime(musicAudio.duration)) : "—:—";
+  // Тривалість знаємо ще з пошуку — показуємо ЇЇ, поки метадані потоку в
+  // дорозі. Інакше на весь час розвʼязування ссилки в таймлайні стояло
+  // «—:—», тобто плеєр виглядав зламаним, хоч і працював.
+  const known = musicState.track && Number(musicState.track.duration) > 0
+    ? Number(musicState.track.duration) : 0;
+  const total = musicAudio.duration > 0 ? musicAudio.duration : known;
+  // Позиція 0 — це «0:00», а не «—:—»: fmtTime ховає нулі, бо для ТРИВАЛОСТІ
+  // нуль означає «невідомо», а для поточного часу — початок трека.
+  $("npCur").textContent = musicState.track
+    ? (musicAudio.currentTime > 0 ? fmtTime(musicAudio.currentTime) : "0:00")
+    : "—:—";
+  $("npDur").textContent = musicState.track ? (isLive ? "LIVE" : fmtTime(total)) : "—:—";
   if (musicState.track && !musicState.seeking) {
     if (isLive) {
       $("npProgress").style.width = "100%";
       seek.value = "1000";
-    } else if (musicAudio.duration > 0) {
-      const pct = musicAudio.currentTime / musicAudio.duration;
+    } else if (total > 0) {
+      const pct = Math.min(1, musicAudio.currentTime / total);
       seek.value = String(Math.round(pct * 1000));
       $("npProgress").style.width = (pct * 100).toFixed(1) + "%";
     }
@@ -3150,10 +3692,15 @@ async function musicPlayTrack(track, opts) {
     ? track.url
     : "/api/music/stream?provider=youtube&id=" + encodeURIComponent(track.id);
   syncMusicVolume();
+  applyMusicRate();
   showNpBar(true);
+  // Ссилку на аудіо бекенд розвʼязує через yt-dlp + інстанси Invidious, і це
+  // легко 5-15 секунд. Показуємо це станом бару, а не тишею.
+  setNpLoading(true);
   updateNpChrome();
   updateNpSeek();
   renderNpList();
+  renderNpRates();
   try {
     musicState.playing = true;
     await musicAudio.play();
@@ -3183,6 +3730,17 @@ function musicToggle() {
   }
 }
 
+/* Стан «вантажу»: від моменту, коли поставили src, до першого реального
+   звуку або помилки. Це єдиний спосіб відрізнити «бот думає» від «зламалось»
+   на смузі, де немає місця для тексту. */
+function setNpLoading(on) {
+  $("nowPlaying").classList.toggle("np-loading", !!on);
+}
+
+musicAudio.addEventListener("loadedmetadata", () => { applyMusicRate(); });
+musicAudio.addEventListener("playing", () => { setNpLoading(false); });
+musicAudio.addEventListener("canplay", () => { setNpLoading(false); });
+musicAudio.addEventListener("error", () => { setNpLoading(false); });
 musicAudio.addEventListener("play", () => { musicState.playing = true; updateNpChrome(); });
 musicAudio.addEventListener("pause", () => { musicState.playing = false; updateNpChrome(); });
 musicAudio.addEventListener("playing", updateNpChrome);
@@ -3224,6 +3782,7 @@ function openMusicSheet() {
   updateNpChrome();
   updateNpSeek();
   renderNpList();
+  renderNpRates();
   musicSheet.classList.remove("hidden");
   wake();
 }
@@ -3427,7 +3986,17 @@ function openStoreApp(entry) {
     frame.className = "storeapp-frame";
     frame.src = "/store-apps/" + encodeURIComponent(entry.pkg) + "/index.html";
     frame.title = entry.title || entry.pkg;
-    frame.addEventListener("load", () => postStoreAppSkin(frame));
+    // dataset.pkg — щоб команди бота знайшли САМЕ той застосунок, а не
+    // будь-який відкритий (перевірка в videoFrame)
+    frame.dataset.pkg = entry.pkg;
+    frame.addEventListener("load", () => {
+      postStoreAppSkin(frame);
+      if (videoPending && entry.pkg === VIDEO_PKG) {
+        const command = videoPending;
+        videoPending = null;
+        sendVideoCommand(command);
+      }
+    });
     box.appendChild(frame);
   });
 }
@@ -3438,6 +4007,64 @@ window.addEventListener("message", (event) => {
   if (event.data?.type === "closeStoreApp") closeAppLayer();
   if (event.data?.type === "storeAppSwipe" && ["left", "right", "down"].includes(event.data.direction)) closeAppLayer();
 });
+
+/* ---------- Бот керує відео-плеєром (SSE «video») ----------
+
+   Плеєр живе в iframe застосунку youtube, а команда приходить сюди, до
+   батька. Тому батько: 1) відкриває застосунок, якщо той закритий — інакше
+   «перемотай вперед» працювало б лише тоді, коли людина вже стоїть у
+   потрібному застосунку; 2) передає команду всередину postMessage'ем.
+
+   Команда, що прийшла до завантаження iframe, не губиться: вона лежить у
+   videoPending і йде одразу після load. Без цього перше ж «покажи відео»
+   відкривало б порожній пошук — застосунок ще не встиг підписатися. */
+
+function videoFrame() {
+  const frame = layerApp.querySelector(".storeapp-frame");
+  if (!frame) return null;
+  // Той самий застосунок? Інакше команда полетіла б, скажімо, у метроном.
+  return frame.dataset.pkg === VIDEO_PKG ? frame : null;
+}
+
+function sendVideoCommand(command) {
+  const frame = videoFrame();
+  if (!frame?.contentWindow) return false;
+  try {
+    frame.contentWindow.postMessage({ type: "botVideo", ...command }, window.location.origin);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function onVideoCommand(ev) {
+  const command = { action: ev.action, track: ev.track, position: ev.position,
+                    seconds: ev.seconds, rate: ev.rate };
+
+  if (command.action === "play") {
+    wake();
+    if (videoFrame()) { sendVideoCommand(command); return; }
+    const entry = installedApps.find((a) => a.pkg === VIDEO_PKG);
+    if (!entry) {
+      // Пакет не встановлений: тул ставить його сам, але шухляда могла ще
+      // не перечитати список — пробуємо оновити й відкрити вже потім.
+      refreshInstalledApps().then(() => {
+        const fresh = installedApps.find((a) => a.pkg === VIDEO_PKG);
+        if (!fresh) { showCaption(t("video.needApp"), "bot"); return; }
+        videoPending = command;
+        openStoreApp(fresh);
+      });
+      return;
+    }
+    videoPending = command;
+    openStoreApp(entry);
+    return;
+  }
+
+  // Решта команд — тільки живому плеєру. Якщо його немає, мовчки нічого:
+  // «пауза» без відео не мусить відкривати застосунок і лякати чорнотою.
+  if (!sendVideoCommand(command)) showCaption(t("video.nothing"), "bot");
+}
 
 function storeIconEl(name) {
   // Іконка рядка магазину: той самий drawerIcon, що й у шухляді

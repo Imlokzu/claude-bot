@@ -56,15 +56,8 @@
 
     button, input { font: inherit; }
     button { color: inherit; }
-    .app { display: flex; flex-direction: column; width: 100%; height: 100%; padding: 7px 8px 8px; gap: 5px; touch-action: pan-y; }
-    .topbar { display: flex; align-items: center; justify-content: space-between; flex: none; min-height: 25px; }
-    .brand { display: flex; align-items: center; min-width: 0; gap: 7px; }
-    .brand-mark { display: grid; place-items: center; width: 23px; height: 23px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent-soft); color: var(--accent); }
-    .brand-copy { display: flex; flex-direction: column; min-width: 0; line-height: 1.1; }
-    .eyebrow { color: var(--muted); font-size: 7px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
-    .brand-title { margin-top: 1px; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
-    .close { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--muted); font-size: 17px; line-height: 1; cursor: pointer; }
-    .close:active { background: var(--panel-strong); color: var(--text); }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 7px 8px 8px; gap: 5px; overflow-y: auto; touch-action: pan-y; scrollbar-width: none; }
+    .app::-webkit-scrollbar { display: none; }
 
     .summary { display: flex; align-items: center; justify-content: space-between; flex: none; min-height: 39px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
     .summary-copy { min-width: 0; }
@@ -82,8 +75,7 @@
     .tab { min-height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
     .tab.active { background: var(--panel-strong); color: var(--text); box-shadow: 0 2px 8px rgba(0, 0, 0, .16); }
 
-    .content { min-height: 0; flex: 1; overflow-y: auto; padding: 1px 1px 4px; touch-action: pan-y; scrollbar-width: none; }
-    .content::-webkit-scrollbar { display: none; }
+    .content { min-height: 0; flex: none; overflow: visible; padding: 1px 1px 4px; touch-action: pan-y; }
     .stack { display: grid; gap: 6px; }
     .section-label { display: flex; align-items: baseline; justify-content: space-between; padding: 1px 3px 0; color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
     .virtual-badge { color: var(--accent); font-size: 8px; letter-spacing: .05em; }
@@ -142,19 +134,11 @@
     .toast.error { border-color: var(--warn-soft); color: var(--warn); }
 
     svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
-    .brand-mark svg { width: 16px; height: 16px; }
     @media (prefers-reduced-motion: reduce) { .connection-card:active, .device-row:active, .toast { transition: none; transform: none; } }
   </style>
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" data-icon="bot"></span>
-        <span class="brand-copy"><span class="eyebrow">КЛОД БОТ</span><span class="brand-title">Підключення</span></span>
-      </div>
-      <button class="close" id="close" type="button" aria-label="Закрити">×</button>
-    </header>
     <section class="summary" id="summary"></section>
     <nav class="tabs" aria-label="Налаштування пристрою">
       <button class="tab active" type="button" data-tab="connections">Звʼязок</button>
@@ -218,7 +202,7 @@
         x: event.clientX,
         y: event.clientY,
         pointerId: event.pointerId,
-        scrollable: !!event.target.closest(".content"),
+        scrollable: true,
       };
       if (!onButton) {
         try { appRoot.setPointerCapture(event.pointerId); } catch (_) {}
@@ -351,7 +335,6 @@
       if (label) label.textContent = `${value}%`;
       updateRoute(range.dataset.route, { volume: value, muted: false });
     });
-    $("#close").addEventListener("click", () => post("closeStoreApp"));
     window.addEventListener("message", (event) => {
       if (event.source !== window.parent || event.origin !== window.location.origin || event.data?.type !== "botSkin") return;
       if (event.data.vars) Object.entries(event.data.vars).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
