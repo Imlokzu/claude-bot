@@ -52,9 +52,11 @@ import auth_clerk
 import brain_context
 import brains
 import chat_store
+import openclaw_models
 import coding
 import coding_api
 import console_log
+import image_proxy
 import processes
 import trace_log
 import display_bridge
@@ -66,7 +68,10 @@ import emotions
 import events
 import music
 import screen_store
+import sponsorblock
 import system_status
+import video_control
+import elevenlabs_voice
 import piper_voice
 import memory
 import openclaw_store
@@ -361,6 +366,15 @@ class ChatRequest(BaseModel):
     reasoning_effort: str = Field(default="none", pattern="^(none|low|medium|high)$")
     attachments: list[dict[str, str]] = Field(default_factory=list, max_length=8)
     participant_name: str = Field(default="", max_length=48)
+    # Репліка приїхала з мікрофона (ASR), а не з клавіатури. Мозок має знати:
+    # текст міг перекрутити Whisper, і читати його треба за змістом. Типове
+    # значення False — старі клієнти й тести нічого не помічають.
+    voice: bool = False
+    # Відповідь ПРОЧИТАЮТЬ уголос через синтез. Прапорець окремий від voice:
+    # можна надиктувати в мікрофон і читати очима, а можна набрати з
+    # клавіатури й слухати. Від нього залежить, чи піде в промпт вимога
+    # писати одиниці словами («км/год» вголос — це «ка-ем-скісна-риска-год»).
+    spoken: bool = False
 
 
 class ParticipantJoinRequest(BaseModel):
@@ -446,6 +460,50 @@ class MusicPlayRequest(BaseModel):
     duration: int = Field(default=0, ge=0, le=200_000)
 
 
+class VideoPlayRequest(BaseModel):
+    # Те саме, що MusicPlayRequest, але для плеєра з картинкою: або id/url
+    # відео, або запит для пошуку. start — з якої секунди почати.
+    id: str = Field(default="", max_length=200)
+    query: str = Field(default="", max_length=200)
+    title: str = Field(default="", max_length=300)
+    uploader: str = Field(default="", max_length=200)
+    duration: int = Field(default=0, ge=0, le=200_000)
+    start: str = Field(default="", max_length=16)
+
+
+class VideoControlRequest(BaseModel):
+    # Команда живому плеєру. Валідацію дій і аргументів робить
+    # video_control.build_command — тут лише стеля довжини.
+    action: str = Field(min_length=1, max_length=24)
+    seconds: str = Field(default="", max_length=16)
+    position: str = Field(default="", max_length=16)
+    rate: str = Field(default="", max_length=8)
+
+
+class VideoStateRequest(BaseModel):
+    # Зворотний канал ВІД застосунку: де плеєр зупинився. Потрібен, щоб бот
+    # на «а де ми?» відповідав фактом, а не вигадкою.
+    video_id: str = Field(default="", max_length=16)
+    title: str = Field(default="", max_length=300)
+    position: float = Field(default=0.0, ge=0, le=200_000)
+    duration: float = Field(default=0.0, ge=0, le=200_000)
+    paused: bool = False
+    muted: bool = False
+    rate: float = Field(default=1.0, gt=0, le=4)
+    skipped_count: int = Field(default=0, ge=0, le=999)
+    skipped_seconds: float = Field(default=0.0, ge=0, le=200_000)
+    segments: int = Field(default=0, ge=0, le=999)
+    closed: bool = False
+
+
+class VideoSettingsRequest(BaseModel):
+    # None = «не міняти»: застосунок шле лише той перемикач, який торкнули.
+    sponsorblock: Optional[bool] = None
+    categories: Optional[list[str]] = Field(default=None, max_length=16)
+    proxy_thumbnails: Optional[bool] = None
+    notify_skips: Optional[bool] = None
+
+
 class KeysSaveRequest(BaseModel):
     # Порожнє значення = не міняти. Значення — секрети, у відповідях не світимо.
     omni_key: str = Field(default="", max_length=300)
@@ -483,22 +541,20 @@ async def api_status() -> dict:
     openclaw_ok = openclaw_reachable and cfg.get_openclaw_token() is not None
     anthropic_ok = cfg.get_anthropic_key() is not None
 
-    # mode = мозок, що РЕАЛЬНО відповів на останній чат (ping може «брехати»:
-    # gateway живий, а chatCompletions віддає 500). До першого чату —
-    # очікуваний режим за доступністю (за тим самим пріоритетом, що й chat()).
+    # mode = мозок, що РЕАЛЬНО відповів на останній чат.
+    #
+    # Раніше до першого чату тут стояла оптимістична здогадка за пінгом, і саме
+    # вона брехала найгірше: панель «Стан» світила зеленим «OpenClaw», поки
+    # реальний запит падав у offline. Пінг перевіряє, що порт відповідає, а не
+    # що шлюз уміє відповісти — GET / повертає 200 навіть коли chatCompletions
+    # віддає 500 або висить. Тому доки справжньої відповіді не було, чесний
+    # стан — «невідомо», а не ім'я мозку.
+    #
+    # Мозок тепер один (OpenClaw — єдиний шлюз, див. brains.chat), тож і
+    # драбини здогадок по інших мозках більше немає: omni/anthropic/chat2api
+    # нижче лишаються суто як довідка про налаштованість провайдерів.
     last_brain = brains.get_last_successful_brain()
-    if last_brain is not None:
-        mode = last_brain
-    elif openclaw_ok:
-        mode = "openclaw"
-    elif omni_ok:
-        mode = "omni"
-    elif anthropic_ok:
-        mode = "anthropic"
-    elif chat2api_ok:
-        mode = "chat2api"
-    else:
-        mode = "demo"
+    mode = last_brain if last_brain is not None else "unknown"
 
     return {
         "omni": omni_ok,
@@ -530,6 +586,80 @@ async def api_models(request: Request) -> dict:
         "active": brains.get_last_model(),
         "brain": brains.get_last_successful_brain() or "",
     }
+
+
+class BrainModelRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=120)
+
+
+class BrainThinkingRequest(BaseModel):
+    # Порожній рядок — «прибрати налаштування», тоді діє типове OpenClaw.
+    level: str = Field(default="", max_length=20)
+
+
+@app.get("/api/brain/models")
+async def api_brain_models(request: Request, refresh: bool = Query(default=False)) -> dict:
+    """
+    Моделі САМОГО OpenClaw — тобто те, чим бот реально відповідає.
+
+    Окремо від /api/models навмисно. Там список Omni з config.yaml: він
+    справжній, але керує лише картинками (vision) та прямим викликом Omni.
+    У чаті відповідає OpenClaw своєю моделлю, і поки панель показувала
+    список Omni, вибір нічого не змінював — на екрані стояло одне, писало
+    інше. Тут показано те, на що вибір справді впливає.
+    """
+    await _require_user(request)
+    if not openclaw_models.reachable():
+        return {
+            "models": [], "selected": "", "default": "",
+            "thinking": "", "thinking_levels": list(openclaw_models.THINKING_LEVELS),
+            "available": False,
+        }
+    models = await openclaw_models.catalog(force=refresh)
+    return {
+        "models": models,
+        "selected": openclaw_models.get_selected(),
+        "default": openclaw_models.default_model(models),
+        "thinking": await openclaw_models.get_thinking(),
+        "thinking_levels": list(openclaw_models.THINKING_LEVELS),
+        "available": True,
+    }
+
+
+@app.post("/api/brain/model")
+async def api_brain_model_select(req: BrainModelRequest, request: Request) -> dict:
+    """
+    Перекриває модель OpenClaw для наступних реплік (заголовок x-openclaw-model).
+
+    Перевіряємо за каталогом: невідомий рядок поїхав би заголовком і кожна
+    репліка падала б з 400 уже в шлюзі — там, де причину не видно з панелі.
+    """
+    await _require_user(request)
+    models = await openclaw_models.catalog()
+    # Порожній рядок — «повернути типову модель агента».
+    if req.model and req.model not in {str(m["id"]) for m in models}:
+        raise HTTPException(status_code=400, detail="OpenClaw не знає такої моделі")
+    openclaw_models.set_selected(req.model)
+    return {"ok": True, "selected": openclaw_models.get_selected()}
+
+
+@app.post("/api/brain/thinking")
+async def api_brain_thinking(req: BrainThinkingRequest, request: Request) -> dict:
+    """
+    Рівень думання OpenClaw (`agents.defaults.thinkingDefault`).
+
+    Це НАЛАШТУВАННЯ, а не властивість однієї репліки: заголовка чи поля під
+    reasoning у HTTP-ендпоінта шлюзу немає (перевірено за документацією —
+    docs.openclaw.ai/gateway/openai-http-api), і єдиний живий важіль —
+    конфіг. CLI застосовує його без перезапуску шлюзу.
+    """
+    await _require_user(request)
+    level = req.level.strip().casefold()
+    if level and level not in openclaw_models.THINKING_LEVELS:
+        raise HTTPException(status_code=400, detail="Невідомий рівень думання")
+    if not await openclaw_models.set_thinking(level):
+        raise HTTPException(status_code=502, detail="OpenClaw не прийняв рівень думання")
+    return {"ok": True, "thinking": await openclaw_models.get_thinking()}
 
 
 @app.post("/api/model")
@@ -806,15 +936,62 @@ async def api_music_stream(request: Request, provider: str = Query(default="yout
             )
         else:
             status, headers, body = await music.open_audio_stream(video_id, range_header)
+    except music.LiveStreamUnsupported as exc:
+        # Окремий код і текст: «спробуй ще раз» тут брехня — прямий ефір не
+        # заграє й з десятої спроби, бо в нього немає аудіо-доріжки.
+        log.info("Прямий ефір не граємо: %s", exc)
+        raise HTTPException(status_code=415, detail="Прямий ефір поки не граємо — тільки записи") from exc
     except Exception as exc:  # noqa: BLE001 — upstream впав/таймаут/усі ретраї
         log.warning("Upstream-стрім недоступний: %s: %s", type(exc).__name__, exc)
-        raise HTTPException(status_code=502, detail="Потік недоступний (джерела флапають, спробуй ще раз)") from exc
+        raise HTTPException(
+            status_code=502,
+            detail="Потік недоступний: прямі ефіри ми не граємо, а запис — спробуй ще раз",
+        ) from exc
 
     return StreamingResponse(
         body,
         status_code=status,
         headers=headers,
         media_type=headers.get("content-type", "audio/mpeg"),
+    )
+
+
+@app.get("/api/music/video")
+async def api_music_video(request: Request, id: str = Query(min_length=1, max_length=64)):
+    """
+    Проксі ВІДЕО+ЗВУК одним потоком, із Range — те саме, що /api/music/stream,
+    але для режиму «з картинкою» в застосунку YouTube.
+
+    Чому окремий ендпоінт, а не параметр у /stream: там радіо, там свій кеш
+    аудіо-ссилок і свої 3 кола ретраїв по інстансах Invidious. Відео живе на
+    іншому джерелі (yt-dlp, android-клієнт) — злиття двох механік в один
+    обробник зробило б обидві крихкими.
+
+    Гейту авторизації тут немає — як і в решти /api/music/*: цей шлях
+    відкриває застосунок в iframe на самому пристрої.
+    """
+    video_id = music.parse_video_id(id)
+    if video_id is None:
+        raise HTTPException(status_code=400, detail="Некоректний id відео")
+    try:
+        status, headers, body = await music.open_video_stream(
+            video_id, request.headers.get("range"),
+        )
+    except music.LiveStreamUnsupported as exc:
+        log.info("Прямий ефір не граємо (відео): %s", exc)
+        raise HTTPException(status_code=415, detail="Прямий ефір поки не граємо — тільки записи") from exc
+    except Exception as exc:  # noqa: BLE001 — джерело впало/таймаут/усі ретраї
+        log.warning("Відео-потік недоступний: %s: %s", type(exc).__name__, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Відео недоступне — спробуй «Слухати», звук іде іншим шляхом",
+        ) from exc
+
+    return StreamingResponse(
+        body,
+        status_code=status,
+        headers=headers,
+        media_type=headers.get("content-type", "video/mp4"),
     )
 
 
@@ -872,6 +1049,189 @@ async def api_music_stop() -> dict:
     """Зупинити Now Playing (SSE-подія music action=stop)."""
     events.publish_music({}, action="stop")
     return {"ok": True}
+
+
+# --------------------------------------------------------- відео на екрані (плеєр)
+#
+# Тут керують ПЛЕЄРОМ у застосунку youtube: увімкнути ролик з картинкою,
+# пауза/перемотка/кінець, пропуск вклеєної реклами (SponsorBlock) і
+# приватне проксі прев'ю. Без Clerk-гейту — як і решта /api/music/*: ці
+# шляхи відкриває сам пристрій, у якого токена немає.
+
+
+@app.post("/api/video/play")
+async def api_video_play(req: VideoPlayRequest) -> dict:
+    """Увімкнути відео З КАРТИНКОЮ на екрані (SSE-подія video action=play).
+
+    Екран, отримавши подію, сам відкриє застосунок youtube, якщо той
+    закритий, — інакше команда працювала б лише тоді, коли людина вже
+    стоїть у потрібному застосунку.
+    """
+    if req.id:
+        video_id = music.parse_video_id(req.id)
+        if video_id is None:
+            raise HTTPException(status_code=400, detail="Некоректний id/посилання")
+        track = {
+            "provider": "youtube",
+            "id": video_id,
+            "title": req.title or "Відео",
+            "uploader": req.uploader,
+            "duration": req.duration,
+        }
+    elif req.query:
+        tracks = await music.search(req.query, limit=3)
+        if not tracks:
+            raise HTTPException(status_code=404, detail="Нічого не знайшлось")
+        # Ефіри пропускаємо: у них лише HLS, а ми проксимо окремі доріжки
+        track = next((t for t in tracks if not t.get("live")), None)
+        if track is None:
+            raise HTTPException(status_code=415, detail="Знайшлись тільки прямі ефіри — їх ми не граємо")
+    else:
+        raise HTTPException(status_code=400, detail="Вкажи id або query")
+
+    command: dict[str, Any] = {"action": "play", "track": track}
+    start_at = video_control.parse_position(req.start) if req.start else None
+    if start_at:
+        command["position"] = round(start_at, 2)
+    events.publish_video(command)
+    return {"ok": True, "track": track}
+
+
+@app.post("/api/video/control")
+async def api_video_control(req: VideoControlRequest) -> dict:
+    """Команда живому плеєру: pause/resume/stop/forward/back/seek/end/speed…"""
+    try:
+        command = video_control.build_command(
+            req.action, seconds=req.seconds, position=req.position, rate=req.rate,
+        )
+    except video_control.VideoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    events.publish_video(command)
+    if command["action"] == "stop":
+        video_control.clear_state()
+    return {"ok": True, "command": command, "done": video_control.describe(command)}
+
+
+@app.get("/api/video/state")
+async def api_video_state() -> dict:
+    """Що плеєр повідомив останнім (з TTL): назва, позиція, пропуски."""
+    return video_control.state()
+
+
+@app.post("/api/video/state")
+async def api_video_state_push(req: VideoStateRequest) -> dict:
+    """Застосунок звітує про свій стан (і про закриття плеєра)."""
+    if req.closed:
+        video_control.clear_state()
+        return {"ok": True, "cleared": True}
+    return {"ok": True, "state": video_control.update_state(req.model_dump(exclude={"closed"}))}
+
+
+@app.get("/api/video/segments")
+async def api_video_segments(id: str = Query(min_length=1, max_length=200)) -> dict:
+    """Сегменти вклеєної реклами для пропуску (SponsorBlock, приватний запит).
+
+    Порожній список — нормальна відповідь: у відео просто немає розмічених
+    сегментів. Плеєр у такому разі грає без пропусків, а не показує помилку.
+    """
+    video_id = music.parse_video_id(id)
+    if video_id is None:
+        raise HTTPException(status_code=400, detail="Некоректний id відео")
+    result = await video_control.segments_for(video_id)
+    return {"video_id": video_id, **result}
+
+
+@app.get("/api/video/settings")
+async def api_video_settings() -> dict:
+    """Налаштування відео + словник категорій для екрана налаштувань."""
+    return {
+        "settings": video_control.load_settings(),
+        "categories": sponsorblock.CATEGORIES,
+    }
+
+
+@app.post("/api/video/settings")
+async def api_video_settings_save(req: VideoSettingsRequest) -> dict:
+    """Частковий патч налаштувань: приходить лише те, що торкнули."""
+    patch = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not patch:
+        return {"settings": video_control.load_settings(), "categories": sponsorblock.CATEGORIES}
+    try:
+        settings = video_control.save_settings(patch)
+    except video_control.VideoError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"settings": settings, "categories": sponsorblock.CATEGORIES}
+
+
+# Прев'ю через бота, а не напряму з i.ytimg.com. Це і є «адблок» у частині
+# приватності: пристрій не робить жодного запиту до серверів Google, тож
+# ні IP, ні перелік переглянутих відео туди не потрапляють. Заодно сітка не
+# розсипається, коли мережі до Google немає, а бот доступний.
+_THUMB_SIZES = {"mq": "mqdefault", "hq": "hqdefault", "default": "default"}
+_THUMB_TTL_S = 86_400
+
+
+@app.get("/api/video/thumb")
+async def api_video_thumb(id: str = Query(min_length=1, max_length=200),
+                          size: str = Query(default="mq", pattern="^(mq|hq|default)$")):
+    """Проксі прев'ю відео (jpeg). 404 → прозорий 1×1, щоб сітка не стрибала."""
+    video_id = music.parse_video_id(id)
+    if video_id is None:
+        raise HTTPException(status_code=400, detail="Некоректний id відео")
+    url = f"https://i.ytimg.com/vi/{video_id}/{_THUMB_SIZES[size]}.jpg"
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers={"User-Agent": music.BROWSER_UA})
+        if resp.status_code == 200 and resp.content:
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("content-type", "image/jpeg"),
+                headers={"Cache-Control": f"public, max-age={_THUMB_TTL_S}"},
+            )
+        log.info("Прев'ю %s недоступне: HTTP %s", video_id, resp.status_code)
+    except Exception as exc:  # noqa: BLE001 — мережа/таймаут: не валимо сітку
+        log.info("Прев'ю %s не завантажилось (%s)", video_id, type(exc).__name__)
+    # Прозорий піксель: <img> лишається тим самим блоком 16:9 із фоном рамки,
+    # а не порожнім місцем, від якого зʼїжджає вся сітка результатів.
+    return Response(
+        content=base64.b64decode(
+            "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+        ),
+        media_type="image/gif",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+# Проксі чужих картинок — щоб у переглядачі працювала кнопка «Завантажити».
+# Браузер сам цього не вміє: `<a download>` на інший домен переходить за
+# посиланням замість збереження, а fetch() ріже CORS. Перевірки адреси — в
+# image_proxy: сюди приходить те, що написала модель.
+_IMAGE_EXT = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
+    "image/webp": ".webp", "image/avif": ".avif", "image/svg+xml": ".svg",
+}
+
+
+@app.get("/api/image/fetch")
+async def api_image_fetch(url: str = Query(min_length=8, max_length=2000),
+                          name: str = Query(default="", max_length=120)):
+    """Віддає чужу картинку своїм походженням — як вкладення."""
+    try:
+        data, media = await image_proxy.fetch(url)
+    except image_proxy.ImageProxyError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    # Ім'я файлу приходить із підпису картинки, тож лишаємо тільки безпечне:
+    # у Content-Disposition лапки й слеші ламають сам заголовок.
+    stem = re.sub(r"[^\w .-]+", "", name, flags=re.UNICODE).strip() or "картинка"
+    filename = f"{stem[:80]}{_IMAGE_EXT.get(media, '')}"
+    return Response(
+        content=data,
+        media_type=media,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            "Cache-Control": "private, max-age=600",
+        },
+    )
 
 
 # ------------------------------------------------------------------ сесійна памʼять чату
@@ -1010,6 +1370,50 @@ def _chat_image_kwargs(images: list[dict[str, str]]) -> dict[str, list[dict[str,
     return {"images": images} if images else {}
 
 
+def _chat_voice_kwargs(voice: bool, spoken: bool = False) -> dict[str, bool]:
+    """
+    Той самий принцип: чого нема — того й не передаємо, щоб старі мозки й
+    тестові адаптери без цих kwargs лишались робочими.
+    """
+    kwargs: dict[str, bool] = {}
+    if voice:
+        kwargs["voice"] = True
+    if spoken:
+        kwargs["spoken"] = True
+    return kwargs
+
+
+def _tts_backend() -> tuple[str, Any]:
+    """
+    Повертає активний TTS-провайдер: хмарний ElevenLabs або локальний Piper.
+    Контракт у них однаковий (is_available / VOICES / synthesize / …), тому
+    вище по коду різниці не видно.
+    """
+    provider = cfg.TTS_PROVIDER
+    if provider in {"elevenlabs", "eleven", "cloud"}:
+        return "elevenlabs", elevenlabs_voice
+    if provider in {"piper", "local"}:
+        return "piper", piper_voice
+    if provider not in {"auto", ""}:
+        log.warning("Невідомий TTS provider=%s — використовую auto", provider)
+    # auto: є ключ ElevenLabs — беремо його, інакше лишається Piper
+    if elevenlabs_voice.is_available():
+        return "elevenlabs", elevenlabs_voice
+    return "piper", piper_voice
+
+
+def _voice_list(backend: Any) -> list[dict]:
+    """Голоси для фронтенда: id/name/hint. voice_id провайдера — не його справа."""
+    out = []
+    for voice in getattr(backend, "VOICES", []):
+        out.append({
+            "id": voice.get("id"),
+            "name": voice.get("name") or "",
+            "hint": voice.get("hint") or "",
+        })
+    return out
+
+
 def _asr_backend() -> tuple[str, Any]:
     """Повертає активний ASR-бекенд: локальний Whisper або Regolo fallback."""
     provider = cfg.ASR_PROVIDER
@@ -1018,8 +1422,10 @@ def _asr_backend() -> tuple[str, Any]:
     if provider in {"regolo", "cloud"}:
         return "regolo", asr_regolo
     if provider in {"auto", ""}:
-        # Якщо Regolo вже налаштований, лишаємо стару поведінку й не
-        # перехоплюємо його локальним модулем (це важливо і для live-сесій).
+        # «auto» = хмара, якщо є чим її запустити (ключ у .env), інакше
+        # локальний whisper. Порядок саме такий, бо хмарна large-v3 і
+        # точніша, і швидша за локальну turbo — заміряно 2.44 с проти 9.30 с
+        # на тій самій фразі.
         if asr_regolo.is_available():
             return "regolo", asr_regolo
         if asr_whisper.is_available():
@@ -1148,6 +1554,7 @@ async def api_chat(request: Request, req: ChatRequest):
                     reply, emotion, mode, tool_results = await brains.chat(
                         agent_message, history, **_chat_image_kwargs(images),
                         **_chat_reasoning_kwargs(req.reasoning_effort),
+                        **_chat_voice_kwargs(req.voice, req.spoken),
                     )
                 except Exception as exc:  # noqa: BLE001 — хід треба закрити, помилку віддаємо далі
                     trace_log.end_turn(error=f"{type(exc).__name__}: {exc}")
@@ -1232,6 +1639,7 @@ async def api_chat(request: Request, req: ChatRequest):
             chat_task = asyncio.create_task(brains.chat(
                 agent_message, history, emit=emit, **_chat_image_kwargs(images),
                 **_chat_reasoning_kwargs(req.reasoning_effort),
+                **_chat_voice_kwargs(req.voice, req.spoken),
             ))
 
             try:
@@ -1424,6 +1832,125 @@ async def api_session_project(session_id: str, request: Request, req: SessionPro
         return {"ok": True, "project": project}
 
 
+# Підписи шматків системного промпту для панелі. Ключі — з
+# brains.system_prompt_parts; невідомий ключ показуємо як є, щоб новий шматок
+# промпту зʼявився у розкладці сам, без правки тут.
+_CONTEXT_PART_LABELS = {
+    "persona": "Характер і правила",
+    "self": "Довідка про себе",
+    "time": "Поточний час",
+    "tools": "Опис інструментів",
+    "profile": "Профіль користувача",
+    "memory_rule": "Правило памʼяті",
+    "notes": "Нотатки з памʼяті",
+    "tts": "Правила озвучки",
+    "asr": "Застереження про мікрофон",
+}
+
+
+@app.get("/api/chat/context")
+async def api_chat_context(
+    request: Request,
+    session_id: str = Query(default=""),
+    message: str = Query(default="", max_length=4000),
+    kind: str = Query(default=""),
+) -> dict:
+    """
+    З ЧОГО складається контекст наступного запиту — у символах.
+
+    Панель показує заповнення контексту, і на питання «а що там усередині»
+    мусить бути справжня відповідь. Тому рахуємо не оцінку збоку, а рівно ті
+    рядки, які зберуться в запит: ті самі `system_prompt_parts` і та сама
+    історія, обрізана тим самим CHAT_HISTORY_LIMIT.
+
+    `message` — чернетка, яку людина зараз друкує: вона теж піде в запит.
+    Символи, а не токени: токенізатор у кожної моделі свій, а перерахунок з
+    відомим коефіцієнтом панель робить сама й чесно підписує його «≈».
+    """
+    clerk_uid = await _require_user(request)
+    with brain_context.set_clerk_user(clerk_uid), chat_store.set_kind(_chat_kind(kind)):
+        sid = session_id.strip()
+        if sid and not chat_store.is_valid_id(sid):
+            raise HTTPException(status_code=400, detail="Некоректний id сесії")
+        history = chat_store.history(sid, cfg.CHAT_HISTORY_LIMIT) if sid else []
+        # Нотатки підбираються під репліку, тож промпт рахуємо саме для неї.
+        probe = message or (history[-1]["content"] if history else "")
+        parts = [
+            {"id": name, "label": _CONTEXT_PART_LABELS.get(name, name), "chars": len(text)}
+            for name, text in brains.system_prompt_parts(probe)
+            if text.strip()
+        ]
+        stored = len(chat_store.load(sid).get("messages", [])) if sid else 0
+        parts.append({
+            "id": "history",
+            "label": "Історія розмови",
+            "chars": sum(len(item["content"]) for item in history),
+            "messages": len(history),
+        })
+        if message:
+            parts.append({"id": "draft", "label": "Те, що друкуєш", "chars": len(message)})
+        return {
+            "parts": parts,
+            "chars": sum(int(part["chars"]) for part in parts),
+            # Скільки реплік розмови ЛИШИЛОСЬ за межами вікна: саме про них
+            # бот «не памʼятає», і саме це лікує стискання.
+            "dropped": max(0, stored - len(history)),
+            "history_limit": cfg.CHAT_HISTORY_LIMIT,
+        }
+
+
+@app.post("/api/sessions/{session_id}/compact")
+async def api_session_compact(session_id: str, request: Request, kind: str = Query(default="")) -> dict:
+    """
+    Стискає розмову: мозок переказує її, переказ стає єдиною реплікою.
+
+    Сенс не в економії місця на диску, а в памʼяті: у запит іде лише останні
+    CHAT_HISTORY_LIMIT реплік, і все, що старіше, для бота не існує. Переказ
+    повертає суть тих реплік у вікно.
+
+    Оригінал зберігається (chat_store.compact кладе його в pre-compact/).
+    """
+    clerk_uid = await _require_user(request)
+    with brain_context.set_clerk_user(clerk_uid), chat_store.set_kind(_chat_kind(kind)):
+        if not chat_store.is_valid_id(session_id):
+            raise HTTPException(status_code=400, detail="Некоректний id сесії")
+        messages = chat_store.load(session_id).get("messages", [])
+        if len(messages) < 4:
+            raise HTTPException(status_code=400, detail="Розмова закоротка, щоб її стискати")
+
+        lines = []
+        for item in messages:
+            who = "Користувач" if item.get("role") == "user" else "Ти"
+            lines.append(f"{who}: {str(item.get('content') or '')[:1500]}")
+        prompt = (
+            "Перекажи цю розмову так, щоб її можна було продовжити без оригіналу. "
+            "Збережи факти про користувача, домовленості, назви, числа й незакриті питання; "
+            "викинь ввічливість і повтори. Пиши від себе, тією ж мовою, до 15 речень, "
+            "без вступу на кшталт «ось переказ».\n\n" + "\n".join(lines)[:24000]
+        )
+        turn_id = trace_log.start_turn("стискання чату", session_id, session_id)
+        try:
+            with trace_log.bind(turn_id):
+                summary, _emotion, mode, _tools = await asyncio.wait_for(
+                    brains.chat(prompt, []), timeout=90
+                )
+                trace_log.end_turn(mode=mode, model=brains.get_last_model())
+        except Exception as exc:  # noqa: BLE001 — не вийшло переказати, історію не чіпаємо
+            with trace_log.bind(turn_id):
+                trace_log.end_turn(error=f"{type(exc).__name__}: {exc}")
+            log.warning("Стискання чату не вдалося: %s", type(exc).__name__)
+            raise HTTPException(status_code=502, detail="Мозок не переказав розмову") from exc
+
+        result = chat_store.compact(session_id, summary)
+        if result is None:
+            raise HTTPException(status_code=500, detail="Не вдалося зберегти переказ")
+        # Копія історії в памʼяті процесу тепер бреше — скидаємо, щоб
+        # наступний запит зібрав контекст із щойно стиснутого файлу.
+        with _sessions_lock:
+            _sessions.pop(session_id, None)
+        return {"ok": True, "summary": summary.strip(), **result}
+
+
 @app.delete("/api/sessions/{session_id}")
 async def api_session_delete(session_id: str, request: Request, kind: str = Query(default="")) -> dict:
     clerk_uid = await _require_user(request)
@@ -1524,45 +2051,73 @@ def api_emotion(req: EmotionRequest) -> dict:
 
 @app.get("/api/tts/status")
 def api_tts_status() -> dict:
-    """Доступність укр. голосу Piper + список голосів і активний (для вибору у панелі)."""
+    """
+    Доступність озвучки + голоси активного провайдера (для вибору в панелі).
+    Ключ `speeds` тепер справді провайдерський: у Piper це 1/1.5/2×, а
+    ElevenLabs вище 1.2× не дає — фронтенд бере список звідси, а не зашитий.
+    """
+    provider, backend = _tts_backend()
+    enabled = backend.is_available()
+    # Хмара налаштована, але лежить/без ключа — озвучка все одно є, якщо є
+    # локальна модель: краще рівніший голос, ніж тиша.
+    if not enabled and provider != "piper" and piper_voice.is_available():
+        provider, backend, enabled = "piper", piper_voice, True
     return {
-        "enabled": piper_voice.is_available(),
-        "provider": "piper",
+        "enabled": enabled,
+        "provider": provider,
         "streaming": False,
         "interruptible": True,
-        "voices": piper_voice.VOICES,
-        "selected": piper_voice.get_speaker(),
-        "speeds": piper_voice.SPEEDS,
+        "voices": _voice_list(backend),
+        "selected": backend.get_speaker(),
+        "speeds": list(getattr(backend, "SPEEDS", [1.0])),
     }
 
 
 @app.post("/api/tts/voice")
 def api_tts_voice(req: VoiceSelectRequest) -> dict:
-    """Ставить активний голос Piper (усі наступні озвучки — ним)."""
-    if not piper_voice.set_speaker(req.speaker):
+    """Ставить активний голос активного провайдера (наступні озвучки — ним)."""
+    _provider, backend = _tts_backend()
+    if not backend.set_speaker(req.speaker):
         raise HTTPException(status_code=400, detail="Невідомий голос")
-    return {"ok": True, "selected": piper_voice.get_speaker()}
+    return {"ok": True, "selected": backend.get_speaker()}
 
 
 @app.post("/api/tts")
 async def api_tts(req: TTSRequest):
     """
-    Озвучує текст живим НЕЙРОННИМ українським голосом Piper (WAV, локально).
-    speaker — тимчасовий голос для прослуховування (None → активний).
-    Мозок — OpenClaw, Piper лише голос. 503, якщо недоступний.
+    Озвучує текст живим нейронним голосом активного провайдера: ElevenLabs
+    (MP3, хмара) або Piper (WAV, локально). speaker — тимчасовий голос для
+    прослуховування (None → активний). 503, якщо озвучки немає взагалі.
+
+    Хмара впала — НЕ мовчимо: та сама фраза одразу йде в Piper. Через це
+    відповідь може бути іншого формату, ніж очікував фронтенд, тому
+    media_type беремо з того провайдера, що реально озвучив.
     """
     started = time.perf_counter()
+    provider, backend = _tts_backend()
+    audio = None
     try:
-        audio = await asyncio.to_thread(piper_voice.synthesize, req.text, req.speaker, req.speed)
-    except Exception as exc:  # noqa: BLE001 — голос не критичний; кажемо 503, фронтенд впорається
-        trace_log.step("tts", req.speaker or piper_voice.get_speaker(), "fail",
-                       f"{type(exc).__name__}: {exc}", (time.perf_counter() - started) * 1000)
-        log.warning("Piper TTS не впорався (%s)", type(exc).__name__)
-        return JSONResponse(status_code=503, content={"error": "TTS недоступний"})
-    trace_log.step("tts", req.speaker or piper_voice.get_speaker(), "ok",
-                   f"{len(req.text)} символів → {len(audio)} байт WAV",
+        audio = await asyncio.to_thread(backend.synthesize, req.text, req.speaker, req.speed)
+    except Exception as exc:  # noqa: BLE001 — голос не критичний
+        log.warning("TTS %s не впорався (%s: %s)", provider, type(exc).__name__, exc)
+        if provider != "piper" and piper_voice.is_available():
+            try:
+                # speaker хмарного провайдера в Piper не має сенсу (інші id) —
+                # відкочуємось на його ж активний голос
+                audio = await asyncio.to_thread(piper_voice.synthesize, req.text, None, req.speed)
+                provider, backend = "piper", piper_voice
+                log.info("TTS відкотився на Piper")
+            except Exception as exc2:  # noqa: BLE001
+                log.warning("Piper теж не впорався (%s)", type(exc2).__name__)
+        if audio is None:
+            trace_log.step("tts", provider, "fail",
+                           f"{type(exc).__name__}: {exc}", (time.perf_counter() - started) * 1000)
+            return JSONResponse(status_code=503, content={"error": "TTS недоступний"})
+    media_type = getattr(backend, "MEDIA_TYPE", "audio/wav")
+    trace_log.step("tts", provider, "ok",
+                   f"{len(req.text)} символів → {len(audio)} байт ({media_type})",
                    (time.perf_counter() - started) * 1000)
-    return StreamingResponse(iter([audio]), media_type="audio/wav",
+    return StreamingResponse(iter([audio]), media_type=media_type,
                              headers={"Cache-Control": "no-store"})
 
 
@@ -1608,7 +2163,16 @@ async def api_asr(request: Request, audio: UploadFile = File(...)) -> dict:
         trace_log.step("asr", provider, "fail", f"{type(exc).__name__}: {exc}",
                        (time.perf_counter() - started) * 1000)
         log.warning("ASR (%s) не впорався (%s)", provider, type(exc).__name__)
-        return JSONResponse(status_code=503, content={"error": "ASR помилка"})
+        # Причину видно в тексті помилки: на хмарному провайдері «ASR помилка»
+        # виглядала точно так само, як зламаний мікрофон, і розбір щоразу
+        # починався з нуля. Автопадіння на локальний тут НЕМА свідомо
+        # (asr.provider: regolo) — тиша має бути помітною.
+        detail = (
+            "Хмарне розпізнавання недоступне"
+            if provider == "regolo"
+            else "Локальне розпізнавання не впоралось"
+        )
+        return JSONResponse(status_code=503, content={"error": detail})
     # Канонічні назви моделей ДО журналу й відповіді: у консолі має бути видно
     # той самий текст, який отримає мозок, інакше розбір «чому не перемкнулось»
     # шукає «кван» у логах, а в мозок пішло «Qwen».
