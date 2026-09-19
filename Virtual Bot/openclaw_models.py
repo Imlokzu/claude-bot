@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import shutil
 import time
 
@@ -76,13 +77,33 @@ async def _run_cli(*args: str) -> tuple[int, str, str]:
     return proc.returncode or 0, out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
 
 
+# Назви в каталозі OpenClaw тягнуть за собою хвіст у дужках — «MiniMax M3
+# (бачить картинки, ~1.9 с)». У вузькому рядку композера він з'їдав усю
+# ширину й обрізався саме на корисному місці, тож хвіст тут розбирається на
+# ознаки, а панель малює їх іконками. Сама назва лишається назвою.
+_TAIL_RE = re.compile(r"\s*\(([^()]*)\)\s*$")
+_SECONDS_RE = re.compile(r"~\s*([0-9]+(?:[.,][0-9]+)?)\s*(?:с|s)\b")
+_VISION_WORDS = ("картинк", "vision", "image", "зображенн")
+
+# Межа «швидкої». Порівнювати моделі між собою було б гнучкіше, але й
+# мінливо: та сама модель то отримувала б значок, то ні, залежно від того,
+# хто поруч у списку. Фіксований поріг людина може запам'ятати.
+FAST_SECONDS = 1.0
+
+
 def _normalize(raw: dict) -> dict:
     """Модель OpenClaw → форма, яку чекає панель."""
     key = str(raw.get("key") or "")
     tags = [str(t) for t in (raw.get("tags") or [])]
+    name = str(raw.get("name") or key)
+    tail = ""
+    match = _TAIL_RE.search(name)
+    if match:
+        tail = match.group(1)
+        name = name[: match.start()].strip() or key
     entry: dict[str, object] = {
         "id": key,
-        "label": str(raw.get("name") or key),
+        "label": name,
         # Хто саме відповідає: у ключі `omni/opencode-go/minimax-m3` перший
         # сегмент — провайдер OpenClaw, решта — модель у ньому.
         "provider": key.split("/")[0] if "/" in key else "",
@@ -91,8 +112,17 @@ def _normalize(raw: dict) -> dict:
     context = raw.get("contextWindow")
     if isinstance(context, int) and context > 0:
         entry["context"] = context
-    if "image" in str(raw.get("input") or ""):
+    # `input` у каталозі стоїть "text" навіть у зрячих моделей, тож єдиний
+    # живий сигнал — слова в тому самому хвості.
+    haystack = f"{tail} {raw.get('input') or ''}".lower()
+    if any(word in haystack for word in _VISION_WORDS):
         entry["vision"] = True
+    seconds = _SECONDS_RE.search(tail)
+    if seconds:
+        value = float(seconds.group(1).replace(",", "."))
+        entry["seconds"] = value
+        if value <= FAST_SECONDS:
+            entry["fast"] = True
     if "default" in tags:
         entry["is_default"] = True
     fallback = next((t for t in tags if t.startswith("fallback")), "")

@@ -68,6 +68,54 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(len(models), 2)
 
 
+class NameTailTests(unittest.TestCase):
+    """
+    Хвіст у дужках з назви моделі.
+
+    Каталог OpenClaw називає моделі «MiniMax M3 (бачить картинки, ~1.9 с)».
+    У вузькому рядку композера такий підпис обрізається саме на корисному
+    місці, тому хвіст розбирається на ознаки, а панель малює їх значками.
+    """
+
+    def test_splits_vision_and_speed_out_of_the_name(self) -> None:
+        entry = openclaw_models._normalize(
+            {"key": "omni/x/m", "name": "MiniMax M3 (бачить картинки, ~1.9 с)", "input": "text"}
+        )
+        self.assertEqual(entry["label"], "MiniMax M3")
+        self.assertTrue(entry["vision"])
+        self.assertEqual(entry["seconds"], 1.9)
+        # 1.9 с — не швидка: поріг фіксований, щоб значок не мерехтів
+        # залежно від того, хто поруч у списку.
+        self.assertNotIn("fast", entry)
+
+    def test_marks_a_quick_model(self) -> None:
+        entry = openclaw_models._normalize(
+            {"key": "omni/x/m", "name": "GPT-OSS 120B (Regolo, ~0.45 с)", "input": "text"}
+        )
+        self.assertEqual(entry["label"], "GPT-OSS 120B")
+        self.assertTrue(entry["fast"])
+        self.assertEqual(entry["seconds"], 0.45)
+        self.assertNotIn("vision", entry)
+
+    def test_leaves_a_plain_name_alone(self) -> None:
+        entry = openclaw_models._normalize({"key": "omni/x/m", "name": "Claude Sonnet 5"})
+        self.assertEqual(entry["label"], "Claude Sonnet 5")
+        self.assertNotIn("seconds", entry)
+        self.assertNotIn("vision", entry)
+
+    def test_vision_from_input_still_counts(self) -> None:
+        """`input` каталогу стоїть "text" навіть у зрячих, але якщо не стоїть — віримо."""
+        entry = openclaw_models._normalize(
+            {"key": "omni/x/m", "name": "Some Model", "input": "text,image"}
+        )
+        self.assertTrue(entry["vision"])
+
+    def test_name_of_only_a_tail_falls_back_to_the_key(self) -> None:
+        entry = openclaw_models._normalize({"key": "omni/x/m", "name": "(~0.3 с)"})
+        self.assertEqual(entry["label"], "omni/x/m")
+        self.assertTrue(entry["fast"])
+
+
 class ChatHeaderTests(unittest.TestCase):
     def tearDown(self) -> None:
         openclaw_models.set_selected("")

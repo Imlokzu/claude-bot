@@ -98,6 +98,10 @@ export interface BrainModel {
   available?: boolean;
   context?: number;
   vision?: boolean;
+  /** Відповідає швидше за поріг openclaw_models.FAST_SECONDS. */
+  fast?: boolean;
+  /** Типова затримка відповіді в секундах — з каталогу OpenClaw. */
+  seconds?: number;
   is_default?: boolean;
   fallback?: string;
 }

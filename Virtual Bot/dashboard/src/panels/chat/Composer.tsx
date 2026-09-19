@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
-import { Brain, Eye, FileText, FolderTree, Paperclip, Zap } from 'lucide-react';
+import { Brain, Eye, FileText, FolderTree, LifeBuoy, Paperclip, Zap } from 'lucide-react';
 import VoiceBeam from 'voice-glow';
 import { PromptBar } from '@/vendor/reactbits';
 import { RadialMenu } from '@/vendor/bencho/RadialMenu';
 import { useToast } from '@/components/ui/Toaster';
-import { useBrainModels, useSelectBrainModel, useSetThinking } from '@/lib/queries';
+import { useBrainModels, useSelectBrainModel, useSetThinking, type BrainModel } from '@/lib/queries';
 import { useCssVar } from '@/hooks/useAccentRgb';
 import { useDictation } from '@/hooks/useDictation';
 import { ContextMeter } from './ContextMeter';
@@ -37,14 +37,31 @@ const THINKING_LABELS: Record<string, string> = {
 };
 
 /*
- * Особливості моделі — значками, не текстом: підпис виду «GLM-5.3 Flash
- * (бачить картинки) · 1.0М контексту» в рядку шириною 200 px обрізався саме
- * на корисному місці.
+ * Особливості моделі — значками, не текстом.
+ *
+ * Каталог OpenClaw називає їх прямо в назві: «GLM-5.3 Flash (бачить
+ * картинки, ~2.5 с)». У рядку композера такий підпис обрізався саме на
+ * корисному місці, тому бекенд розбирає хвіст на ознаки (див.
+ * openclaw_models._normalize), а тут вони стають двома значками.
+ *
+ * Поруч із назвою — лише ті дві, що впливають на вибір просто зараз: чи
+ * побачить вкладену картинку і чи відповість швидко. Хто типовий, а хто
+ * запасний, видно лише в розгорнутому списку: у рядку це шум.
  */
 const TRAITS = [
-  { key: 'vision', Icon: Eye, title: 'бачить картинки' },
+  { key: 'vision', Icon: Eye, title: () => 'бачить картинки' },
+  {
+    key: 'fast',
+    Icon: Zap,
+    title: (model: BrainModel) =>
+      model.seconds ? `швидка — близько ${model.seconds} с` : 'швидка',
+  },
+] as const;
+
+/** Значки другого ряду: роль моделі в ланцюжку OpenClaw. */
+const ROLES = [
   { key: 'is_default', Icon: Brain, title: 'типова модель OpenClaw' },
-  { key: 'fallback', Icon: Zap, title: 'запасна модель OpenClaw' },
+  { key: 'fallback', Icon: LifeBuoy, title: 'запасна модель OpenClaw' },
 ] as const;
 
 export function Composer({
@@ -84,16 +101,25 @@ export function Composer({
     () =>
       models.map((model) => ({
         key: model.id,
-        name: model.label,
+        // Назва вузлом, а не рядком: PromptBar малює її і в згорнутому
+        // рядку, і в списку — значки мусять бути в обох місцях.
+        name: (
+          <span className="inline-flex items-center gap-1.5">
+            {model.label}
+            {TRAITS.filter(({ key }) => Boolean(model[key])).map(({ key, Icon, title }) => (
+              <Icon key={key} className="size-3.5 opacity-75">
+                <title>{title(model)}</title>
+              </Icon>
+            ))}
+          </span>
+        ),
         tag: (
           <>
-            {TRAITS.filter(({ key }) => Boolean(model[key as keyof typeof model])).map(
-              ({ key, Icon, title }) => (
-                <Icon key={key} className="size-3.5">
-                  <title>{title}</title>
-                </Icon>
-              ),
-            )}
+            {ROLES.filter(({ key }) => Boolean(model[key])).map(({ key, Icon, title }) => (
+              <Icon key={key} className="size-3.5">
+                <title>{title}</title>
+              </Icon>
+            ))}
           </>
         ),
       })),
