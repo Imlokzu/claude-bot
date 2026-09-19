@@ -99,7 +99,66 @@ expecting 400, verify static assets, then shut processes down).
 
 ---
 
-## 6. Quick checklist before you finish a task
+## 6. Agents that build features and screen apps
+
+This section is for an agent doing **product work** — a feature, a module, or a
+screen app — usually with no human watching each step. Everything above still
+applies; this adds what is specific to building rather than fixing.
+
+### Commit as you go, not at the end
+
+You have no human to notice that an hour of work vanished. A session can be cut
+short at any moment, so **unpushed work only exists if it is committed**. Commit
+each part as soon as it stands on its own — a passing module, a new endpoint, a
+new test file — rather than saving one large commit for the end.
+
+If you finish a task and `git status` is not clean, the task is not finished.
+
+### Verify it yourself — nobody else will
+
+Before you call a feature done:
+
+```bash
+cd "Virtual Bot"
+PYTHONPATH="$PWD" .venv/bin/pytest tests/ -q     # PYTHONPATH is required
+```
+
+A new feature without a test is not done. Put the test next to the existing
+ones and match their style — they carry explanations of *why* the behaviour
+matters, not just assertions.
+
+Then exercise the real thing, not only the test: start the server, hit the
+endpoint, look at the screen. Tests pass on code that is wired to nothing.
+
+### Screen apps (`Virtual Bot/store/packages/`)
+
+A new app is just a new folder — no build step, no registration:
+
+```
+store/packages/<id>/
+  package.json   # id, type, label, icon, tint, version, author, description, entry
+  index.html     # entry point, self-contained
+```
+
+Constraints that are not negotiable, because the target is a 2.4" 320x240
+display on a Raspberry Pi 3:
+
+- animate **only** `transform` and `opacity`;
+- no `filter`, `blur`, or `box-shadow` on anything that moves;
+- no gradients under animation;
+- the app must work offline — no CDN, no external fonts.
+
+Read `Virtual Bot/docs/SCREEN-PLATFORM.md` before writing one.
+
+### Do not widen the scope
+
+Build what was asked. If you find a second problem on the way, finish the first
+one, commit it, and report the second — do not fold an unrequested refactor into
+the same change. The owner decides what gets built.
+
+---
+
+## 7. Quick checklist before you finish a task
 
 - [ ] `git status` reviewed — only intended files staged
 - [ ] No secrets in the diff
