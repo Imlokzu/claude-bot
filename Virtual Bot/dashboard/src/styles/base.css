@@ -1,0 +1,281 @@
+/*
+ * База: скидання, типографіка, фокус, смуги прокрутки.
+ *
+ * ВАЖЛИВО: усе тут загорнуте в @layer. Некаскадований CSS б'є будь-який
+ * шар, тож `* { margin: 0 }` поза шаром мовчки перебивав Tailwind-утиліти
+ * (`mx-auto` не центрував — саме на цьому й спіймали). Скидання живе в
+ * `base`, фірмові класи — в `components`: обидва програють утилітам, як і
+ * має бути.
+ */
+
+@layer base {
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+* { margin: 0; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+  /* Панель — застосунок, а не сторінка: гумове відтягування всього документа
+     на телефоні виглядає як баг. Прокручуються самі панелі. */
+  overscroll-behavior: none;
+}
+
+body {
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--f-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  /* Саме height, а не min-height: панель — застосунок із фіксованою
+     висотою, у якому прокручуються окремі області, а не документ. */
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+input, button, textarea, select { font: inherit; color: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; }
+img, svg, video, canvas { display: block; max-width: 100%; }
+a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/*
+ * Кільце фокуса одне на всю панель. Живе в шарі base навмисно: так утиліта
+ * Tailwind (`focus-visible:outline-none`) може його зняти там, де фокус
+ * показує сам контейнер — інакше в полі вводу чату кільце малювалось двічі,
+ * своє й контейнерне.
+ */
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+    border-radius: var(--r-xs);
+  }
+  :focus:not(:focus-visible) { outline: none; }
+
+::selection {
+  background: var(--c-accent);
+  color: var(--c-accent-ink);
+}
+
+/* --- смуги прокрутки ------------------------------------------------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--c-border-strong) transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--c-border);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: var(--r-full);
+}
+*::-webkit-scrollbar-thumb:hover { background: var(--c-border-strong); background-clip: content-box; }
+}
+
+@layer components {
+/* --- фірмові класи ---------------------------------------------------- */
+
+/*
+ * Мітка секції: моноширинна капітель. Головний упізнаваний прийом панелі —
+ * саме вона дає «приладовість» без жодної картинки (див. DESIGN.md).
+ */
+.u-label {
+  font-family: var(--f-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--c-text-3);
+}
+
+/* Дані: цифри однакової ширини, щоб таблиці й лічильники не смикались. */
+.u-data {
+  font-family: var(--f-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 1;
+}
+
+/* Волосяна лінія — межа завтовшки рівно в піксель пристрою. */
+.u-hairline { border: 1px solid var(--c-border); }
+
+/* Міра рядка для прози: далі за 68 символів око губить початок наступного. */
+.u-measure { max-width: 68ch; }
+
+/* Безпечні зони iOS: панель ставиться на домашній екран як PWA. */
+.u-safe-b { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.u-safe-t { padding-top: env(safe-area-inset-top, 0px); }
+
+/* --- нотатки памʼяті -------------------------------------------------- *
+ * Tiptap віддає голий ProseMirror без стилів. Ритм тут той самий, що в
+ * чаті: це той самий текст, лише в іншому місці.
+ */
+.prose-note { max-width: 70ch; font-size: 15px; line-height: 1.62; }
+.prose-note > * + * { margin-top: 0.85em; }
+.prose-note h1 { font-size: 21px; font-weight: 600; letter-spacing: -0.015em; margin-top: 1.4em; }
+.prose-note h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin-top: 1.3em; }
+.prose-note h3 { font-size: 15.5px; font-weight: 600; margin-top: 1.2em; }
+.prose-note ul { list-style: disc; padding-left: 1.3em; }
+.prose-note ol { list-style: decimal; padding-left: 1.3em; }
+.prose-note li + li { margin-top: 0.25em; }
+.prose-note li::marker { color: var(--c-text-3); }
+.prose-note a { color: var(--c-accent); }
+.prose-note code {
+  font-family: var(--f-mono);
+  font-size: 0.88em;
+  background: var(--c-surface-3);
+  border-radius: var(--r-xs);
+  padding: 0.1em 0.3em;
+}
+.prose-note pre {
+  font-family: var(--f-mono);
+  font-size: 12.5px;
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  padding: 0.75em;
+  overflow-x: auto;
+}
+.prose-note pre code { background: none; padding: 0; }
+.prose-note blockquote {
+  border-left: 2px solid color-mix(in oklab, var(--c-accent) 45%, transparent);
+  padding-left: 0.85em;
+  color: var(--c-text-2);
+}
+.prose-note hr { border: 0; border-top: 1px solid var(--c-border); }
+/* Порожній перший абзац отримує підказку — інакше чиста нотатка виглядає
+   як зламаний редактор. */
+.prose-note p.is-editor-empty:first-child::before {
+  content: "Порожня нотатка. Пиши…";
+  color: var(--c-text-3);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+}
+
+/* --- рух -------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  /*
+   * Місце під плаваючий док — з того краю, де він зараз стоїть.
+   *
+   * Атрибут `data-dock` ставить хук useDockSide; типове значення (док ще не
+   * переносили) — низ, тому воно й записане без атрибута.
+   */
+  .u-under-dock { padding-bottom: 76px; }
+  @media (min-width: 640px) { .u-under-dock { padding-bottom: 84px; } }
+
+  /* Зверху док живе В ШАПЦІ, і місце під нього вже зайняте нею — окремий
+     відступ тут додав би порожню смугу над вмістом. */
+  [data-dock='top'] .u-under-dock { padding-bottom: 0; }
+  [data-dock='left'] .u-under-dock { padding-bottom: 0; padding-left: 76px; }
+  [data-dock='right'] .u-under-dock { padding-bottom: 0; padding-right: 76px; }
+  @media (min-width: 640px) {
+    [data-dock='left'] .u-under-dock { padding-left: 84px; }
+    [data-dock='right'] .u-under-dock { padding-right: 84px; }
+  }
+}
+
+/* ===================================================================== *
+ * Рух відкривання й закривання.
+ *
+ * Одна мова для всього, що розкривається: попапи, модалки, палітра, меню
+ * поля вводу. Раніше в Dialog стояли класи `animate-in fade-in` — вони з
+ * tailwindcss-animate, якого в проєкті немає, тобто не робили нічого.
+ *
+ * Пружина лише на ВХІД (260 мс). Вихід — короткий і рівний (150 мс): те, що
+ * пружинить, коли зникає, читається як збій, а не як рух. `data-state`
+ * ставить Radix; він же тримає елемент у DOM на час виходу, тому обидва
+ * напрямки справді видно.
+ * ===================================================================== */
+@layer components {
+  .u-pop {
+    /* Radix рахує точку росту від тригера — меню «виростає» саме з кнопки,
+       на яку натиснули, а не з абстрактного центру. */
+    transform-origin: var(--radix-popover-content-transform-origin, center);
+    will-change: transform, opacity;
+  }
+  .u-pop[data-state='open'] { animation: u-pop-in 260ms var(--e-spring) both; }
+  .u-pop[data-state='closed'] { animation: u-pop-out 150ms var(--e-out) both; }
+
+  .u-veil[data-state='open'] { animation: u-veil-in 220ms var(--e-out) both; }
+  .u-veil[data-state='closed'] { animation: u-veil-out 150ms var(--e-out) both; }
+
+  /* Шухляда знизу — їде, а не масштабується: вона приїжджає з-за краю. */
+  .u-sheet[data-state='open'] { animation: u-sheet-in 300ms var(--e-spring) both; }
+  .u-sheet[data-state='closed'] { animation: u-sheet-out 180ms var(--e-out) both; }
+
+  /*
+   * Сходинка для рядків усередині меню. Затримка — по порядку, не миттєво
+   * все разом: око встигає побачити, що пунктів кілька й де вони.
+   * Перші вісім, далі рівно — після восьмого сходинка вже не читається,
+   * зате затримка починала б відчуватись як гальмо.
+   */
+  .u-stagger > * { animation: u-rise 260ms var(--e-out) both; }
+  .u-stagger > *:nth-child(1) { animation-delay: 20ms; }
+  .u-stagger > *:nth-child(2) { animation-delay: 40ms; }
+  .u-stagger > *:nth-child(3) { animation-delay: 60ms; }
+  .u-stagger > *:nth-child(4) { animation-delay: 80ms; }
+  .u-stagger > *:nth-child(5) { animation-delay: 100ms; }
+  .u-stagger > *:nth-child(6) { animation-delay: 120ms; }
+  .u-stagger > *:nth-child(7) { animation-delay: 140ms; }
+  .u-stagger > *:nth-child(n + 8) { animation-delay: 160ms; }
+}
+
+@keyframes u-pop-in {
+  from { opacity: 0; transform: scale(0.94) translateY(6px); filter: blur(3px); }
+  60%  { opacity: 1; filter: blur(0); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+@keyframes u-pop-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: scale(0.97) translateY(3px); }
+}
+@keyframes u-veil-in  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes u-veil-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes u-sheet-in {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes u-sheet-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(10px); }
+}
+@keyframes u-rise {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Рух — прикраса, а не зміст: кому він заважає, той бачить усе одразу. */
+@media (prefers-reduced-motion: reduce) {
+  .u-pop[data-state],
+  .u-veil[data-state],
+  .u-sheet[data-state],
+  .u-stagger > * {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+  }
+}

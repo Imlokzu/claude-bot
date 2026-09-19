@@ -1,0 +1,140 @@
+/*
+ * Радіальне меню — за блоком «Radial menu» з bencho.dev (MIT, bencho.dev/licence).
+ *
+ * Вихідний код лежить у приватному репозиторії (github.com/lorenzo04us/Bencho,
+ * src/lab/GlassKit.tsx — 404 без доступу), тож зібрано за опублікованими на
+ * сайті API та CSS: полярна розкладка через --i/--n, тригонометрія просто в
+ * CSS, сходинка затримки на кожен пункт і згорнутий стан під ядром.
+ * Кольори — на наших токенах.
+ */
+
+.fan {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  /* Розмір ядра; пункти трохи менші. */
+  --core: 28px;
+  --opt: 34px;
+  --spread: 150deg;
+  --radius: 68px;
+  --bias: 0deg;
+  --stagger: 28ms;
+  width: var(--core);
+  height: var(--core);
+}
+
+.fan-core {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: var(--core);
+  height: var(--core);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--c-surface-2);
+  color: var(--c-text-2);
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color 160ms var(--e-out),
+    color 160ms var(--e-out),
+    transform 220ms var(--e-spring);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+.fan-core:hover { background: var(--c-surface-3); color: var(--c-text); }
+.fan-core:focus-visible { box-shadow: 0 0 0 2px var(--c-bg), 0 0 0 4px var(--c-accent); }
+.fan-core svg { transition: rotate 260ms var(--e-spring); }
+.fan[data-open] .fan-core {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
+}
+.fan[data-open] .fan-core svg { rotate: 135deg; }
+
+/*
+ * Полотно пунктів. Воно НЕ ловить події, поки меню закрите, — інакше
+ * невидимі кружечки перехоплювали б кліки по полю вводу поруч.
+ */
+.fan-arc {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+.fan[data-open] .fan-arc { pointer-events: auto; }
+
+.fan-opt {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: var(--opt);
+  height: var(--opt);
+  padding: 0;
+  border: 1px solid var(--c-border);
+  border-radius: 999px;
+  background: var(--c-surface);
+  color: var(--c-text-2);
+  box-shadow: var(--shadow-raise);
+  cursor: pointer;
+  outline: none;
+  /* Кут пункта: --bias повертає всю віялку, решта — рівний крок по дузі.
+     При --n = 1 ділення на нуль неможливе: такий пункт кладемо по центру. */
+  --a: calc(var(--bias) - 90deg - var(--spread) / 2 + var(--spread) / max(1, (var(--n) - 1)) * var(--i));
+  transform: translate(calc(cos(var(--a)) * var(--radius)), calc(sin(var(--a)) * var(--radius)));
+  transition:
+    transform 320ms var(--e-spring),
+    scale 320ms var(--e-spring),
+    opacity 180ms var(--e-out),
+    background-color 140ms var(--e-out),
+    border-color 140ms var(--e-out),
+    color 140ms var(--e-out);
+  transition-delay: calc(var(--i) * var(--stagger));
+}
+
+/* Згорнуте — усі під ядром, без сходинки затримки: закриватись мають разом. */
+.fan-arc:not([data-open]) .fan-opt {
+  transform: none;
+  scale: 0.4;
+  opacity: 0;
+  transition-delay: 0ms;
+}
+
+/* Куди зараз цілиться палець. */
+.fan-opt[data-aim] {
+  background: var(--c-accent-soft);
+  border-color: color-mix(in oklab, var(--c-accent) 45%, transparent);
+  color: var(--c-accent);
+  scale: 1.12;
+}
+.fan-opt:focus-visible { box-shadow: 0 0 0 2px var(--c-bg), 0 0 0 4px var(--c-accent); }
+
+.fan-tip {
+  position: absolute;
+  /* Підпис НАД кружечком: віялка розкривається вгору, і підпис знизу лягав
+     би просто на рядок керування полем вводу. */
+  bottom: calc(100% + 6px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 2px 7px;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-sm);
+  background: var(--c-surface-3);
+  color: var(--c-text);
+  font-family: var(--f-sans);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms var(--e-out);
+}
+.fan-opt[data-aim] .fan-tip,
+.fan-opt:hover .fan-tip { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fan-opt,
+  .fan-core,
+  .fan-core svg { transition-duration: 1ms; transition-delay: 0ms !important; }
+}

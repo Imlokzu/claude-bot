@@ -1,0 +1,52 @@
+/* Шрифти — self-hosted: панель мусить піднятись без мережі. */
+@import "@fontsource-variable/ibm-plex-sans/wght.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/600.css";
+
+@import "./styles/tokens.css";
+@import "tailwindcss";
+@import "./styles/base.css";
+@import "./styles/vendor.css";
+
+/* Тему перемикає атрибут на <html>, а не клас, тож варіант `dark:` треба
+   перевизначити — інакше Tailwind шукатиме .dark і мовчки не спрацює. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-surface-3: var(--c-surface-3);
+  --color-line: var(--c-border);
+  --color-line-strong: var(--c-border-strong);
+
+  --color-ink: var(--c-text);
+  --color-ink-2: var(--c-text-2);
+  --color-ink-3: var(--c-text-3);
+
+  --color-accent: var(--c-accent);
+  --color-accent-ink: var(--c-accent-ink);
+  --color-accent-soft: var(--c-accent-soft);
+
+  --color-ok: var(--c-ok);
+  --color-warn: var(--c-warn);
+  --color-err: var(--c-err);
+  --color-info: var(--c-info);
+  --color-idle: var(--c-idle);
+
+  --font-sans: var(--f-sans);
+  --font-mono: var(--f-mono);
+
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+
+  --shadow-raise: var(--shadow-raise);
+  --shadow-pop: var(--shadow-pop);
+
+  --ease-out: var(--e-out);
+  --ease-spring: var(--e-spring);
+}

@@ -1,0 +1,497 @@
+/*
+ * Доводка React Bits · Micro до наших токенів.
+ *
+ * Важливо: більшість кольорів ці компоненти отримують ПРОПСАМИ й пишуть
+ * інлайн-стилем, а інлайн б'є таблицю стилів. Тому кольори передаються з
+ * обгорток у src/components/ui рядками виду `var(--c-accent)` — там вони й
+ * живуть. Тут лишилось тільки те, для чого пропса немає: шрифти, дрібна
+ * геометрія та поведінка на телефоні.
+ *
+ * Джерело: https://reactbits.dev/c/micro — вендорні файли не редагуємо,
+ * щоб оновлення було одним curl (єдиний виняток — іконки, див. _icons.jsx).
+ */
+
+.thought-line { --tl-font: var(--f-sans); }
+.status-mark { --sm-font: var(--f-mono); }
+.lattice-loader { --ll-font: var(--f-mono); }
+.slosh-gauge { --sg-font: var(--f-mono); }
+.rubber-segment { --rs-font: var(--f-sans); }
+.slide-commit { --sc-font: var(--f-sans); }
+.prompt-bar { --pb-radius: var(--r-lg); }
+
+/*
+ * Список моделей: ширина по вмісту, а не 200 px.
+ *
+ * У вендора вона фіксована, і назви на кшталт «DeepSeek V4 Pro» разом із
+ * позначками просто вилазили за край меню — обрізалось саме те, заради чого
+ * список і відкривають. Стеля тримає меню в межах екрана на телефоні.
+ */
+.prompt-bar__menu[data-kind='model'] {
+  width: max-content;
+  min-width: 200px;
+  max-width: min(360px, calc(100vw - 2.5rem));
+  /* Список моделей приходить від OpenClaw і буває довгим (17 пунктів) —
+     без стелі меню виростало вище за екран і верх просто зрізало. */
+  max-height: min(48dvh, 340px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+
+/*
+ * Розкриття меню поля вводу.
+ *
+ * Вендорна анімація — 180 мс opacity + 4 px. Тут вона пружинить від краю
+ * кнопки, з якої меню й росте, а рядки проступають сходинкою: видно, що
+ * пунктів кілька, і куди вести очима.
+ *
+ * ЗАКРИТТЯ не анімується, і це не недогляд: компонент прибирає меню з DOM
+ * тієї ж миті (`{open ? <div/> : null}`), а зникомий елемент анімувати вже
+ * нічим. Свої меню (див. .u-pop у base.css) закриваються з рухом.
+ */
+.prompt-bar__menu {
+  animation: pb-menu-in 260ms var(--e-spring) both;
+}
+.prompt-bar__menu[data-kind='model'],
+.prompt-bar__menu[data-kind='at'],
+.prompt-bar__menu[data-kind='slash'] { transform-origin: bottom left; }
+.prompt-bar__menu[data-kind='effort'] { transform-origin: bottom right; }
+
+@keyframes pb-menu-in {
+  from { opacity: 0; transform: scale(0.94) translateY(8px); filter: blur(3px); }
+  60%  { opacity: 1; filter: blur(0); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+
+.prompt-bar__row { animation: pb-row-in 240ms var(--e-out) both; }
+.prompt-bar__row:nth-child(2) { animation-delay: 24ms; }
+.prompt-bar__row:nth-child(3) { animation-delay: 44ms; }
+.prompt-bar__row:nth-child(4) { animation-delay: 62ms; }
+.prompt-bar__row:nth-child(5) { animation-delay: 78ms; }
+.prompt-bar__row:nth-child(6) { animation-delay: 92ms; }
+.prompt-bar__row:nth-child(n + 7) { animation-delay: 104ms; }
+
+@keyframes pb-row-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt-bar__menu,
+  .prompt-bar__row { animation-duration: 1ms; animation-delay: 0ms !important; }
+}
+/* Назва все одно найдовша — їй і різатись трьома крапками, якщо що. */
+.prompt-bar__row-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+/* Замість підпису тут тепер значки (бачить картинки / думає / швидка). */
+.prompt-bar__row-tag { display: inline-flex; align-items: center; gap: 5px; }
+.prompt-bar__model .pb-trait { display: inline-flex; align-items: center; gap: 4px; margin-left: 2px; }
+
+/* Тости живуть над усім, включно з модалками Radix. */
+.swipe-toast { --st-z: var(--z-toast); }
+
+/* На телефоні пігулка запису має влазити в нижню панель разом із полем вводу. */
+@media (max-width: 759px) {
+  .voice-pill { --vp-size: 24px; }
+}
+
+/* ===================================================================== *
+ * Структурні компоненти React Bits.
+ *
+ * На відміну від «Micro», ці кольорів пропсами не приймають — вони зашиті
+ * в їхньому CSS під темну демо-сторінку. Тому тут вони перевизначаються
+ * на наші токени. Селектори навмисно ті самі, що в upstream: оновлення
+ * компонента лишається одним curl.
+ * ===================================================================== */
+
+/* --- Dock: головна навігація --------------------------------------- */
+.dock-outer { margin: 0; width: 100%; }
+
+.dock-panel {
+  gap: 0.5rem;
+  border-radius: var(--r-xl);
+  background: color-mix(in oklab, var(--c-surface) 86%, transparent);
+  border: 1px solid var(--c-border);
+  box-shadow: var(--shadow-pop);
+  /* Єдине місце в панелі, де розмиття виправдане: док лежить ПОВЕРХ
+     вмісту, що прокручується під ним (див. DESIGN.md). */
+  backdrop-filter: blur(14px) saturate(1.3);
+  padding: 0 0.6rem 0.6rem;
+  max-width: calc(100vw - 1.5rem);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dock-panel::-webkit-scrollbar { display: none; }
+
+/*
+ * Док НЕ обрізає своїх дітей.
+ *
+ * Значок під курсором виростає вище панелі, а підпис висить над нею на
+ * -2rem. Тут раніше стояв `overflow-x: auto` — і за специфікацією це робить
+ * `overflow-y` теж не-visible, тож і збільшення, і підпис зрізало рівно по
+ * межі панелі: анімація ніби є, а половини її не видно.
+ *
+ * Прокрутка лишається там, де вона справді потрібна, — на телефоні, де
+ * розділів більше, ніж ширини. Збільшення там і так вимкнене (нема курсора),
+ * тож обрізати нема чого.
+ */
+.dock-panel { overflow: visible; }
+@media (max-width: 759px) {
+  .dock-panel { overflow-x: auto; }
+}
+
+/* --- док на будь-якому краю ----------------------------------------- *
+ *
+ * Вертикальний варіант — це не поворот CSS: у повернутого елемента
+ * getBoundingClientRect віддає повернуту рамку, і збільшення перестає
+ * слідувати за курсором (див. шапку Dock.jsx). Тут лише розкладка.
+ */
+.dock-outer[data-axis='y'] { height: 100%; width: auto; }
+.dock-panel[data-axis='y'] {
+  flex-direction: column;
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
+  max-width: none;
+  max-height: calc(100dvh - 5.5rem);
+}
+
+/*
+ * Панель ПРИБИТА до свого краю — і це не косметика.
+ *
+ * Під курсором док росте: у горизонтального тягнеться висота, у
+ * вертикального — ширина. Панель тут позиційована абсолютно, і поки вона
+ * стояла на «статичній» позиції (left/right: auto), зростання контейнера
+ * зсувало її вбік — просто з-під курсора. Далі за один кадр: mouseleave →
+ * док складається → панель повертається під курсор → mousemove → знову
+ * росте. Збільшення виглядало як смикання, а частіше не спрацьовувало
+ * взагалі. Внизу цього не було лише тому, що там панель притиснута
+ * `bottom`, і висота росла вгору, не рухаючи її.
+ *
+ * Значки ростуть УСЕРЕДИНУ екрана: біля лівого краю — вправо, біля
+ * правого — вліво. Тому ж боці лишається й padding, з протилежного його
+ * немає — інакше збільшений значок упирався б у власну рамку.
+ */
+[data-dock='left'] .dock-panel[data-axis='y'] {
+  left: 0;
+  right: auto;
+  align-items: flex-start;
+  padding: 0.6rem 0 0.6rem 0.6rem;
+}
+[data-dock='right'] .dock-panel[data-axis='y'] {
+  right: 0;
+  left: auto;
+  align-items: flex-end;
+  padding: 0.6rem 0.6rem 0.6rem 0;
+}
+/*
+ * Док У ШАПЦІ (бік «зверху»).
+ *
+ * Шапка вже є поверхнею — тож власне тло, рамка й тінь панелі тут зайві:
+ * вийшла б плашка на плашці. Панель стає звичайним рядком у потоці, а
+ * анімовану висоту контейнера глушимо (`height: auto` з !important б'є
+ * інлайн-стиль motion): у горизонтальному доці вона лише резервує місце під
+ * збільшення, а тут смуга має лишатись рівно 56 px і не «дихати».
+ *
+ * Підпис розділу переїжджає ПІД значок: над шапкою його нема куди подіти —
+ * там край вікна.
+ */
+#dock-slot { position: relative; display: flex; align-items: center; }
+#dock-slot .dock-outer { height: auto !important; width: auto; margin: 0; }
+
+.dock-panel.dock-inline {
+  position: static;
+  transform: none;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  gap: 0.3rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+  align-items: center;
+}
+.dock-panel.dock-inline .dock-label { top: auto; bottom: -2rem; }
+
+/* Те саме зверху: панель тримається верхнього краю, висота росте вниз. */
+[data-dock='top'] .dock-panel { top: 0; bottom: auto; }
+@media (max-width: 759px) {
+  .dock-panel[data-axis='y'] { overflow-x: visible; overflow-y: auto; }
+}
+
+/* Підпис відсувається вбік, а не вгору: над вертикальним доком його нема
+   куди подіти, і сусідні значки він би перекривав. */
+[data-dock='left'] .dock-label { top: 50%; left: calc(100% + 0.5rem); translate: 0 -50%; transform: none; }
+[data-dock='right'] .dock-label { top: 50%; left: auto; right: calc(100% + 0.5rem); translate: 0 -50%; transform: none; }
+[data-dock='top'] .dock-label { top: auto; bottom: -2rem; }
+
+/* Панель тулиться до свого краю: з лівого боку заокруглення лишаються
+   тільки справа, і навпаки — док виглядає приклеєним, а не загубленим. */
+[data-dock='left'] .dock-panel { border-radius: 0 var(--r-xl) var(--r-xl) 0; border-left: 0; }
+[data-dock='right'] .dock-panel { border-radius: var(--r-xl) 0 0 var(--r-xl); border-right: 0; }
+[data-dock='top'] .dock-panel {
+  border-radius: 0 0 var(--r-xl) var(--r-xl);
+  border-top: 0;
+  padding: 0.6rem 0.6rem 0 0.6rem;
+  align-items: flex-start;
+}
+[data-dock='top'] .dock-outer { display: flex; align-items: flex-start; }
+
+.dock-item {
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  box-shadow: none;
+  color: var(--c-text-2);
+  transition: background-color var(--t-fast) var(--e-out), color var(--t-fast) var(--e-out);
+}
+.dock-item:hover { background: var(--c-surface-3); color: var(--c-text); }
+.dock-item.dock-item-active {
+  background: var(--c-accent-soft);
+  border-color: color-mix(in oklab, var(--c-accent) 38%, transparent);
+  color: var(--c-accent);
+}
+
+.dock-label {
+  top: -2rem;
+  background: var(--c-surface-3);
+  border: 1px solid var(--c-border);
+  color: var(--c-text);
+  font-family: var(--f-sans);
+  font-size: 12px;
+  padding: 0.25rem 0.5rem;
+  box-shadow: var(--shadow-raise);
+}
+
+/* --- плитки «Огляду» (механіка MagicBento) --------------------------- */
+.bento-tile { --glow-x: 50%; --glow-y: 50%; --glow-intensity: 0; --glow-radius: 320px; }
+.bento-tile::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--glow-intensity, 0);
+  transition: opacity 260ms var(--e-out);
+  /* Саме rgba(): `--c-accent-rgb` — це «185, 95, 61», і сучасний rgb() зі
+     скісною рискою на такий список не розкладається. Значення виходило
+     невалідним, і підсвітки просто не було. */
+  background: radial-gradient(
+    var(--glow-radius) circle at var(--glow-x) var(--glow-y),
+    rgba(var(--c-accent-rgb), 0.14),
+    transparent 60%
+  );
+}
+.bento-tile:hover { border-color: var(--c-border-strong); }
+
+/*
+ * Підйом плитки під курсором.
+ *
+ * Upstream світить фіолетом (`.particle-container:hover` у MagicBento.css):
+ * там демо на майже чорному тлі, де неон читається як підсвітка. На світлій
+ * темі та сама тінь лягала бузковим гало навколо плитки — чужий колір, якого
+ * в палітрі немає ніде. Тому підйом свій: нейтральна тінь плюс волосок
+ * акценту по краю.
+ */
+.bento-tile.particle-container:hover {
+  box-shadow:
+    0 8px 22px -12px rgb(35 30 25 / 0.22),
+    0 0 0 1px rgba(var(--c-accent-rgb), 0.12);
+}
+:root[data-theme='dark'] .bento-tile.particle-container:hover {
+  box-shadow:
+    0 10px 26px -12px rgb(0 0 0 / 0.5),
+    0 0 0 1px rgba(var(--c-accent-rgb), 0.18);
+}
+/* Частинки — теж акцентом, а не фіолетом. */
+.bento-tile .particle::before { background: rgba(var(--c-accent-rgb), 0.22); }
+
+/*
+ * Прожектор за курсором.
+ *
+ * Режим змішування компонент ставить інлайном (`screen`), тож правило зі
+ * стилів без !important сюди не доходило — і на світлій темі прожектора
+ * просто не було видно: screen уміє лише освітлювати, а освітлювати біле
+ * нікуди. Тепер по темі: на темній — screen, на світлій — multiply, який
+ * дає теплий відтінок на тлі й не чіпає темний текст.
+ */
+.global-spotlight { mix-blend-mode: multiply !important; }
+:root[data-theme='dark'] .global-spotlight { mix-blend-mode: screen !important; }
+
+/* --- SplitFlapText: табло стану -------------------------------------- */
+.split-flap-tile { border: 1px solid var(--c-border); }
+
+/* --- PixelCard: тло плитки з крабом ----------------------------------
+ * Upstream жорстко задає 300×400 і aspect-ratio 4/5 під демо-картку.
+ * У плитці «Огляду» вона мусить заповнювати комірку сітки, тож геометрію
+ * знімаємо повністю — ефект (піксельна поява) лишається той самий.
+ */
+.pixel-card {
+  /* Колір «живої» плями під курсором. Варіант `default` активного кольору не
+     має, і ::before падав на вбудований запас #09090b — на світлій темі під
+     крабом розливалась чорна пляма на всю плитку. */
+  --pixel-card-active-color: rgba(var(--c-accent-rgb), 0.16);
+  height: 100%;
+  width: 100%;
+  aspect-ratio: auto;
+  border: 0;
+  border-radius: var(--r-lg);
+  background: transparent;
+}
+
+/* --- StarBorder: акцентна дія ---------------------------------------- */
+.star-border-container { border-radius: var(--r-md); }
+.star-border-container .inner-content {
+  font-family: var(--f-sans);
+  border-radius: var(--r-md);
+  padding: 0.5rem 0.9rem;
+}
+
+/* --- AnimatedList ----------------------------------------------------- */
+.scroll-list { scrollbar-width: thin; }
+.scroll-list::-webkit-scrollbar-thumb { background: var(--c-border); }
+
+/* --- Stepper: майстер першого запуску -------------------------------- */
+.step-circle-container {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-lg);
+}
+.back-button { color: var(--c-text-3); font-family: var(--f-sans); }
+.back-button:hover { color: var(--c-text); }
+.next-button {
+  background-color: var(--c-accent);
+  color: var(--c-accent-ink);
+  font-family: var(--f-sans);
+  border-radius: var(--r-md);
+}
+.next-button:hover { filter: brightness(1.06); background-color: var(--c-accent); }
+.next-button:active { background-color: var(--c-accent); }
+.step-indicator-inner { color: var(--c-text-2); }
+.active-dot { background-color: var(--c-accent-ink); }
+.step-connector { background-color: var(--c-border); }
+.step-connector-inner { background-color: var(--c-accent); }
+.check-icon { color: var(--c-accent-ink); }
+
+/* --- AnimatedList: список розмов --------------------------------------
+ * Демо-стилі розраховані на темну сторінку з великими картками; у бічній
+ * колонці потрібен щільний список, тож геометрію задаємо свою, а поведінку
+ * (поява, клавіатура, градієнти по краях) лишаємо вендорну.
+ */
+.scroll-list-container { width: 100%; }
+.scroll-list { max-height: 100%; padding: 0 6px; }
+.scroll-list .item {
+  background: transparent;
+  border-radius: var(--r-md);
+  padding: 0;
+  margin-bottom: 2px;
+  transition: background-color var(--t-fast) var(--e-out);
+}
+.scroll-list .item:hover { background: var(--c-surface-2); }
+.scroll-list .item.selected { background: var(--c-accent-soft); }
+.scroll-list .top-gradient,
+.scroll-list-container .top-gradient {
+  background: linear-gradient(to bottom, var(--c-surface), transparent);
+}
+.scroll-list-container .bottom-gradient {
+  background: linear-gradient(to top, var(--c-surface), transparent);
+}
+
+
+/* ===================================================================== *
+ * aicss.dev — блок міркування, орби активності, дифи й таблиці.
+ *
+ * Джерело: https://www.aicss.dev/r/<name>.json (реєстр shadcn). Кольори ці
+ * компоненти беруть із власних CSS-змінних на :root, тож тут вони просто
+ * перенаправляються на наші токени.
+ *
+ * Селектор навмисно `:root:root` — у їхніх модулях ті самі змінні оголошені
+ * на `:global(:root)`, а порядок вставки CSS-модулів Vite ми не контролюємо.
+ * Подвоєний селектор виграє за специфічністю незалежно від порядку.
+ * ===================================================================== */
+:root:root {
+  /* Блок «Думаю…» */
+  --tre-label: var(--c-text-3);
+  --tre-verb: var(--c-text-2);
+  --tre-chevron: var(--c-text-3);
+  --tre-sentence: var(--c-text-2);
+  --tre-hover: var(--c-text);
+
+  /* Орби активності */
+  --orb-fg: var(--c-accent);
+  --orb-pill-bg: var(--c-surface-2);
+  --orb-pill-shadow: inset 0 0 0 1px var(--c-border);
+  --orb-label: var(--c-text-2);
+
+  /* Таблиця (--tbl-*, як у їхньому модулі) */
+  --tbl-bg: var(--c-surface-2);
+  --tbl-shadow: 0 0 0 1px var(--c-border);
+  --tbl-body-bg: var(--c-surface);
+  --tbl-line: var(--c-border);
+  --tbl-cell: var(--c-text);
+}
+
+/*
+ * FileDiff кольорів через змінні не віддає — у його модулі все зашито
+ * шістнадцятковими значеннями під світлу демо-сторінку. Реєстр shadcn
+ * копіює файли В ПРОЕКТ саме для того, щоб їх правити, тому кольори там
+ * замінені на наші токени просто в місці (див. шапку FileDiff.module.css).
+ */
+
+/* --- картинки в чаті: кадр + гармошка -------------------------------
+ * Розмір кадру задається пропсами GlareHover, а тут — тільки те, як у
+ * ньому сидить сама картинка: вона мусить заповнити кадр, а не вирішувати
+ * його висоту. Повний вигляд усе одно за кліком, у переглядачі.
+ */
+.chat-shot { display: block; cursor: zoom-in; }
+.chat-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  user-select: none;
+}
+/* Відблиск має йти ПОВЕРХ картинки: у вендорі ::before лежить у потоці
+   ще до дітей, і фото його закриває. */
+.chat-shot::before { z-index: 2; }
+
+/*
+ * AccordionGallery під наші поверхні. Upstream малює її на майже чорному
+ * тлі з важкою тінню — у стрічці чату це виглядало б як чужорідна вставка.
+ */
+.chat-gallery .ag-panel {
+  background: var(--c-surface-2);
+  border: 1px solid var(--c-border);
+  box-shadow: none;
+}
+.chat-gallery .ag-panel:focus-visible {
+  box-shadow: 0 0 0 2px var(--c-accent);
+}
+.chat-gallery .ag-panel--active { cursor: zoom-in; }
+.chat-gallery .ag-panel__text {
+  font-family: var(--f-sans);
+  font-size: 13px;
+  font-weight: 500;
+}
+.chat-gallery .ag-panel__label { left: 12px; right: 12px; bottom: 12px; gap: 8px; }
+.chat-gallery .ag-panel__bar { height: 18px; width: 2px; }
+
+/* --- SwipeRow: рядок списку розмов ----------------------------------
+ * Upstream малює картку самостійного списку: велика висота, округлення 16
+ * і власне тло. У колонці розмов рядок має лишатись рядком — кольори й
+ * геометрію задаємо пропсами, а тут знімаємо те, під що пропса немає.
+ */
+.session-swipe .swipe-row__action {
+  font-family: var(--f-sans);
+  font-size: 12px;
+}
+/* Полотно рядка лишається НЕПРОЗОРИМ: під ним завжди намальована шухляда з
+   діями, і крізь прозоре вона просвічує смугою з краю. Тому підсвітку
+   активного рядка малюємо всередині полотна, а не під ним. */
+.session-swipe .swipe-row__surface { padding: 0; gap: 0; }
+.session-swipe .swipe-row__clip { border-radius: var(--r-sm); }
+/* Кнопка дії в upstream — іконка НАД підписом: розраховано на рядок у
+   64 px. У нашому 30-пiксельному підпис із неї вилазив, тож у рядку
+   розмов лишаємо саме підпис. */
+.session-swipe .swipe-row__glyph { grid-auto-flow: column; align-items: center; gap: 6px; }
+.session-swipe .swipe-row__icon { display: none; }

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="uk" data-theme="dark" data-accent="terracotta">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Клод Бот — панель</title>
+    <link rel="icon" href="/static/dash/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/static/dash/icon.svg" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      /*
+       * Тема застосовується ДО першого кадру: якщо чекати на React, панель
+       * встигає блимнути світлим на темній темі. Ключі ті самі, що в старій
+       * панелі, тож налаштування вигляду переживають переїзд.
+       */
+      (function () {
+        try {
+          var t = localStorage.getItem('claudeBotTheme') || 'system';
+          var a = localStorage.getItem('claudeBotAccent') || 'terracotta';
+          var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+          var r = document.documentElement;
+          r.dataset.theme = dark ? 'dark' : 'light';
+          r.dataset.accent = a;
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      /*
+       * Захист від білого екрана.
+       *
+       * Якщо застосунок не змонтувався — показуємо причину прямо на сторінці.
+       * Панель локальна, консоль браузера тут відкривають не всі, а порожній
+       * екран не каже нічого взагалі.
+       */
+      (function () {
+        var shown = false;
+        function fatal(message) {
+          if (shown) return;
+          var root = document.getElementById('root');
+          if (!root || root.childElementCount > 0) return;
+          shown = true;
+          root.innerHTML =
+            '<div style="padding:32px;font:14px/1.6 ui-monospace,monospace;color:#ec7a63">' +
+            '<b>Панель не піднялась</b><br><br>' +
+            String(message).replace(/[<&]/g, function (c) { return c === '<' ? '&lt;' : '&amp;'; }) +
+            '</div>';
+        }
+        window.addEventListener('error', function (e) {
+          fatal((e.message || 'помилка') + '\n' + (e.filename || '') + ':' + (e.lineno || ''));
+        });
+        window.addEventListener('unhandledrejection', function (e) {
+          fatal('Відхилена обіцянка: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+        });
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
