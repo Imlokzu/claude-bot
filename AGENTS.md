@@ -100,12 +100,22 @@ prompt. The rules below apply no matter how the task was phrased.
 
 ### What goes in which language
 
+**Everything inside the repository is English. Ukrainian lives in two places
+only: the owner's Obsidian vault, and locale files.**
+
+The reason is release, not taste. This repo is meant to be published, and a
+codebase commented in Ukrainian is not something you hand to strangers.
+
 | Artifact | Language | Why |
 |---|---|---|
-| Identifiers, types, API fields, file names | **English** | they are read by every tool, linter and library in the stack |
-| Commit messages, this file, `CONTRIBUTING.md` | **English** | every coding tool reads them |
-| Code comments | **Ukrainian** | this repo's comments explain *why*, and the owner reads them. Keep the convention |
+| Identifiers, types, API fields, file names | **English** | read by every tool, linter and library in the stack |
+| Commit messages, `AGENTS.md`, `CONTRIBUTING.md` | **English** | every coding tool reads them |
+| **Code comments and docstrings** | **English** | the repo is releasable; keep explaining *why*, just do it in English |
 | Anything a user can see | **never hardcoded** | see below |
+| Owner's notes, design rationale, evaluations | **Ukrainian, in Obsidian** | that is the owner's own space, not the product |
+
+Comments keep their character — this repo's comments explain *why* a thing is
+the way it is, and that is its strongest asset. Only the language changes.
 
 ### User-visible strings are always keys, never literals
 
@@ -122,10 +132,21 @@ text is correct and in the right language.
 
 ### Known debt — do not add to it
 
-The dashboard (`Virtual Bot/dashboard/`) has **no i18n at all**: Ukrainian is
-hardcoded across all 52 `.tsx` files. Do not extend that pattern. If you touch
-a dashboard file and it is cheap to lift its strings into a locale module, do
-it; if it is not cheap, at least do not add new literals.
+The rules above are the target, not the current state. Measured 2026-09-19:
+
+| Debt | Scale | Where it goes |
+|---|---|---|
+| Ukrainian comments | **~3220 lines** (91 of 101 `.py`, 63 of 64 `.tsx`) | translate to English |
+| Hardcoded Ukrainian strings | **~3329 lines** | lift into locale files, stay Ukrainian |
+| Dashboard has no i18n at all | all 52 `.tsx` files | needs a locale module like the screen's |
+
+Do not extend either pattern. When you touch a file, bring the part you touched
+in line — translate the comments you edit, key the strings you add. Do not open
+a repo-wide migration on your own initiative; it is the owner's call when to
+spend that.
+
+The screen is proof it is doable: `static/screen/i18n.js` carries 604 keys in
+`uk` and `en`, and no screen file hardcodes a label.
 
 ---
 
