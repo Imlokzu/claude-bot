@@ -21,6 +21,7 @@ import subprocess
 import sys
 import tempfile
 
+import tts_text
 import voice_latin
 
 log = logging.getLogger("virtual_bot.tts")
@@ -102,17 +103,11 @@ def is_available() -> bool:
     return os.path.exists(_MODEL)
 
 
-_MD_RE = re.compile(r"[*_`#>\[\]]+")
-_EMOJI_RE = re.compile(
-    "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF←-⇿⌀-⏿]",
-    flags=re.UNICODE,
-)
-
-
 def _clean(text: str) -> str:
-    text = _MD_RE.sub("", text)
-    text = _EMOJI_RE.sub("", text)         # емодзі голосом не читаємо
-    text = re.sub(r"\s+", " ", text).strip()
+    # Розмітка, посилання й емодзі — спільна чистка для всіх провайдерів
+    # (tts_text): голе «https://youtu.be/…» модель читає по символах, і одна
+    # відповідь із трьома лінками перетворюється на хвилину белькотіння.
+    text = tts_text.clean_for_speech(text)
     # Латиниця → українська вимова (Raspberry Pi → респбері пай).
     # Саме ТУТ, ДО lower(): правило абревіатур (GPIO → джі-пі-ай-о)
     # розрізняє слова саме за великими літерами.
