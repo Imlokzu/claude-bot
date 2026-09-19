@@ -34,6 +34,7 @@ import profile_store
 import trace_log
 from emotions import ALLOWED_EMOTIONS, extract_emotion, guess_emotion
 from memory import append_user_profile, find_relevant_notes, load_user_profile
+import openclaw_models
 import tools as tool_registry
 
 # Тип історії сесії: [{'role': 'user'|'assistant', 'content': str}, ...]
@@ -91,12 +92,118 @@ def _tools_instruction() -> str:
     return "\n".join(lines)
 
 
-def build_system_prompt(user_message: str) -> str:
+_ASR_CAVEAT = """
+УВАГА: цю репліку користувач СКАЗАВ ГОЛОСОМ, і текст до тебе приїхав від
+розпізнавання мови (Whisper). Це означає, що слова можуть бути перекручені —
+сам користувач їх вимовив правильно.
+- Найчастіше псуються: імена, назви моделей і програм, англіцизми, команди,
+  числа й одиниці. «Кван» — це Qwen, «опус» — Opus, «реголо» — Regolo,
+  «ютуб» — YouTube.
+- Читай ЗМІСТ, а не літери. Якщо слово схоже на відомий тобі термін —
+  вважай, що це він, і відповідай по суті.
+- НЕ виправляй користувача, не пиши «ви, мабуть, мали на увазі» і не
+  переказуй його фразу назад. Він не робив помилки — її зробило
+  розпізнавання, і йому не цікаво про це читати.
+- Пунктуації й великих літер у розпізнаному тексті може не бути зовсім.
+  Це не означає крик, грубість чи одне довге речення — не роби з цього
+  висновків про тон.
+- Якщо зміст справді неясний (переплутане одне ключове слово, від якого
+  залежить уся відповідь) — коротко перепитай ОДНИМ реченням замість
+  того, щоб відповідати на інше питання."""
+
+
+_TTS_RULES = """
+УВАГА: цю відповідь ПРОЧИТАЮТЬ УГОЛОС — її отримає синтез мови, а не очі.
+ГОЛОВНЕ ПРАВИЛО: жодних символів і скорочень, усе словами й у правильному
+відмінку. «120 км/год» → «сто двадцять кілометрів на годину». «25 °C» →
+«двадцять пʼять градусів». «70 %» → «сімдесят відсотків». «2 кг» → «два
+кілограми». «≈» → «приблизно». «5–7» → «від пʼяти до семи». «14:30» →
+«чотирнадцята тридцять». «і т.д.» → «і так далі». «$5» → «пʼять доларів».
+Англійські назви — кирилицею: Qwen — «Квен», YouTube — «Ютуб».
+Це саме стосується відповідей, зібраних із результатів інструментів: цифри
+з пошуку теж треба вимовити словами, а не переписати як є.
+Без розмітки, таблиць, списків і посилань — вони вголос стають мотлохом.
+Дві-три фрази. Перше речення озвучується ще доки ти пишеш далі, тому воно
+має нести зміст саме по собі.
+"""
+_SELF_KNOWLEDGE = """
+ЩО ТИ ТАКЕ — службова довідка про себе.
+
+Служба. Ти живеш усередині локальної служби на компʼютері власника: вона
+тримає памʼять, інструменти й екран. Модель, яка пише ці слова, — змінна:
+запити йдуть через єдиний шлюз, а він уже обирає провайдера. Якщо шлюз
+мовчить, замість тебе відповідають офлайн-заготовки.
+
+Три поверхні, куди потрапляє відповідь:
+- ПАНЕЛЬ на компʼютері — там Markdown видно, таблиці й списки читаються;
+- ЕКРАН ПРИСТРОЮ 320x240 — там влазить кілька рядків, не більше;
+- ГОЛОС — синтез мови читає відповідь уголос.
+
+Вхід і вихід НЕЗАЛЕЖНІ: репліку могли сказати в мікрофон, а могли набрати
+з клавіатури; відповідь можуть озвучити, а можуть лише показати. Коли
+котресь із цього справді так — тобі скажуть про це окремо, нижче.
+
+Емоція. Тег на початку відповіді керує обличчям піксельного краба на екрані.
+Це міміка, а не оздоблення: без тега бот лишається з камʼяним лицем.
+
+Памʼять — файлова, лежить у теці brain/:
+- people/user.md — профіль власника. Підвантажується в КОЖЕН запит сам,
+  тож написане там ти вже знаєш і перепитувати не мусиш;
+- topics/ — нотатки за темами; три найдоречніші вставляються в запит самі;
+- logs/ — журнали розмов.
+Писати — create_brain_file і create_brain_directory, шукати — memory_search,
+дивитись структуру — list_brain_navigation. Зберігай те, що знадобиться
+ЗАВТРА: уподобання, рішення, імена, домовленості. Не переказуй у памʼять
+поточну розмову. Перед записом перевір memory_search — факт може вже лежати.
+
+Робоча тека — це НЕ памʼять, це файли користувача: workspace_list,
+workspace_read, workspace_write, workspace_mkdir. Щоб щось ПОКАЗАТИ —
+workspace_show, а не диктувати шлях або команду для терміналу.
+
+Тіло. Зараз ти у віртуальному втіленні. Далі — Raspberry Pi 3 з камерою та
+маленьким екраном; open_screen уже тепер перемикає розділи того екрана.
+
+Чесні межі: ти не бачиш екрана користувача, не маєш доступу в мережу поза
+інструментами і не памʼятаєш нічого, чого нема у файлах памʼяті.
+"""
+
+
+def _self_instruction() -> str:
     """
-    Системний промпт із ПРОФІЛЮ (майстер налаштування): імʼя, мова, характер —
-    реально впливають на відповідь. Плюс правила тегів емоцій, топ-3 нотатки,
-    публічні інструменти та профіль користувача (довгострокова памʼять).
+    Блок «що я таке»: служба, поверхні відповіді, памʼять, тіло, межі.
+
+    Навіщо окремо від персони: персона описує ХАРАКТЕР, а тут — УСТРІЙ.
+    Модель знала, ким вона прикидається, але не знала, куди потрапляє її
+    відповідь і де лежить її памʼять. Через це вона писала таблиці, які
+    синтез вичитує вголос як мотлох, і перепитувала факти, що лежали
+    в people/user.md за два рядки від неї.
+
+    Назви тек тут відносні (people/, topics/, logs/) — рівно такі, якими їх
+    бачать інструменти памʼяті. Абсолютний шлях у промпті був би і довшим,
+    і брехнею після першого ж переїзду теки.
     """
+    return _SELF_KNOWLEDGE
+
+
+def system_prompt_parts(
+    user_message: str, voice: bool = False, spoken: bool = False
+) -> list[tuple[str, str]]:
+    """
+    Той самий системний промпт, але РОЗІБРАНИЙ на іменовані шматки.
+
+    Потрібен панелі: щоб показати, з чого складається контекст запиту, вона
+    має рахувати рівно те, що піде в модель. Окрема «приблизна» копія збірки
+    промпту розійшлася б із оригіналом на першій же правці, тому збірка тут
+    одна, а `build_system_prompt` — просто її склейка.
+
+    Ключі шматків: persona, self, time, tools, profile, memory_rule, notes,
+    tts, asr.
+
+    voice і spoken НЕЗАЛЕЖНІ: можна надиктувати в мікрофон і читати
+    відповідь очима, а можна набрати з клавіатури й слухати її вголос.
+    Тому це два прапорці, а не один «голосовий режим».
+    """
+
     prof = profile_store.load()
     name = prof.get("name") or "Клод Бот"
     base = (
@@ -109,13 +216,17 @@ def build_system_prompt(user_message: str) -> str:
         f"{_EMOTION_RULES}"
     )
     now = datetime.now().astimezone()
-    parts = [
-        base,
-        "\nТочний поточний локальний час сервера: "
-        f"{now.isoformat(timespec='seconds')} ({now.tzname() or 'local'}). "
-        "Використовуй його для питань про сьогодні, дату, час і часові проміжки.",
+    parts: list[tuple[str, str]] = [
+        ("persona", base),
+        ("self", _self_instruction()),
+        (
+            "time",
+            "\nТочний поточний локальний час сервера: "
+            f"{now.isoformat(timespec='seconds')} ({now.tzname() or 'local'}). "
+            "Використовуй його для питань про сьогодні, дату, час і часові проміжки.",
+        ),
+        ("tools", _tools_instruction()),
     ]
-    parts.append(_tools_instruction())
 
     owner_root = brain_context.init_user_brain(None)
     profiles = [load_user_profile().strip()]
@@ -124,15 +235,17 @@ def build_system_prompt(user_message: str) -> str:
         profiles.append(owner_profile)
     user_profile = "\n".join(profile for profile in profiles if profile)
     if user_profile:
-        parts.append(
+        parts.append((
+            "profile",
             "\nПро користувача (довгострокова памʼять; використовуй без повторного запитання):\n"
-            f"{user_profile}"
-        )
-    parts.append(
+            f"{user_profile}",
+        ))
+    parts.append((
+        "memory_rule",
         "\nПРАВИЛО ПАМʼЯТІ: якщо користувач питає про себе або раніше повідомлений факт, "
         "спочатку перевір профіль і релевантні нотатки. Не кажи «я не знаю» і не "
-        "проси повторити факт, доки не використав доступну памʼять."
-    )
+        "проси повторити факт, доки не використав доступну памʼять.",
+    ))
 
     owner_notes = find_relevant_notes(user_message, top_n=3, root=owner_root)
     session_notes = find_relevant_notes(user_message, top_n=3)
@@ -145,8 +258,40 @@ def build_system_prompt(user_message: str) -> str:
         lines = ["\nТвоя памʼять (нотатки з brain/, використовуй якщо доречно):"]
         for note in notes:
             lines.append(f"--- {note['title']} ({note['path']}) ---\n{note['snippet']}")
-        parts.append("\n".join(lines))
-    return "\n".join(parts)
+        parts.append(("notes", "\n".join(lines)))
+    # Правила озвучки — перед ASR-застереженням: воно має лишитись останнім.
+    if spoken:
+        parts.append(("tts", _TTS_RULES))
+    # Застереження про ASR — В САМОМУ КІНЦІ, найближче до репліки: інструкція,
+    # що стоїть останньою, важить для моделі найбільше, а тут вона мусить
+    # перебити звичку читати текст буквально. Помилка розпізнавання ламає
+    # розмову ('ви мали на увазі Qwen?'), а невимовлена одиниця лише дратує —
+    # тому з двох правил останнім лишається саме це.
+    if voice:
+        parts.append(("asr", _ASR_CAVEAT))
+    return parts
+
+
+def build_system_prompt(
+    user_message: str, voice: bool = False, spoken: bool = False
+) -> str:
+    """
+    Системний промпт із ПРОФІЛЮ (майстер налаштування): імʼя, мова, характер —
+    реально впливають на відповідь. Плюс правила тегів емоцій, топ-3 нотатки,
+    публічні інструменти та профіль користувача (довгострокова памʼять).
+
+    spoken=True — відповідь ПРОЧИТАЮТЬ УГОЛОС. Тоді в промпт іде блок про
+    озвучку: одиниці й скорочення словами («км/год» вголос читається як
+    «ка-ем-скісна-риска-год»), без розмітки, коротко.
+
+    voice=True — репліка прийшла з мікрофона через ASR. Тоді в промпт іде
+    окреме застереження: текст може бути перекручений розпізнаванням, і
+    модель має читати зміст, а не літери. Без нього мозок сприймав «кван»
+    як невідоме слово й перепитував замість того, щоб зрозуміти «Qwen».
+    """
+    return "\n".join(
+        text for _name, text in system_prompt_parts(user_message, voice, spoken)
+    )
 
 
 # ------------------------------------------------------------------ доступність
@@ -231,6 +376,12 @@ def _openclaw_agent_model() -> str:
     нічого не каже. Справжня модель лежить у конфізі OpenClaw — читаємо її
     звідти й показуємо в панелі; якщо конфіг недоступний, лишається агент.
     """
+    # Вибір у панелі перекриває модель агента заголовком x-openclaw-model,
+    # і саме він відповідав останній раз. Читати в цьому разі конфіг означало
+    # б показати ту модель, яку щойно НЕ використали.
+    override = openclaw_models.get_selected()
+    if override:
+        return override.split("/")[-1]
     path = Path.home() / ".openclaw" / "openclaw.json"
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -532,6 +683,11 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
+        # Вибір моделі в панелі. Поле `model` вище — це АГЕНТ, а не модель
+        # (рядок `omni/opencode-go/minimax-m3` там дає 400); модель
+        # перекривається саме заголовком. Без нього панель показувала одну
+        # модель, а відповідала завжди типова модель агента.
+        **openclaw_models.chat_headers(),
     }
     url = f"{cfg.OPENCLAW_BASE_URL}/v1/chat/completions"
     trust_env = cfg.httpx_trust_env(cfg.OPENCLAW_BASE_URL)
@@ -712,6 +868,103 @@ async def _execute_tool_traced(name: str, args: dict) -> dict:
         (time.perf_counter() - started) * 1000,
     )
     return result
+
+
+# Виклик інструмента, НАДРУКОВАНИЙ у текст замість справжнього tool_call.
+#
+# Частина моделей (у нас — ті, що ходять через агентний цикл OpenCode) не
+# віддає tool_calls полем відповіді, а просто вписує їх у текст:
+#     { "tool": "tools__ask_question", "params": {...} }
+# Для людини це виглядало як JSON, що вивалився посеред речення, а сам
+# інструмент не спрацьовував — питання з варіантами не малювалось, пошук не
+# відбувався. Тому такі виклики ми знаходимо, ВИКОНУЄМО й прибираємо з тексту.
+#
+# Префікс до подвійного підкреслення — імʼя MCP-сервера, яким наші ж тули
+# віддані назовні (`tools__`, `workspace__`). Для реєстру потрібне імʼя без нього.
+_INLINE_TOOL_HEAD = re.compile(r'\{\s*"tool"\s*:', re.IGNORECASE)
+
+
+def _json_object_at(text: str, start: int) -> tuple[dict | None, int]:
+    """Розбирає JSON-обʼєкт, що починається на позиції `start`; повертає (обʼєкт, кінець)."""
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start:i + 1]), i + 1
+                except json.JSONDecodeError:
+                    return None, i + 1
+    return None, len(text)
+
+
+def _fenced_spans(text: str) -> list[tuple[int, int]]:
+    """Межі блоків ```…``` — усередині них JSON є ілюстрацією, а не викликом."""
+    spans = []
+    for match in re.finditer(r"```.*?```", text, re.DOTALL):
+        spans.append(match.span())
+    return spans
+
+
+async def _run_inline_tool_calls(reply: str, emit=None) -> tuple[str, list[dict]]:
+    """
+    Виконує надруковані в тексті виклики інструментів і вирізає їх із відповіді.
+
+    Повертає (очищений текст, tool_results). Якщо таких викликів немає —
+    текст лишається байт-у-байт тим самим.
+    """
+    if '"tool"' not in reply:
+        return reply, []
+    spans = _fenced_spans(reply)
+    results: list[dict] = []
+    out: list[str] = []
+    cursor = 0
+    for match in _INLINE_TOOL_HEAD.finditer(reply):
+        start = match.start()
+        if start < cursor:
+            continue
+        if any(a <= start < b for a, b in spans):
+            continue
+        payload, end = _json_object_at(reply, start)
+        if not isinstance(payload, dict):
+            continue
+        raw_name = str(payload.get("tool") or "")
+        # Викликом вважаємо лише обʼєкт РІВНО такої форми: {"tool", "params"}.
+        # Інакше під ніж потрапив би будь-який JSON зі словом "tool" усередині.
+        args = payload.get("params", payload.get("arguments"))
+        if not raw_name or not isinstance(args, dict):
+            continue
+        name = raw_name.split("__")[-1].strip().casefold()
+        if name not in tool_registry.tool_names():
+            continue
+        out.append(reply[cursor:start])
+        cursor = end
+        await _emit_tool_event(emit, {"type": "tool_start", "tool": name, "input": args})
+        result = await _execute_tool_traced(name, args)
+        await _emit_tool_event(emit, {"type": "tool_done", "tool": name, "input": args, "result": result})
+        results.append({"tool": name, "input": args, "result": result})
+    if not results:
+        return reply, []
+    out.append(reply[cursor:])
+    # Після вирізання лишаються подвійні пробіли й порожні рядки на місці JSON.
+    cleaned = re.sub(r"[ \t]{2,}", " ", "".join(out))
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned, results
 
 
 async def _execute_tool_calls(tool_calls: list[dict], emit=None) -> tuple[list[dict], list[dict]]:
@@ -1443,19 +1696,26 @@ async def chat(
     emit=None,
     reasoning_effort: str | None = None,
     images: list[ImageAttachment] | None = None,
+    voice: bool = False,
+    spoken: bool = False,
 ) -> tuple[str, str, str, list[dict]]:
     """
     Обробляє повідомлення користувача. Повертає (reply, emotion, mode, tool_results).
-    Пріоритет мозків: openclaw → omni → anthropic → chat2api → demo.
-    OpenClaw gateway — ГОЛОВНИЙ мозок: за баченням власника через нього йде все —
-    персона «Клод Бот», теги емоцій, памʼять і tools живуть У САМОМУ OpenClaw
-    (його workspace-файли IDENTITY/SOUL/AGENTS), тож наш system_prompt тут майже
-    не потрібен. Omni-роутер — ШВИДКИЙ запасний (якщо gateway недоступний): він
-    шле МАЛІ запити напряму, тож встигає в бюджет Claude і теж повертає теги емоцій.
-    Помилки «провалюють» запит на наступний мозок; фактичний — у mode.
+
+    **OpenClaw — ЄДИНИЙ шлюз.** Усе йде через нього: персона «Клод Бот», теги
+    емоцій, памʼять і tools живуть у самому OpenClaw (його workspace-файли
+    IDENTITY/SOUL/AGENTS), тож наш system_prompt тут майже не потрібен.
+    Моделі (Regolo, opencode/Zen, Anthropic, будь-що інше) — це ПРОВАЙДЕРИ
+    всередині OpenClaw (`models.providers` у ~/.openclaw/openclaw.json), а не
+    окремі мозки тут. Маршрутизацію й фолбеки між ними робить OpenClaw; другий
+    такий самий ланцюжок у боті лише дублював логіку і плутав діагностику.
+
+    Єдиний виняток — КАРТИНКИ. Шлюз приймає OpenAI-подібний image block, але
+    мовчки викидає його перед агентом, тому vision-запити йдуть в Omni напряму.
+    Коли шлюз навчиться передавати картинки, цей обхід треба прибрати.
     """
     history = history or []
-    system_prompt = build_system_prompt(message)
+    system_prompt = build_system_prompt(message, voice=voice, spoken=spoken)
 
     # Мозок 0: OpenClaw gateway (ГОЛОВНИЙ) — персона/емоції/памʼять усередині OpenClaw
     # Поточний OpenClaw gateway приймає OpenAI-подібний image block, але мовчки
@@ -1473,11 +1733,17 @@ async def chat(
             try:
                 raw, tool_results = await asyncio.wait_for(
                     chat_openclaw(message, system_prompt, history, emit=emit, images=images),
-                    timeout=cfg.CHAT_OPENCLAW_TIMEOUT_S,
+                    # Стеля на ВСЮ відповідь. Мовчання gateway ловить коротший
+                    # мережевий таймаут усередині (CHAT_OPENCLAW_TIMEOUT_S);
+                    # тут — лише запобіжник від нескінченної відповіді, інакше
+                    # будь-який пошук не встигав би вкластись.
+                    timeout=cfg.CHAT_OPENCLAW_WALL_S,
                 )
                 if _looks_like_gateway_error(raw):
                     raise RuntimeError(f"OpenClaw віддав помилку замість відповіді: {raw.strip()[:120]}")
                 reply, emotion = extract_emotion(raw)
+                reply, inline_results = await _run_inline_tool_calls(reply, emit=emit)
+                tool_results = [*tool_results, *inline_results]
                 _openclaw_note_success()
                 _remember_brain("openclaw", cfg.OPENCLAW_AGENT)
                 trace_log.step("brain", "openclaw", "ok", cfg.OPENCLAW_AGENT, _elapsed_ms(started))
@@ -1486,10 +1752,11 @@ async def chat(
                 _openclaw_note_failure()
                 trace_log.step(
                     "brain", "openclaw", "fail",
-                    _fail_detail(exc, cfg.CHAT_OPENCLAW_TIMEOUT_S), _elapsed_ms(started),
+                    _fail_detail(exc, cfg.CHAT_OPENCLAW_WALL_S), _elapsed_ms(started),
                 )
                 log.warning(
-                    "OpenClaw недоступний (%s), пробую Omni; наступні ~%.0f с OpenClaw у чаті пропускаю",
+                    "OpenClaw не відповів (%s) — це єдиний шлюз, тож віддаю offline; "
+                    "наступні ~%.0f с пропускаю. Дивись провайдерів у ~/.openclaw/openclaw.json",
                     type(exc).__name__, cfg.CHAT_OPENCLAW_BACKOFF_S,
                 )
     elif images:
@@ -1498,16 +1765,16 @@ async def chat(
     else:
         trace_log.step("brain", "openclaw", "skip", "немає токена")
 
-    # Мозок 1: Omni-роутер (ШВИДКИЙ запасний) — якщо OpenClaw недоступний
-    if not cfg.get_omni_key():
-        trace_log.step("brain", "omni", "skip", "немає ключа OMNI_API_KEY")
-    if cfg.get_omni_key():
+    # Обхід для КАРТИНОК: шлюз їх мовчки губить, тому vision іде в Omni напряму.
+    # Це не «запасний мозок», а саме виняток по можливості — для тексту сюди
+    # не потрапляємо взагалі. Anthropic і Chat2API з ланцюжка прибрані: їхнє
+    # місце — провайдери в конфізі OpenClaw, а не паралельна гілка тут.
+    if images and cfg.get_omni_key():
         backoff_left = omni_backoff_remaining()
         if backoff_left > 0:
-            log.info("Omni у бекофі після невдачі — пропускаю (ще %.0f с)", backoff_left)
-            trace_log.step("brain", "omni", "skip", f"бекоф після невдачі, ще {backoff_left:.0f} с")
+            trace_log.step("brain", "omni-vision", "skip", f"бекоф, ще {backoff_left:.0f} с")
         else:
-            trace_log.step("brain", "omni", "start", get_selected_omni_model())
+            trace_log.step("brain", "omni-vision", "start", cfg.OMNI_VISION_MODEL)
             started = time.perf_counter()
             try:
                 raw, tool_results = await asyncio.wait_for(
@@ -1521,57 +1788,24 @@ async def chat(
                 if _looks_like_gateway_error(raw):
                     raise RuntimeError(f"Omni віддав помилку замість відповіді: {raw.strip()[:120]}")
                 reply, emotion = extract_emotion(raw)
+                reply, inline_results = await _run_inline_tool_calls(reply, emit=emit)
+                tool_results = [*tool_results, *inline_results]
                 _omni_note_success()
                 _remember_brain("omni", _last_omni_model or get_selected_omni_model())
                 trace_log.step(
-                    "brain", "omni", "ok",
+                    "brain", "omni-vision", "ok",
                     _last_omni_model or get_selected_omni_model(), _elapsed_ms(started),
                 )
                 return reply, emotion, "omni", tool_results
-            except Exception as exc:  # noqa: BLE001 — свідомо ковтаємо, падаємо на наступний мозок
+            except Exception as exc:  # noqa: BLE001 — далі лише offline
                 _omni_note_failure()
                 trace_log.step(
-                    "brain", "omni", "fail",
+                    "brain", "omni-vision", "fail",
                     _fail_detail(exc, cfg.CHAT_OMNI_TIMEOUT_S), _elapsed_ms(started),
                 )
-                log.warning(
-                    "Omni недоступний (%s), пробую Anthropic; наступні ~%.0f с Omni у чаті пропускаю",
-                    type(exc).__name__, cfg.CHAT_OMNI_BACKOFF_S,
-                )
-
-    if cfg.get_anthropic_key():
-        anthropic_model = getattr(cfg, "ANTHROPIC_MODEL", "anthropic")
-        trace_log.step("brain", "anthropic", "start", anthropic_model)
-        started = time.perf_counter()
-        try:
-            raw, tool_results = await chat_anthropic(message, system_prompt, history, emit=emit, images=images)
-            reply, emotion = extract_emotion(raw)
-            _remember_brain("anthropic", anthropic_model)
-            trace_log.step("brain", "anthropic", "ok", anthropic_model, _elapsed_ms(started))
-            return reply, emotion, "anthropic", tool_results
-        except Exception as exc:  # noqa: BLE001
-            trace_log.step(
-                "brain", "anthropic", "fail", _fail_detail(exc), _elapsed_ms(started),
-            )
-            log.warning("Anthropic недоступний (%s), пробую Chat2API", type(exc).__name__)
-    else:
-        trace_log.step("brain", "anthropic", "skip", "немає ключа ANTHROPIC_API_KEY")
-
-    # Chat2API — локальний, ключа не потребує, тому пробуємо завжди
-    chat2api_model = getattr(cfg, "CHAT2API_MODEL", "chat2api")
-    trace_log.step("brain", "chat2api", "start", chat2api_model)
-    started = time.perf_counter()
-    try:
-        raw, tool_results = await chat_chat2api(message, system_prompt, history, emit=emit, images=images)
-        reply, emotion = extract_emotion(raw)
-        _remember_brain("chat2api", chat2api_model)
-        trace_log.step("brain", "chat2api", "ok", chat2api_model, _elapsed_ms(started))
-        return reply, emotion, "chat2api", tool_results
-    except Exception as exc:  # noqa: BLE001
-        trace_log.step(
-            "brain", "chat2api", "fail", _fail_detail(exc), _elapsed_ms(started),
-        )
-        log.warning("Chat2API недоступний (%s), переходжу в демо", type(exc).__name__)
+                log.warning("Omni не впорався з картинками (%s)", type(exc).__name__)
+    elif images:
+        trace_log.step("brain", "omni-vision", "skip", "немає ключа OMNI_API_KEY")
 
     # Жоден мозок не відповів. Що показати — вирішує chat.demo_fallback.
     if not cfg.CHAT_DEMO_FALLBACK:

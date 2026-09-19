@@ -201,16 +201,44 @@ CHAT_OMNI_BACKOFF_S: float = cfg_float("chat", "omni_backoff_s", default=60)
 CHAT_HISTORY_LIMIT: int = cfg_int("chat", "history_limit", default=20)
 
 
-def _load_omni_models() -> list[dict[str, str]]:
-    """Кований список моделей Omni з config.yaml → [{"id","label"}]."""
+def _load_omni_models() -> list[dict[str, object]]:
+    """
+    Кований список моделей Omni з config.yaml → [{"id","label",...}].
+
+    Окрім id/label усі поля НЕОБОВʼЯЗКОВІ й потрапляють у відповідь лише
+    тоді, коли справді задані в config.yaml:
+
+    * `context` — розмір вікна в токенах. Панель показує заповнення контексту
+      тільки там, де це число задано: вигадане значення гірше за його
+      відсутність, бо виглядає як факт.
+    * `vision`  — модель приймає картинки;
+    * `fast`    — модель відповідає помітно швидше за решту списку.
+
+    vision/fast раніше жили прямо в label («GPT-OSS 120B (найшвидша)»), і в
+    списку вибору такий підпис обрізався. Як окремі поля вони малюються
+    значком і не з'їдають ширину рядка.
+    """
     raw = cfg("omni", "models", default=[])
-    out: list[dict[str, str]] = []
+    out: list[dict[str, object]] = []
     if isinstance(raw, list):
         for item in raw:
             if isinstance(item, dict) and item.get("id"):
                 mid = str(item["id"])
                 # `or mid` — щоб явний null/порожній label не став підписом "None"
-                out.append({"id": mid, "label": str(item.get("label") or mid)})
+                entry: dict[str, object] = {"id": mid, "label": str(item.get("label") or mid)}
+                try:
+                    context = int(item.get("context") or 0)
+                except (TypeError, ValueError):
+                    context = 0
+                if context > 0:
+                    entry["context"] = context
+                # Прапорці кладемо лише коли вони справді ввімкнені: `false`
+                # у відповіді нічим не кращий за відсутність поля, зате
+                # змушує клієнта розрізняти «не вміє» і «не вказано».
+                for flag in ("vision", "fast"):
+                    if bool(item.get(flag)):
+                        entry[flag] = True
+                out.append(entry)
             elif isinstance(item, str) and item.strip():
                 out.append({"id": item.strip(), "label": item.strip()})
     # Гарантуємо, що модель за замовчуванням присутня у списку вибору
@@ -219,14 +247,24 @@ def _load_omni_models() -> list[dict[str, str]]:
     return out
 
 
-OMNI_MODELS: list[dict[str, str]] = _load_omni_models()
+OMNI_MODELS: list[dict[str, object]] = _load_omni_models()
 
 OPENCLAW_BASE_URL: str = cfg_str("openclaw", "base_url", default="http://127.0.0.1:18789").rstrip("/")
 OPENCLAW_AGENT: str = cfg_str("openclaw", "agent", default="openclaw/default")
 OPENCLAW_TIMEOUT_S: float = cfg_float("openclaw", "timeout_s", default=45)
-# Чат: окремий КОРОТКИЙ таймаут спроби OpenClaw і бекоф-запобіжник після невдачі
-# (щоб завислий gateway не додавав десятки секунд до кожної відповіді чату)
+# Чат: два різні таймаути OpenClaw плюс бекоф-запобіжник після невдачі.
+#
+#   openclaw_timeout_s — МЕРЕЖЕВИЙ таймаут httpx: по-фазний, тобто діє на
+#     з'єднання й на паузу МІЖ шматками стріму. Саме він ловить завислий
+#     gateway, і саме тому лишається коротким.
+#   openclaw_wall_s    — стеля на всю відповідь цілком.
+#
+# Раніше короткий таймаут стояв і там, і там — і будь-яка відповідь із
+# пошуком не встигала: gateway справно стрімив, але на 10-й секунді його
+# обривали, і в чаті з'являлось «зараз я без мозку». Тепер обривається лише
+# той, хто СПРАВДІ мовчить десять секунд поспіль.
 CHAT_OPENCLAW_TIMEOUT_S: float = cfg_float("chat", "openclaw_timeout_s", default=10)
+CHAT_OPENCLAW_WALL_S: float = cfg_float("chat", "openclaw_wall_s", default=120)
 CHAT_OPENCLAW_BACKOFF_S: float = cfg_float("chat", "openclaw_backoff_s", default=120)
 # Затичка з заготовленими відповідями. Типово вимкнена: мовчазна підміна
 # зламаного мозку «живою» фразою коштувала години пошуку неіснуючої причини.
@@ -238,6 +276,9 @@ ANTHROPIC_TIMEOUT_S: float = cfg_float("anthropic", "timeout_s", default=60)
 CHAT2API_BASE_URL: str = cfg_str("chat2api", "base_url", default="http://127.0.0.1:8080/v1").rstrip("/")
 CHAT2API_MODEL: str = cfg_str("chat2api", "model", default="Qwen3.7-Max")
 CHAT2API_TIMEOUT_S: float = cfg_float("chat2api", "timeout_s", default=60)
+# Озвучка: piper (локальний), elevenlabs (хмарний) або auto — є ключ
+# ElevenLabs, значить він; немає — Piper.
+TTS_PROVIDER: str = cfg_str("tts", "provider", default="auto").casefold()
 ASR_PROVIDER: str = cfg_str("asr", "provider", default="regolo").casefold()
 REGOLO_ASR_BASE_URL: str = cfg_str("asr", "base_url", default="https://api.regolo.ai/v1").rstrip("/")
 REGOLO_ASR_MODEL: str = cfg_str("asr", "model", default="faster-whisper-large-v3")
@@ -390,4 +431,10 @@ def get_chat2api_key() -> str | None:
 def get_regolo_asr_key() -> str | None:
     """Ключ Regolo ASR — тільки з env REGOLO_ASR_API_KEY."""
     key = os.environ.get("REGOLO_ASR_API_KEY", "").strip()
+    return key or None
+
+
+def get_elevenlabs_key() -> str | None:
+    """Ключ ElevenLabs TTS — тільки з env ELEVENLABS_API_KEY (живе в .env)."""
+    key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
     return key or None
