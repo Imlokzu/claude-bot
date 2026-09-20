@@ -90,6 +90,26 @@ def test_locale_keys_match():
     assert launcher.STRINGS["uk"].keys() == launcher.STRINGS["en"].keys()
 
 
+def test_service_environment_drops_dead_loopback_proxy(monkeypatch):
+    monkeypatch.setattr(launcher, "_proxy_is_reachable", lambda value: False if "127.0.0.1" in value else True)
+    monkeypatch.setattr(launcher.os, "environ", {
+        "HTTP_PROXY": "http://127.0.0.1:9",
+        "http_proxy": "http://127.0.0.1:9",
+        "HTTPS_PROXY": "http://proxy.example:8080",
+        "APP_MODE": "test",
+    })
+    env = launcher.service_environment()
+    assert "HTTP_PROXY" not in env and "http_proxy" not in env
+    assert env["HTTPS_PROXY"] == "http://proxy.example:8080"
+    assert env["APP_MODE"] == "test"
+
+
+def test_service_environment_keeps_reachable_proxy(monkeypatch):
+    monkeypatch.setattr(launcher, "_proxy_is_reachable", lambda value: True)
+    monkeypatch.setattr(launcher.os, "environ", {"HTTP_PROXY": "http://127.0.0.1:9"})
+    assert launcher.service_environment()["HTTP_PROXY"] == "http://127.0.0.1:9"
+
+
 def test_posix_cleanup_targets_owned_group_even_after_leader_exits(monkeypatch):
     process = MagicMock(pid=12345)
     process.poll.return_value = 0

@@ -18,9 +18,11 @@ import httpx
 try:
     import jwt  # PyJWT
     from jwt import PyJWKClient
+    from jwt.exceptions import PyJWKClientConnectionError
 except ImportError:  # pragma: no cover
     jwt = None  # type: ignore
     PyJWKClient = None  # type: ignore
+    PyJWKClientConnectionError = RuntimeError  # type: ignore[misc,assignment]
 
 from fastapi import Header, HTTPException, Request
 
@@ -28,6 +30,33 @@ from fastapi import Header, HTTPException, Request
 # issuer — це https://<instance>.clerk.accounts.dev (без trailing /)
 _JWKS_CLIENTS: dict[str, object] = {}
 _JWKS_OK_UNTIL: dict[str, float] = {}
+
+
+class _DirectPyJWKClient(PyJWKClient if PyJWKClient is not None else object):
+    """Fetch Clerk's public keys without inheriting a stale local proxy.
+
+    PyJWT's default client uses ``urllib.request.urlopen`` which consults
+    HTTP(S)_PROXY even for a public JWKS URL. A desktop launcher can outlive
+    the local proxy that was present when it started, turning every valid
+    Clerk token into a misleading "invalid token" error. httpx is already a
+    project dependency; trust_env=False makes this one auth-critical request
+    deterministic while the rest of the app may still use configured proxies.
+    """
+
+    def fetch_data(self):  # type: ignore[no-untyped-def]
+        try:
+            with httpx.Client(timeout=self.timeout, trust_env=False, follow_redirects=True) as client:
+                response = client.get(self.uri, headers=self.headers)
+                response.raise_for_status()
+                jwk_set = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise PyJWKClientConnectionError(
+                f'Fail to fetch data from the url, err: "{exc}"'
+            ) from exc
+
+        if self.jwk_set_cache is not None:
+            self.jwk_set_cache.put(jwk_set)
+        return jwk_set
 
 # Вазливо: publishable key (pk_test_...) НЕ є секретом, але issuer з нього
 # витягуємо лише як fallback, якщо адмін не задав CLERK_JWT_ISSUER явно.
@@ -82,7 +111,7 @@ def _get_jwks_client(issuer: str):
     if cli is not None and now < ok_until:
         return cli
     jwks_url = f"{issuer}/.well-known/jwks.json"
-    cli = PyJWKClient(jwks_url, cache_keys=True, lifespan=3600)
+    cli = _DirectPyJWKClient(jwks_url, cache_keys=True, lifespan=3600)
     _JWKS_CLIENTS[issuer] = cli
     _JWKS_OK_UNTIL[issuer] = now + 3600
     return cli

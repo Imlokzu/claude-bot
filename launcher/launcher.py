@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import time
+from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, build_opener
 import webbrowser
 
@@ -58,6 +59,33 @@ def healthy(service: str) -> bool:
             return response.status == 200
     except (OSError, ValueError):
         return False
+
+
+def _proxy_is_reachable(value: str) -> bool:
+    """Return whether a loopback proxy inherited from the desktop is alive."""
+    try:
+        parsed = urlsplit(value)
+        if parsed.hostname not in {"127.0.0.1", "localhost", "::1"} or not parsed.port:
+            return True
+        with socket.create_connection((parsed.hostname, parsed.port), timeout=0.3):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def service_environment() -> dict[str, str]:
+    """Copy the GUI environment, dropping dead local proxies only.
+
+    Keep a reachable or remote proxy for external model/API traffic. If any
+    loopback proxy variable points at a dead process, remove all proxy casing
+    variants together so urllib, httpx and third-party SDKs agree on routing.
+    """
+    environment = os.environ.copy()
+    proxy_keys = [key for key in environment if key.lower().endswith("_proxy")]
+    for key in proxy_keys:
+        if not _proxy_is_reachable(environment[key]):
+            environment.pop(key, None)
+    return environment
 
 
 @contextmanager
@@ -140,7 +168,8 @@ def start_service(service: str) -> None:
         options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS} if os.name == "nt" else {"start_new_session": True}
         with log_path.open("ab") as log:
             process = subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
-                                       stdout=log, stderr=subprocess.STDOUT, **options)
+                                       stdout=log, stderr=subprocess.STDOUT,
+                                       env=service_environment(), **options)
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if healthy(service):
