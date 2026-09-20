@@ -270,3 +270,18 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   real button-to-helper success/error paths, busy guards, and screenshot failures.
   Native screenshots were inspected; isolated HTTP smoke returned 200 for app
   and assets, 400 for memory traversal. The smoke server was shut down.
+
+### Launcher/auth repair follow-up
+
+- Fixed a GUI-only hang where the helper waited forever after opening a browser:
+  URL opens are now detached with standard streams redirected away from the GUI
+  pipe. The actual `.app --smoke-test --test-action pair` now exits successfully
+  after starting the web backend.
+- Clerk JWKS retrieval now uses an existing `httpx` client with
+  `trust_env=False`, avoiding stale desktop proxy failures. Launcher-created
+  service environments drop unreachable loopback proxy variables while retaining
+  reachable or remote proxies for external API traffic.
+- Restarted only the launcher-owned web backend; OpenClaw was left running.
+  Live checks: dashboard `200`, OpenClaw health `200`, direct Clerk JWKS fetch
+  returned one key. Python suite: **414 passed, 6 skipped** (external live ASR
+  test excluded). Targeted auth/launcher tests: 29 passed.
