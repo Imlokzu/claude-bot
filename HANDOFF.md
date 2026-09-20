@@ -290,10 +290,10 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 
 - Removed the unstable Omni route from the active OpenClaw config. The gateway
   now prefers direct `opencode-go/kimi-k3`, then the free NVIDIA NIM
-  `nvidia/nvidia/nemotron-3.5-lightning-30b-a3b` endpoint, and finally the
-  custom OpenAI-compatible `regolo/gpt-oss-120b` provider. NVIDIA is dormant
-  until `NVIDIA_API_KEY` is added through OpenClaw auth; no key is stored in the
-  repository. `regolo/qwen3.5-122b` remains the authored image model. Existing
+  `nvidia/openai/gpt-oss-20b` endpoint, and finally the custom
+  OpenAI-compatible `regolo/gpt-oss-120b` provider. NVIDIA auth is stored in
+  the user's ignored OpenClaw auth store; no key is stored in the repository.
+  `regolo/qwen3.5-122b` remains the authored image model. Existing
   OpenCode/Omni config backups remain under the user's ignored `~/.openclaw`
   directory.
 - The app backend now routes both text and image turns through OpenClaw. Vision
@@ -303,7 +303,11 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   provider, which returns HTTP 403 because this account has no active Go
   subscription; OpenClaw correctly falls back to Regolo. With an active Go
   subscription, the same primary route will be used without config changes.
-- Live verification: `openclaw agent` through the gateway completed via Regolo
-  fallback; direct Regolo text and Qwen vision endpoint probes returned 200.
-  Gateway, dashboard, and OpenClaw remain loopback-only. The Omni shim is no
-  longer required for chat.
+- Live verification: `openclaw agent` through the gateway completed via the
+  NVIDIA fallback in about 5 seconds for the full agent cycle. Direct NIM
+  probes measured `openai/gpt-oss-20b` at roughly 0.37–0.86 seconds,
+  `nemotron-3-super-120b-a12b` at 0.50–4.88 seconds, and
+  `nemotron-3-ultra-550b-a55b` at about 1.03 seconds. Several older catalog
+  IDs returned 404/410 and were not selected. Direct Regolo text and Qwen
+  vision endpoint probes returned 200. Gateway, dashboard, and OpenClaw
+  remain loopback-only. The Omni shim is no longer required for chat.
