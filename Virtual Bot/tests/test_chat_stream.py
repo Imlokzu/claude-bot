@@ -73,3 +73,59 @@ class ChatStreamEmotionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StreamTimeoutTests(unittest.TestCase):
+    """
+    How long we tolerate silence between SSE chunks.
+
+    The gateway sends nothing while its agent thinks or runs a tool — measured
+    2026-09-20, a turn with one web search stayed quiet for 21s and then handed
+    over the whole message at once. With a single blanket timeout of 35s every
+    slower turn died with ReadTimeout, fell back to a non-streaming call and
+    paid for the answer twice. Connecting must stay quick regardless: a gateway
+    that is down has to be noticed at once, not after two minutes.
+    """
+
+    def _timeout_of(self, base: float, read: float | None):
+        import asyncio
+
+        import brains
+        import httpx
+
+        seen = {}
+
+        class FakeClient:
+            def __init__(self, *_args, **kwargs):
+                seen["timeout"] = kwargs.get("timeout")
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_exc):
+                return False
+
+            def stream(self, *_args, **_kwargs):
+                raise RuntimeError("stop here — only the timeout matters")
+
+        with patch.object(httpx, "AsyncClient", FakeClient):
+            with self.assertRaises(RuntimeError):
+                asyncio.run(
+                    brains._stream_openai_compatible(
+                        "http://gateway/v1/chat/completions", {}, {}, base, False,
+                        read_timeout=read,
+                    )
+                )
+        return seen["timeout"]
+
+    def test_read_budget_is_the_wall_clock_not_the_phase_timeout(self) -> None:
+        timeout = self._timeout_of(35.0, 120.0)
+        self.assertEqual(timeout.read, 120.0)
+        self.assertEqual(timeout.connect, 10.0)
+        self.assertEqual(timeout.write, 35.0)
+
+    def test_without_a_read_budget_nothing_changes(self) -> None:
+        timeout = self._timeout_of(8.0, None)
+        self.assertEqual(timeout.read, 8.0)
+        # A short base timeout must not be stretched to the 10s connect cap.
+        self.assertEqual(timeout.connect, 8.0)

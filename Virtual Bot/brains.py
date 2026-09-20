@@ -696,7 +696,8 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
     if emit is not None:
         try:
             text = await _stream_openai_compatible(
-                url, headers, payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env, emit=emit
+                url, headers, payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env,
+                emit=emit, read_timeout=cfg.CHAT_OPENCLAW_WALL_S,
             )
             return text, []
         except _NeedsTools:
@@ -1067,19 +1068,32 @@ async def _stream_openai_compatible(
     timeout: float,
     trust_env: bool,
     emit=None,
+    read_timeout: float | None = None,
 ) -> str:
-    """СПРАВЖНІЙ стрімінг токенів (SSE) для OpenAI-сумісного ендпойнта.
+    """Real token streaming (SSE) for an OpenAI-compatible endpoint.
 
-    Раніше ми чекали відповідь ЦІЛКОМ і лише потім різали її на слова — тому
-    весь текст з’являвся раптом. Тепер кожен токен віддається через emit()
-    одразу, як надійшов від моделі.
+    We used to wait for the whole answer and only then slice it into words,
+    which is why the text appeared all at once. Now every token goes out
+    through emit() the moment the model produces it.
 
-    Тулзи ТУТ НЕ підтримуються свідомо: якщо потрібні tool_calls, викликач
-    переходить на звичайний (нестрімовий) шлях. Повертає повний текст.
+    Tools are deliberately NOT supported here: if the model wants tool_calls,
+    the caller switches to the plain (non-streaming) path. Returns full text.
+
+    `read_timeout` is the gap we tolerate BETWEEN chunks, and it is not the
+    same budget as `timeout`. An agent that is thinking or running a tool
+    sends nothing meanwhile: with one blanket timeout of 35s every such turn
+    died with ReadTimeout, fell back to a non-streaming call and paid for the
+    whole answer twice. Connecting still has to be quick — a gateway that is
+    down must be noticed at once, not after two minutes.
     """
     payload = {**payload_base, "stream": True}
     parts: list[str] = []
-    async with httpx.AsyncClient(timeout=timeout, trust_env=trust_env) as client:
+    budget = httpx.Timeout(
+        timeout,
+        connect=min(timeout, 10.0),
+        read=read_timeout or timeout,
+    )
+    async with httpx.AsyncClient(timeout=budget, trust_env=trust_env) as client:
         async with client.stream("POST", url, headers=headers, json=payload) as resp:
             if resp.status_code >= 400:
                 body = (await resp.aread())[:200]

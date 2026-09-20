@@ -1500,10 +1500,18 @@ def _load_chat_images(attachments: list[dict[str, str]]) -> list[dict[str, str]]
 
 # ------------------------------------------------------------------ чат
 
-# Чанк довший за це — ознака, що мозок НЕ стрімив, а віддав відповідь цілком
-# (саме так поводиться шлюз OpenClaw: заміряно — один-єдиний чанк через 14с).
-# Такий шматок розсипаємо на слова, інакше текст падає стіною попри stream:true.
-_LUMP_CHARS = 40
+# A chunk longer than this means the brain did NOT stream: it handed over the
+# whole answer at once. We slice such a lump into words, otherwise the text
+# lands as a wall despite stream:true.
+#
+# The threshold is deliberately far above a normal chunk. Measured 2026-09-20
+# against the OpenClaw gateway: a plain turn streams in 30-58 char pieces
+# ~80ms apart, while a turn that ran a tool arrives as a single 307 char chunk
+# after 21s. At the old value of 40 every genuine piece tripped the check, so
+# real streaming was re-typed as a fake typewriter — and, because the delay
+# below is awaited inside the reader, the stream itself was stalled 20ms per
+# word while doing it.
+_LUMP_CHARS = 280
 # Пауза між словами імітованого набору (та сама, що й у гілці «мозок не стрімить»)
 _TYPE_DELAY_S = 0.02
 
