@@ -222,3 +222,33 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   → **17 passed**; `node --check` для обох JS-контурів чистий; живий smoke
   на `8100`: `/screen`, статика застосунку, `/api/system/status` → 200,
   спроба `static/../main.py` → 404.
+
+## 11. Session 2026-09-20: chat workspace and quick launchers
+
+- Fixed the radial plus menu: repeat click/tap closes it, keyboard activation
+  retains focus, and cancelled pointer capture cannot leave a stuck gesture.
+- Chat sidebars now extend to the window bottom. The conversation alone clears
+  the compact bottom dock; left/right docks have a continuous navigation rail.
+- Desktop chat has a bottom-right pin picker for Projects, Vision, and the real
+  `/screen` iframe. Choice and order persist in `claudeBotChatPins`. Vision is
+  opt-in; removing a pin unmounts its iframe/stream. Pins are desktop-only.
+- Legacy standalone images separated by prose now share the existing React Bits
+  accordion. Prose/captions remain. Inline images, links, code and tables are not
+  regrouped. Dashboard production assets were rebuilt.
+- Added `Launch Bot.command` (macOS), `Launch Bot.cmd` (Windows), and
+  `launch-bot.sh` (Linux). Native pickers select Dashboard, Screen, OpenClaw,
+  Vision, Display backend, or Dashboard + OpenClaw. No Electron or auto-installs;
+  module environments must already exist. See `launcher/README.md`.
+- Launchers reuse healthy services and refuse occupied ports; failed new launches
+  clean up their own process trees. They never reset OpenClaw config or copy keys.
+- Independent adversarial review covered radial input, layout/pins/gallery, and
+  launcher process handling. Fable was unavailable, so an available reviewer
+  agent was used. Native Windows/Linux execution remains unverified.
+- Validation: dashboard unit tests, typecheck, build and browser regression
+  (mouse/keyboard menu, gallery, persisted pins, all dock sides, mobile width).
+  Python suite: 409 passed, excluding the opt-in external Regolo ASR live test.
+  Frontend: 5 unit tests passed. The macOS native picker compiled successfully;
+  `Launch Bot.command --start pair` reused the live dashboard and OpenClaw.
+  HTTP smoke: dashboard/screen/OpenClaw health 200; memory path traversal 400 in
+  an isolated loopback server with lifespan disabled. That test server and the
+  test browser were stopped; requested production services remain running.
