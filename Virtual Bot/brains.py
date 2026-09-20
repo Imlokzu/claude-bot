@@ -390,7 +390,13 @@ def _openclaw_agent_model() -> str:
 
 def get_last_model() -> str:
     if _last_successful_brain == "openclaw":
-        real = _openclaw_agent_model()
+        # A provider/model route captured from the Gateway is authoritative;
+        # bare legacy names are only fallback display state and may be stale.
+        if "/" in _last_model:
+            real = _last_model
+        else:
+            override = openclaw_models.get_selected()
+            real = override.split("/")[-1] if override else _openclaw_agent_model()
         if real:
             return f"{real} · OpenClaw"
     return _last_model
@@ -669,11 +675,12 @@ async def chat_openclaw(
     emit=None,
     images=None,
     session_key: str | None = None,
-) -> tuple[str, list[dict]]:
+) -> tuple[str, list[dict], str]:
     """Питає OpenClaw gateway (токен — секрет, у відповіді/логах не світимо)."""
     token = cfg.get_openclaw_token()
     if not token:
         raise RuntimeError("Немає токена OpenClaw")
+    observed_model = {"value": ""}
 
     # Durable OpenClaw sessions already own their transcript. Sending the
     # application history again makes the Gateway wrap it as pending context
@@ -709,6 +716,12 @@ async def chat_openclaw(
 
         async def tracked_emit(event):
             nonlocal observed_work
+            if event.get("type") == "model":
+                provider = str(event.get("provider") or "").strip()
+                model = str(event.get("model") or "").strip()
+                if provider and model:
+                    observed_model["value"] = f"{provider}/{model}"
+                return
             if event.get("type") == "delta" or str(event.get("type", "")).startswith("tool_"):
                 observed_work = True
             await emit(event)
@@ -720,7 +733,7 @@ async def chat_openclaw(
                     payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env,
                     emit=tracked_emit, read_timeout=cfg.CHAT_OPENCLAW_WALL_S,
                 )
-            return text, []
+            return text, [], observed_model["value"]
         except _NeedsTools:
             log.info("OpenClaw потребує тулзів — переходжу на нестрімовий виклик")
         except Exception as exc:  # noqa: BLE001
@@ -729,7 +742,7 @@ async def chat_openclaw(
                 raise
             log.warning("Стрімінг OpenClaw не вдався (%s) — звичайний виклик", type(exc).__name__)
 
-    return await _call_openai_compatible_with_tools(
+    text, tool_results = await _call_openai_compatible_with_tools(
         url,
         headers,
         payload,
@@ -738,6 +751,7 @@ async def chat_openclaw(
         trust_env,
         emit=emit,
     )
+    return text, tool_results, observed_model["value"]
 
 
 # ------------------------------------------------------------------ мозок 2: Anthropic
@@ -1767,7 +1781,7 @@ async def chat(
             trace_log.step("brain", "openclaw", "start", cfg.OPENCLAW_AGENT)
             started = time.perf_counter()
             try:
-                raw, tool_results = await asyncio.wait_for(
+                result = await asyncio.wait_for(
                     chat_openclaw(
                         message,
                         system_prompt,
@@ -1782,13 +1796,18 @@ async def chat(
                     # будь-який пошук не встигав би вкластись.
                     timeout=cfg.CHAT_OPENCLAW_WALL_S,
                 )
+                if len(result) == 3:
+                    raw, tool_results, actual_model = result
+                else:  # Backward-compatible adapter for test/legacy callables.
+                    raw, tool_results = result
+                    actual_model = ""
                 if _looks_like_gateway_error(raw):
                     raise RuntimeError(f"OpenClaw віддав помилку замість відповіді: {raw.strip()[:120]}")
                 reply, emotion = extract_emotion(raw)
                 reply, inline_results = await _run_inline_tool_calls(reply, emit=emit)
                 tool_results = [*tool_results, *inline_results]
                 _openclaw_note_success()
-                _remember_brain("openclaw", cfg.OPENCLAW_AGENT)
+                _remember_brain("openclaw", actual_model or _openclaw_agent_model())
                 trace_log.step("brain", "openclaw", "ok", cfg.OPENCLAW_AGENT, _elapsed_ms(started))
                 return reply, emotion, "openclaw", tool_results
             except Exception as exc:  # noqa: BLE001 — свідомо ковтаємо, падаємо на наступний мозок

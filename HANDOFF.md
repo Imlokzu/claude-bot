@@ -299,6 +299,12 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 - The app backend now routes both text and image turns through OpenClaw. Vision
   sends an explicit `x-openclaw-model` for the configured image model; no
   `20128` Omni request is made.
+- Gateway lifecycle `phase=model` events are now captured for each streamed
+  turn, so the topbar reports the effective provider/model after fallback
+  (for example `nvidia/openai/gpt-oss-20b · OpenClaw`) instead of the primary
+  model that failed before the fallback ran. The composer remains the model
+  choice for the next request and is intentionally separate from last-run
+  telemetry.
 - Virtual Bot chat requests now derive a stable, non-identifying
   `virtual-bot-v2:<hash>` Gateway session key from the user and chat id.
   Previously every streamed turn used a random key, which prevented OpenClaw

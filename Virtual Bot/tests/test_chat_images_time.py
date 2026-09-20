@@ -120,12 +120,24 @@ class ChatImageTests(unittest.TestCase):
             patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
             patch.object(brains, "_call_openai_compatible_with_tools", side_effect=fake_call),
         ):
-            result, _tools = asyncio.run(
+            result, _tools, _model = asyncio.run(
                 brains.chat_openclaw("Привіт", "system", [], session_key="virtual-bot:stable")
             )
 
         self.assertEqual(result, "[емоція:idle] ok")
         self.assertEqual(captured["x-openclaw-session-key"], "virtual-bot:stable")
+
+    def test_chat_remembers_actual_gateway_fallback_model(self) -> None:
+        async def fake_openclaw(*args, **kwargs):
+            return "[емоція:idle] ok", [], "nvidia/openai/gpt-oss-20b"
+
+        with (
+            patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
+            patch.object(brains, "chat_openclaw", side_effect=fake_openclaw),
+        ):
+            _reply, _emotion, _mode, _tools = asyncio.run(brains.chat("ping", []))
+
+        self.assertEqual(brains.get_last_model(), "nvidia/openai/gpt-oss-20b · OpenClaw")
 
     def test_openclaw_session_key_is_stable_and_non_identifying(self) -> None:
         first = main._openclaw_session_key("chat-1", "user-1")

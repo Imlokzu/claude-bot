@@ -90,6 +90,18 @@ class GatewayActivityTests(unittest.IsolatedAsyncioTestCase):
         observer = GatewayActivity(AsyncMock(), session_key="virtual-bot:stable")
         self.assertEqual(observer.session_key, "virtual-bot:stable")
 
+    async def test_model_lifecycle_is_reported_to_request_owner(self):
+        emit = AsyncMock()
+        observer = GatewayActivity(emit)
+        frame = self.frame(observer, phase="model", provider="nvidia", model="openai/gpt-oss-20b")
+        frame["payload"]["stream"] = "lifecycle"
+        await observer.handle(frame)
+        self.assertEqual(emit.call_args.args[0], {
+            "type": "model",
+            "provider": "nvidia",
+            "model": "openai/gpt-oss-20b",
+        })
+
     async def test_native_progress_failure_and_lifecycle(self):
         emit = AsyncMock()
         observer = GatewayActivity(emit)

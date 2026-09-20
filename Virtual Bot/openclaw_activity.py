@@ -104,6 +104,14 @@ class GatewayActivity:
         data = payload.get("data")
         if not isinstance(data, dict):
             return
+        if payload.get("stream") == "lifecycle" and data.get("phase") == "model":
+            provider = str(data.get("provider") or "").strip()
+            model = str(data.get("model") or "").strip()
+            if provider and model:
+                # Internal metadata for the request owner; do not render this
+                # as a user-facing chat event.
+                await self.emit({"type": "model", "provider": provider, "model": model})
+            return
         run_id = str(payload.get("runId") or "")
         if payload.get("seq") is not None:
             identity = (run_id, payload["seq"])
