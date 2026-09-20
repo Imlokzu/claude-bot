@@ -131,8 +131,32 @@ class ChatImageTests(unittest.TestCase):
         first = main._openclaw_session_key("chat-1", "user-1")
         self.assertEqual(first, main._openclaw_session_key("chat-1", "user-1"))
         self.assertNotEqual(first, main._openclaw_session_key("chat-2", "user-1"))
+        self.assertTrue(first.startswith("virtual-bot-v2:"))
         self.assertNotIn("chat-1", first)
         self.assertNotIn("user-1", first)
+
+    def test_stable_openclaw_session_omits_duplicate_application_history(self) -> None:
+        captured = {}
+
+        async def fake_call(*args, **kwargs):
+            captured["payload"] = args[2]
+            return "[емоція:idle] ok", []
+
+        with (
+            patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
+            patch.object(brains, "_call_openai_compatible_with_tools", side_effect=fake_call),
+        ):
+            asyncio.run(brains.chat_openclaw(
+                "Нове питання",
+                "system",
+                [{"role": "user", "content": "Попереднє"}, {"role": "assistant", "content": "Відповідь"}],
+                session_key="virtual-bot-v2:stable",
+            ))
+
+        self.assertEqual(
+            captured["payload"]["messages"],
+            [{"role": "system", "content": "system"}, {"role": "user", "content": "Нове питання"}],
+        )
 
     def test_image_goes_straight_to_vision_model(self) -> None:
         """

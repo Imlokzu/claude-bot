@@ -675,7 +675,11 @@ async def chat_openclaw(
     if not token:
         raise RuntimeError("Немає токена OpenClaw")
 
-    messages = _build_messages(system_prompt, history, message, images)
+    # Durable OpenClaw sessions already own their transcript. Sending the
+    # application history again makes the Gateway wrap it as pending context
+    # (`Chat messages since your last reply`) and duplicates every turn.
+    request_history = [] if session_key else history
+    messages = _build_messages(system_prompt, request_history, message, images)
     payload = {
         "model": cfg.OPENCLAW_AGENT,
         "messages": messages,

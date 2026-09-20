@@ -1,9 +1,9 @@
 """Observe native Gateway tool events alongside the existing HTTP token stream.
 
 The subscription is established BEFORE sending the chat request. Durable chat
-threads provide a stable key so OpenClaw can reuse their cache lineage; callers
-without a durable session still get an isolated random key. Full conversation
-history continues to go over HTTP. Protocol verified against the installed
+threads provide a stable key so OpenClaw can reuse their cache lineage and
+transcript; callers without a durable session still get an isolated random key
+and may send their own history. Protocol verified against the installed
 OpenClaw gateway/protocol documentation.
 """
 

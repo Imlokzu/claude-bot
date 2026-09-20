@@ -300,11 +300,13 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   sends an explicit `x-openclaw-model` for the configured image model; no
   `20128` Omni request is made.
 - Virtual Bot chat requests now derive a stable, non-identifying
-  `virtual-bot:<hash>` Gateway session key from the user and chat id. Previously
-  every streamed turn used a random key, which prevented OpenClaw from keeping
-  one cache lineage and created unnecessary short-lived sessions. The request
-  still carries the bounded application history, while OpenClaw can now reuse
-  the stable session/cache path across turns.
+  `virtual-bot-v2:<hash>` Gateway session key from the user and chat id.
+  Previously every streamed turn used a random key, which prevented OpenClaw
+  from keeping one cache lineage and created unnecessary short-lived sessions.
+  Stable-key requests no longer resend the application history: OpenClaw owns
+  that transcript, preventing the duplicate `[Chat messages since your last
+  reply]` block visible in the Control UI. The v2 namespace isolates new turns
+  from sessions created by the old duplicate-history behavior.
 - OpenClaw was updated from 2026.9.1 to 2026.9.5. OpenCode Go now reaches its
   provider, which returns HTTP 403 because this account has no active Go
   subscription; OpenClaw correctly falls back to Regolo. With an active Go

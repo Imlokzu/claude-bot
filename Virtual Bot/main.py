@@ -1269,7 +1269,9 @@ def _get_or_create_session_id(req: ChatRequest) -> str:
 def _openclaw_session_key(session_id: str, clerk_user_id: str) -> str:
     """Derive a stable, non-identifying Gateway key for one chat thread."""
     digest = hashlib.sha256(f"{clerk_user_id}:{session_id}".encode()).hexdigest()[:32]
-    return f"virtual-bot:{digest}"
+    # Version the namespace so sessions created before transcript ownership
+    # moved to OpenClaw cannot be reused with duplicate history.
+    return f"virtual-bot-v2:{digest}"
 
 
 def _get_history(sid: str, req_history: list[dict[str, str]]) -> list[dict[str, str]]:
