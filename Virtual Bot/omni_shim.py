@@ -179,6 +179,8 @@ class Msg(BaseModel):
     # pydantic обчислює анотації полів у рантаймі (from __future__ не
     # допомагає саме тут).
     content: Optional[Union[str, list]] = None
+    # Preserve assistant tool_calls and tool_call_id on tool-result messages.
+    model_config = {"extra": "allow"}
 
 
 class ChatReq(BaseModel):
@@ -187,8 +189,8 @@ class ChatReq(BaseModel):
     stream: bool = False
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
-    # Решту полів OpenAI приймаємо й ігноруємо: opencode ними не керує.
-    model_config = {"extra": "ignore"}
+    # Direct OpenAI-compatible providers need tools/tool_choice/reasoning too.
+    model_config = {"extra": "allow"}
 
 
 def _text_of(content) -> str:
@@ -408,6 +410,8 @@ async def chat_completions(req: ChatReq):
     # Regolo ходить повз opencode — не піднімаємо його заради такого запиту
     # (інакше найшвидша модель платила б за чужий холодний старт).
     is_regolo = req.model.startswith(f"{REGOLO_PROVIDER}/")
+    if is_regolo:
+        return await _proxy_regolo(req)
     if not is_regolo:
         await _ensure_opencode()
     system, text, files = _split(req.messages)
@@ -447,6 +451,53 @@ async def chat_completions(req: ChatReq):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(sse(), media_type="text/event-stream")
+
+
+async def _proxy_regolo(req: ChatReq):
+    """Preserve the provider's tool protocol instead of flattening it to prose.
+
+    OpenClaw executes its own tools. Stripping their declarations, call IDs or
+    results here prevents the agent from acting, even with a working event UI.
+    """
+    key = cfg.get_regolo_asr_key()
+    if not key:
+        raise HTTPException(502, detail={"code": "regolo_key_missing"})
+    if any(isinstance(message.content, list) and any(
+        isinstance(part, dict) and part.get("type") in ("image_url", "input_image")
+        for part in message.content
+    ) for message in req.messages):
+        raise HTTPException(400, detail={"code": "model_images_unsupported"})
+    payload = req.model_dump(exclude_none=True)
+    payload["model"] = req.model.partition("/")[2]
+    client = httpx.AsyncClient(timeout=REGOLO_TIMEOUT_S)
+    response = None
+    handed_off = False
+    try:
+        request = client.build_request("POST", f"{REGOLO_BASE_URL}/chat/completions",
+                                       headers={"Authorization": f"Bearer {key}"}, json=payload)
+        response = await client.send(request, stream=req.stream)
+        if response.status_code != 200:
+            raise HTTPException(502, detail={"code": "regolo_upstream_error", "status": response.status_code})
+        if not req.stream:
+            data = response.json()
+            data["model"] = req.model
+            return data
+
+        async def body():
+            try:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+            finally:
+                await response.aclose()
+                await client.aclose()
+
+        handed_off = True
+        return StreamingResponse(body(), media_type="text/event-stream")
+    finally:
+        if not handed_off:
+            if response is not None:
+                await response.aclose()
+            await client.aclose()
 
 
 @app.get("/health")
