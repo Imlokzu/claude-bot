@@ -285,3 +285,21 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   Live checks: dashboard `200`, OpenClaw health `200`, direct Clerk JWKS fetch
   returned one key. Python suite: **414 passed, 6 skipped** (external live ASR
   test excluded). Targeted auth/launcher tests: 29 passed.
+
+### OpenClaw routing migration follow-up
+
+- Removed the unstable Omni route from the active OpenClaw config. The gateway
+  now uses a direct custom OpenAI-compatible Regolo provider:
+  `regolo/gpt-oss-120b` with `regolo/gpt-oss-20b` fallback and
+  `regolo/qwen3.5-122b` as the authored image model. Existing OpenCode/Omni
+  config backups remain under the user's ignored `~/.openclaw` directory.
+- The app backend now routes both text and image turns through OpenClaw. Vision
+  sends an explicit `x-openclaw-model` for the configured image model; no
+  `20128` Omni request is made.
+- The OpenCode Go direct plugin was tested but rejected requests with HTTP 400
+  (`x-opencode-session` required) in the installed OpenClaw 2026.9.1 runtime,
+  so it was not kept as the production route.
+- Live verification: `openclaw agent` through the gateway completed with
+  provider `regolo`, model `gpt-oss-120b`, in about 1.2s; direct Regolo text and
+  vision endpoint probes returned 200. Gateway, dashboard, and OpenClaw remain
+  loopback-only. The Omni shim is no longer required for chat.
