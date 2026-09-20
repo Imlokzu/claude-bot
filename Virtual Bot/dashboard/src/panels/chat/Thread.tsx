@@ -1,4 +1,4 @@
-import { MessagePrimitive, ThreadPrimitive } from '@assistant-ui/react';
+import { MessagePrimitive, ThreadPrimitive, useAuiState } from '@assistant-ui/react';
 import { ArrowDown } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { GalleryScope } from './Gallery';
@@ -7,6 +7,7 @@ import { Thinking } from './Thinking';
 import { Button } from '@/components/ui/Button';
 import { glue } from '@/lib/glue';
 import type { ToolStep } from './types';
+import type { AgentStatus } from '@/lib/chatStream';
 
 /*
  * Стрічка розмови.
@@ -33,6 +34,9 @@ function UserMessage() {
 }
 
 function AssistantMessage() {
+  const activity = useAuiState((state) => state.message.metadata.custom) as {
+    steps?: ToolStep[]; running?: boolean; agentStatus?: AgentStatus;
+  };
   return (
     <MessagePrimitive.Root className="mb-6 flex gap-3">
       {/* Мітка автора замість аватарки: у розмові двоє, портрет не потрібен,
@@ -44,6 +48,8 @@ function AssistantMessage() {
           доходить і до тих, що лежали в іншому абзаці відповіді. */}
       <GalleryScope>
         <div className="u-measure min-w-0 flex-1">
+          {activity.running || activity.steps?.length ? <Thinking steps={activity.steps ?? []}
+            running={Boolean(activity.running)} status={activity.agentStatus} /> : null}
           <MessagePrimitive.Parts components={{ Text: Markdown }} />
         </div>
       </GalleryScope>
@@ -52,16 +58,9 @@ function AssistantMessage() {
 }
 
 export function Thread({
-  steps,
-  running,
-  answered,
   compactedFrom,
   composer,
 }: {
-  steps: ToolStep[];
-  running: boolean;
-  /** Відповідь у цій розмові вже була — блок «Думав N с» лишається. */
-  answered: boolean;
   /** Скільки реплік сховано за переказом; 0 — розмову не стискали. */
   compactedFrom: number;
   /* Поле вводу приходить готовим: воно знає про моделі й контекст, а стрічка — ні. */
@@ -117,13 +116,6 @@ export function Thread({
           <ThreadPrimitive.Messages
             components={{ UserMessage, AssistantMessage }}
           />
-
-          {/* Хід відповіді — ПІД стрічкою, а не всередині репліки: він
-              стосується всієї відповіді. Після відповіді блок не зникає, а
-              згортається в «Думав N с»: питання «а що він там робив?»
-              виникає САМЕ після відповіді, коли бігти очима вже нема за чим.
-              Розбирається він на наступному надсиланні. */}
-          {running || answered ? <Thinking steps={steps} running={running} /> : null}
 
           <div className="h-4 shrink-0" />
         </div>

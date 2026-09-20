@@ -6,6 +6,7 @@ export interface ChatMessage {
   ts?: number;
   attachments?: unknown[];
   participant?: string;
+  steps?: ToolStep[];
 }
 
 export interface SessionSummary {
@@ -26,17 +27,23 @@ export interface SessionDetail {
     content: string;
     ts?: number;
     attachments?: unknown[];
+    steps?: ToolStep[];
     /** Це не репліка, а переказ стиснутої розмови (див. chat_store.compact). */
     compacted?: boolean;
     compacted_from?: number;
   }[];
 }
 
-/** Виклик тулза — рядок у блоці «Думаю…» (див. Thinking.tsx). */
+/** Persisted activity for one tool invocation, identified independently of its name. */
 export interface ToolStep {
   id: string;
   label: string;
-  /** Аргумент виклику: шлях, запит, команда — те, що чіпає бот. */
+  /** A short, redacted description; full structured data expands below it. */
   detail: string;
-  status: 'active' | 'done' | 'failed';
+  status: 'active' | 'done' | 'failed' | 'interrupted';
+  input?: unknown;
+  result?: unknown;
+  startedAt?: number;
+  endedAt?: number;
+  source?: string;
 }

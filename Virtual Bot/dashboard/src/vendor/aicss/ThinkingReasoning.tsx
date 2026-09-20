@@ -3,6 +3,7 @@
 import styles from "./ThinkingReasoning.module.css";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { t } from '@/lib/i18n';
 
 /*
  * Джерело: https://www.aicss.dev/r/thinking-reasoning.json (реєстр shadcn).
@@ -33,15 +34,18 @@ export interface ThinkingReasoningProps {
   /** Показати ліворуч від мітки власний значок (у нас — LatticeLoader). */
   glyph?: ReactNode;
   className?: string;
+  /** Tool details need natural row heights and user-controlled scrolling. */
+  detailed?: boolean;
 }
 
 export function ThinkingReasoning({
   lines,
   busy,
-  label = "Думаю…",
-  doneLabel = (s) => `Думав ${s} с`,
+  label = t('activity.running'),
+  doneLabel = (s) => t('activity.seconds', { seconds: s }),
   glyph,
   className,
+  detailed = false,
 }: ThinkingReasoningProps) {
   const [open, setOpen] = useState(false);
   const [fade, setFade] = useState({ top: false, bottom: true });
@@ -107,7 +111,7 @@ export function ThinkingReasoning({
         type="button"
         className={styles.trHeader + (canToggle ? " " + styles.isClickable : "")}
         aria-expanded={expanded}
-        aria-label={canToggle ? "Показати, що робив бот" : undefined}
+        aria-label={canToggle ? t('activity.expand') : undefined}
         onClick={canToggle ? toggle : undefined}
       >
         {glyph}
@@ -123,17 +127,17 @@ export function ThinkingReasoning({
         )}
       </button>
 
-      <div className={styles.trCollapsible + (expanded ? "" : " " + styles.isCollapsed)}>
+      <div inert={!expanded} className={styles.trCollapsible + (expanded ? "" : " " + styles.isCollapsed)}>
         <div className={styles.trInner}>
           <div
             ref={viewportRef}
-            className={styles.trViewport + (scrollable ? " " + styles.isScroll : "")}
-            style={{ height: `${viewH}px`, WebkitMaskImage: mask, maskImage: mask }}
+            className={styles.trViewport + (detailed ? " " + styles.trDetails : scrollable ? " " + styles.isScroll : "")}
+            style={detailed ? undefined : { height: `${viewH}px`, WebkitMaskImage: mask, maskImage: mask }}
             onScroll={scrollable ? onScroll : undefined}
           >
-            <div className={styles.trStream} style={{ transform: `translateY(${translate}px)` }}>
+            <div className={styles.trStream} style={detailed ? undefined : { transform: `translateY(${translate}px)` }}>
               {lines.map((line, i) => (
-                <p key={i} className={styles.trSentence}>{line}</p>
+                <div key={i} className={detailed ? undefined : styles.trSentence}>{line}</div>
               ))}
             </div>
           </div>

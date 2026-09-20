@@ -70,6 +70,16 @@
   scrollbar-width: none;
 }
 .trViewport.isScroll::-webkit-scrollbar { display: none; }
+.trViewport.trDetails {
+  max-height: 360px;
+  overflow: auto;
+  scrollbar-width: thin;
+  overscroll-behavior: contain;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tr, .trSentence, .trShimmer { animation: none; }
+  .trCollapsible, .trViewport, .trStream, .trChevron { transition: none; }
+}
 .trStream {
   display: flex;
   flex-direction: column;

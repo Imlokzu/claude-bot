@@ -123,9 +123,6 @@ export default function ChatPanel() {
           ) : null}
 
           <Thread
-            steps={chat.steps}
-            running={chat.running}
-            answered={chat.answered}
             compactedFrom={chat.compactedFrom}
             composer={
               <Composer
