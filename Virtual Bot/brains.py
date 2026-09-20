@@ -1,15 +1,10 @@
 """
-«Клод Бот» — Virtual Bot: «мозок» чату з пʼятьма режимами (за пріоритетом):
+«Клод Бот» — Virtual Bot: OpenClaw gateway єдиний мережевий мозок чату.
 
-0) OpenClaw gateway (127.0.0.1:18789, OpenAI-сумісний /v1/chat/completions) —
-   ГОЛОВНИЙ мозок: памʼять, tool use, маршрутизація до Claude (за баченням
-   власника через нього має йти все). Ендпоінт треба увімкнути в конфізі OpenClaw;
-1) Omni-роутер (127.0.0.1:20128/v1) — запасний OpenAI-сумісний мультимодельний
-   шлюз; модель обирається у панелі (за замовчуванням Claude);
-2) прямий Anthropic API (httpx, БЕЗ SDK);
-3) Chat2API — локальний OpenAI-сумісний сервер (127.0.0.1:8080/v1);
-4) демо-режим — заготовлені українські відповіді за ключовими словами,
-   щоб застосунок працював завжди.
+OpenClaw сам маршрутизує текстові, vision-моделі, tools і fallback-провайдерів;
+Virtual Bot не дублює цей ланцюг через окремий Omni, Anthropic або Chat2API.
+Якщо gateway недоступний, застосунок чесно повертає offline-стан або локальну
+демо-відповідь, коли її явно увімкнено в конфігурації.
 
 Кожна відповідь проходить через шар емоцій (emotions.py).
 Модуль памʼятає, який мозок РЕАЛЬНО відповів останнім (last_successful_brain) —
@@ -684,11 +679,13 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
-        # Вибір моделі в панелі. Поле `model` вище — це АГЕНТ, а не модель
-        # (рядок `omni/opencode-go/minimax-m3` там дає 400); модель
-        # перекривається саме заголовком. Без нього панель показувала одну
-        # модель, а відповідала завжди типова модель агента.
-        **openclaw_models.chat_headers(),
+        # Вибір моделі в панелі. Поле `model` вище — це АГЕНТ, а не модель.
+        # Vision явно йде на image-модель OpenClaw; текст лишає вибір панелі.
+        **(
+            {"x-openclaw-model": cfg.OPENCLAW_IMAGE_MODEL}
+            if images
+            else openclaw_models.chat_headers()
+        ),
     }
     url = f"{cfg.OPENCLAW_BASE_URL}/v1/chat/completions"
     trust_env = cfg.httpx_trust_env(cfg.OPENCLAW_BASE_URL)
@@ -1738,19 +1735,16 @@ async def chat(
     окремі мозки тут. Маршрутизацію й фолбеки між ними робить OpenClaw; другий
     такий самий ланцюжок у боті лише дублював логіку і плутав діагностику.
 
-    Єдиний виняток — КАРТИНКИ. Шлюз приймає OpenAI-подібний image block, але
-    мовчки викидає його перед агентом, тому vision-запити йдуть в Omni напряму.
-    Коли шлюз навчиться передавати картинки, цей обхід треба прибрати.
+    Картинки теж ідуть через gateway: для них OpenClaw використовує окрему
+    `agents.defaults.imageModel`, щоб текстова модель не отримувала невідомий
+    image block.
     """
     history = history or []
     system_prompt = build_system_prompt(message, voice=voice, spoken=spoken)
 
-    # Мозок 0: OpenClaw gateway (ГОЛОВНИЙ) — персона/емоції/памʼять усередині OpenClaw
-    # Поточний OpenClaw gateway приймає OpenAI-подібний image block, але мовчки
-    # викидає його перед агентом. Для реального vision-запиту йдемо одразу в
-    # Omni/Claude, який підтримує multimodal content; текстові запити лишаються
-    # на головному агентному мозку OpenClaw.
-    if cfg.get_openclaw_token() and not images:
+    # OpenClaw gateway — єдиний шлях для тексту й vision. Gateway вибирає
+    # текстову або image-модель із власної конфігурації.
+    if cfg.get_openclaw_token():
         backoff_left = openclaw_backoff_remaining()
         if backoff_left > 0:
             log.info("OpenClaw у бекофі після невдачі — пропускаю (ще %.0f с)", backoff_left)
@@ -1787,53 +1781,8 @@ async def chat(
                     "наступні ~%.0f с пропускаю. Дивись провайдерів у ~/.openclaw/openclaw.json",
                     type(exc).__name__, cfg.CHAT_OPENCLAW_BACKOFF_S,
                 )
-    elif images:
-        log.info("Запит містить %d зображень — пропускаю OpenClaw без vision", len(images))
-        trace_log.step("brain", "openclaw", "skip", f"{len(images)} зображень — шлюз їх не бачить")
     else:
         trace_log.step("brain", "openclaw", "skip", "немає токена")
-
-    # Обхід для КАРТИНОК: шлюз їх мовчки губить, тому vision іде в Omni напряму.
-    # Це не «запасний мозок», а саме виняток по можливості — для тексту сюди
-    # не потрапляємо взагалі. Anthropic і Chat2API з ланцюжка прибрані: їхнє
-    # місце — провайдери в конфізі OpenClaw, а не паралельна гілка тут.
-    if images and cfg.get_omni_key():
-        backoff_left = omni_backoff_remaining()
-        if backoff_left > 0:
-            trace_log.step("brain", "omni-vision", "skip", f"бекоф, ще {backoff_left:.0f} с")
-        else:
-            trace_log.step("brain", "omni-vision", "start", cfg.OMNI_VISION_MODEL)
-            started = time.perf_counter()
-            try:
-                raw, tool_results = await asyncio.wait_for(
-                    chat_omni(
-                        message, system_prompt, history, emit=emit,
-                        reasoning_effort=reasoning_effort,
-                        images=images,
-                    ),
-                    timeout=cfg.CHAT_OMNI_TIMEOUT_S,
-                )
-                if _looks_like_gateway_error(raw):
-                    raise RuntimeError(f"Omni віддав помилку замість відповіді: {raw.strip()[:120]}")
-                reply, emotion = extract_emotion(raw)
-                reply, inline_results = await _run_inline_tool_calls(reply, emit=emit)
-                tool_results = [*tool_results, *inline_results]
-                _omni_note_success()
-                _remember_brain("omni", _last_omni_model or get_selected_omni_model())
-                trace_log.step(
-                    "brain", "omni-vision", "ok",
-                    _last_omni_model or get_selected_omni_model(), _elapsed_ms(started),
-                )
-                return reply, emotion, "omni", tool_results
-            except Exception as exc:  # noqa: BLE001 — далі лише offline
-                _omni_note_failure()
-                trace_log.step(
-                    "brain", "omni-vision", "fail",
-                    _fail_detail(exc, cfg.CHAT_OMNI_TIMEOUT_S), _elapsed_ms(started),
-                )
-                log.warning("Omni не впорався з картинками (%s)", type(exc).__name__)
-    elif images:
-        trace_log.step("brain", "omni-vision", "skip", "немає ключа OMNI_API_KEY")
 
     # Жоден мозок не відповів. Що показати — вирішує chat.demo_fallback.
     if not cfg.CHAT_DEMO_FALLBACK:

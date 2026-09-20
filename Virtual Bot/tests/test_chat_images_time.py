@@ -88,26 +88,26 @@ class ChatImageTests(unittest.TestCase):
         self.assertEqual(observed["images"][0]["mime"], "image/png")
         self.assertTrue(observed["images"][0]["data"])
 
-    def test_image_request_skips_openclaw_and_uses_vision_capable_omni(self) -> None:
+    def test_image_request_stays_inside_openclaw_gateway(self) -> None:
         image = {"mime": "image/png", "data": "YWJj"}
 
-        async def fake_omni(message, system_prompt, history, emit=None, **kwargs):
+        async def fake_openclaw(message, system_prompt, history, emit=None, **kwargs):
             self.assertEqual(kwargs["images"], [image])
             return "[емоція:happy] Бачу", []
 
         with (
             patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
-            patch.object(brains.cfg, "get_omni_key", return_value="key"),
-            patch.object(brains, "chat_openclaw") as openclaw,
-            patch.object(brains, "chat_omni", side_effect=fake_omni),
+            patch.object(brains, "chat_openclaw", side_effect=fake_openclaw) as openclaw,
+            patch.object(brains, "chat_omni") as omni,
         ):
             reply, _emotion, mode, _tools = asyncio.run(
                 brains.chat("Що тут?", [], images=[image])
             )
 
-        openclaw.assert_not_called()
+        openclaw.assert_called_once()
+        omni.assert_not_called()
         self.assertEqual(reply, "Бачу")
-        self.assertEqual(mode, "omni")
+        self.assertEqual(mode, "openclaw")
 
     def test_image_goes_straight_to_vision_model(self) -> None:
         """

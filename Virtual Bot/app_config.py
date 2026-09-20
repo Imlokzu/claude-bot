@@ -251,6 +251,7 @@ OMNI_MODELS: list[dict[str, object]] = _load_omni_models()
 
 OPENCLAW_BASE_URL: str = cfg_str("openclaw", "base_url", default="http://127.0.0.1:18789").rstrip("/")
 OPENCLAW_AGENT: str = cfg_str("openclaw", "agent", default="openclaw/default")
+OPENCLAW_IMAGE_MODEL: str = cfg_str("openclaw", "image_model", default="regolo/qwen3.5-122b")
 OPENCLAW_TIMEOUT_S: float = cfg_float("openclaw", "timeout_s", default=45)
 # Чат: два різні таймаути OpenClaw плюс бекоф-запобіжник після невдачі.
 #
