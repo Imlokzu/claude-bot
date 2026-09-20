@@ -289,9 +289,11 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 ### OpenClaw routing migration follow-up
 
 - Removed the unstable Omni route from the active OpenClaw config. The gateway
-  now prefers direct `opencode-go/kimi-k3` and falls back to the custom
-  OpenAI-compatible `regolo/gpt-oss-120b` provider (`regolo/gpt-oss-20b`
-  fallback). `regolo/qwen3.5-122b` is the authored image model. Existing
+  now prefers direct `opencode-go/kimi-k3`, then the free NVIDIA NIM
+  `nvidia/nvidia/nemotron-3.5-lightning-30b-a3b` endpoint, and finally the
+  custom OpenAI-compatible `regolo/gpt-oss-120b` provider. NVIDIA is dormant
+  until `NVIDIA_API_KEY` is added through OpenClaw auth; no key is stored in the
+  repository. `regolo/qwen3.5-122b` remains the authored image model. Existing
   OpenCode/Omni config backups remain under the user's ignored `~/.openclaw`
   directory.
 - The app backend now routes both text and image turns through OpenClaw. Vision
