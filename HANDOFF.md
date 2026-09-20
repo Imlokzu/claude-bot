@@ -289,17 +289,19 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 ### OpenClaw routing migration follow-up
 
 - Removed the unstable Omni route from the active OpenClaw config. The gateway
-  now uses a direct custom OpenAI-compatible Regolo provider:
-  `regolo/gpt-oss-120b` with `regolo/gpt-oss-20b` fallback and
-  `regolo/qwen3.5-122b` as the authored image model. Existing OpenCode/Omni
-  config backups remain under the user's ignored `~/.openclaw` directory.
+  now prefers direct `opencode-go/kimi-k3` and falls back to the custom
+  OpenAI-compatible `regolo/gpt-oss-120b` provider (`regolo/gpt-oss-20b`
+  fallback). `regolo/qwen3.5-122b` is the authored image model. Existing
+  OpenCode/Omni config backups remain under the user's ignored `~/.openclaw`
+  directory.
 - The app backend now routes both text and image turns through OpenClaw. Vision
   sends an explicit `x-openclaw-model` for the configured image model; no
   `20128` Omni request is made.
-- The OpenCode Go direct plugin was tested but rejected requests with HTTP 400
-  (`x-opencode-session` required) in the installed OpenClaw 2026.9.1 runtime,
-  so it was not kept as the production route.
-- Live verification: `openclaw agent` through the gateway completed with
-  provider `regolo`, model `gpt-oss-120b`, in about 1.2s; direct Regolo text and
-  vision endpoint probes returned 200. Gateway, dashboard, and OpenClaw remain
-  loopback-only. The Omni shim is no longer required for chat.
+- OpenClaw was updated from 2026.9.1 to 2026.9.5. OpenCode Go now reaches its
+  provider, which returns HTTP 403 because this account has no active Go
+  subscription; OpenClaw correctly falls back to Regolo. With an active Go
+  subscription, the same primary route will be used without config changes.
+- Live verification: `openclaw agent` through the gateway completed via Regolo
+  fallback; direct Regolo text and Qwen vision endpoint probes returned 200.
+  Gateway, dashboard, and OpenClaw remain loopback-only. The Omni shim is no
+  longer required for chat.
