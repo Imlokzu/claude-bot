@@ -26,7 +26,7 @@ def test_only_selected_services_start(monkeypatch, action, services):
     start = MagicMock()
     browser = MagicMock()
     monkeypatch.setattr(launcher, "start_service", start)
-    monkeypatch.setattr(launcher.webbrowser, "open", browser)
+    monkeypatch.setattr(launcher, "open_url", browser)
     launcher.launch(action)
     assert [call.args[0] for call in start.call_args_list] == services
     browser.assert_called_once()

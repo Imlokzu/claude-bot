@@ -14,7 +14,6 @@ import sys
 import time
 from urllib.parse import urlsplit
 from urllib.request import ProxyHandler, build_opener
-import webbrowser
 
 ROOT = Path(__file__).resolve().parents[1]
 LOGS = ROOT / "Virtual Bot" / "service_logs"
@@ -86,6 +85,24 @@ def service_environment() -> dict[str, str]:
         if not _proxy_is_reachable(environment[key]):
             environment.pop(key, None)
     return environment
+
+
+def open_url(url: str) -> None:
+    """Open a URL without keeping a GUI helper's stdout pipe alive."""
+    if sys.platform == "darwin":
+        command = ["open", url]
+    elif os.name == "nt":
+        os.startfile(url)  # type: ignore[attr-defined,no-untyped-call]
+        return
+    else:
+        command = ["xdg-open", url]
+    subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=os.name != "nt",
+    )
 
 
 @contextmanager
@@ -198,7 +215,7 @@ def launch(action: str) -> None:
         "vision": "http://127.0.0.1:8000/vision/stream.mjpg",
         "display": "http://127.0.0.1:8001/docs",
     }[action]
-    webbrowser.open(url)
+    open_url(url)
 
 
 def choose() -> str | None:
