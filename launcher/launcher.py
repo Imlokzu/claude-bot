@@ -75,9 +75,9 @@ def _proxy_is_reachable(value: str) -> bool:
 def service_environment() -> dict[str, str]:
     """Copy the GUI environment, dropping dead local proxies only.
 
-    Keep a reachable or remote proxy for external model/API traffic. If any
-    loopback proxy variable points at a dead process, remove all proxy casing
-    variants together so urllib, httpx and third-party SDKs agree on routing.
+    Keep a reachable or remote proxy for external model/API traffic. Remove
+    only dead loopback proxy variables; this covers every casing variant while
+    avoiding needless loss of a working remote proxy.
     """
     environment = os.environ.copy()
     proxy_keys = [key for key in environment if key.lower().endswith("_proxy")]
