@@ -134,10 +134,10 @@ export function DockNav({
         // У шапці все менше: смуга 56 px, і значок мусить у неї влазити
         // разом зі збільшенням. На телефоні збільшення не спрацьовує
         // (курсора нема), тож там усе просто менше й рівне.
-        baseItemSize={inTopbar ? 32 : isPhone ? 38 : 44}
-        magnification={inTopbar ? 42 : isPhone ? 38 : 66}
+        baseItemSize={inTopbar ? 32 : isPhone ? 38 : vertical ? 44 : 38}
+        magnification={inTopbar ? 42 : isPhone ? 38 : 58}
         distance={inTopbar ? 110 : 150}
-        panelHeight={inTopbar ? 42 : isPhone ? 52 : 58}
+        panelHeight={inTopbar ? 42 : 52}
         dockHeight={inTopbar ? 42 : 140}
       />
     </div>

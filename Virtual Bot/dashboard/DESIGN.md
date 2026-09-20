@@ -129,8 +129,11 @@ self-hosted через `@fontsource`, з кирилицею — панель м�
 Док плаває над вмістом і переноситься: затиснути й повести — прилипне до
 найближчого краю (низ, верх, ліворуч, праворуч). Вибір живе в
 `localStorage.claudeBotDockSide` поруч із темою й акцентом — це така сама
-особиста звичка. Місце під док лишає CSS за атрибутом `data-dock` на `<html>`,
-а не кожен розділ окремо.
+особиста звичка.
+
+Dock clearance follows `data-dock` on `<html>`. In chat, only the conversation
+column reserves bottom clearance; both sidebars extend to the window edge.
+Vertical navigation occupies a continuous 72px surface with a dividing rule.
 
 Вертикальний варіант — не поворот через CSS: у повернутого елемента
 `getBoundingClientRect` віддає повернуту рамку, і збільшення під курсором
@@ -143,3 +146,21 @@ self-hosted через `@fontsource`, з кирилицею — панель м�
 замість бічних панелей), `760–1180px` планшет, `> 1180px` стіл (бічна рейка
 розділів + дві-три колонки). Безпечні зони iOS через `env(safe-area-inset-*)` —
 панель ставиться на домашній екран як PWA.
+
+## Chat workspace (2026-09-20)
+
+- Preserve the existing warm palette, Plex typography, and thin surface borders.
+- Desktop chat's right rail offers opt-in Projects, Vision, and Screen pins from
+  a bottom-anchored plus menu. Selection and order persist locally. Narrow layouts
+  keep the existing compact face; pins remain desktop-only.
+- The screen pin embeds the real same-origin `/screen` at its native 320x240 size.
+  Removing a pin unmounts its iframe/stream. Pinning Vision does not start a camera.
+- Standalone Markdown images in one reply share the existing React Bits accordion,
+  even with prose between them. Captions and all prose remain; inline illustrations,
+  links, tables, and code examples are not regrouped.
+- Radial-menu taps toggle it; dragging selects once; Escape and outside clicks close
+  it. Keyboard activation must retain trigger focus, not focus the composer.
+- New labels use `src/locales/workspace.ts` (Ukrainian and English).
+- Checks: `npm test`, `npm run typecheck`, `npm run build`; optional
+  `npm run test:browser` uses an installed agent-browser and a running server with
+  isolated browser-only fixtures, never real chat writes. Tests require Node 22.6+.

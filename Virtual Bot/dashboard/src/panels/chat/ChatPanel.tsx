@@ -5,6 +5,7 @@ import { Thread } from './Thread';
 import { Composer } from './Composer';
 import { SessionList } from './SessionList';
 import { Face } from './Face';
+import { PinnedPanels } from './PinnedPanels';
 import { useChatRuntime } from './useChatRuntime';
 import { useIsDesk, useIsPhone } from '@/hooks/useMediaQuery';
 import { useRouteParam } from '@/app/useRoute';
@@ -93,15 +94,15 @@ export default function ChatPanel() {
 
   return (
     <AssistantRuntimeProvider runtime={chat.runtime}>
-      <div className="flex min-h-0 flex-1">
+      <div className="chat-layout flex min-h-0 flex-1">
         {isDesk ? (
-          <aside className="flex w-[220px] shrink-0 flex-col border-r border-line bg-surface">
+          <aside className="chat-sessions flex min-h-0 w-[220px] shrink-0 flex-col border-r border-line bg-surface">
             {project ? <ProjectChip name={projectName} /> : null}
             {list}
           </aside>
         ) : null}
 
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="chat-conversation relative flex min-h-0 min-w-0 flex-1 flex-col">
           {!isDesk ? (
             <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
               <Dialog open={listOpen} onOpenChange={setListOpen}>
@@ -141,9 +142,7 @@ export default function ChatPanel() {
         </div>
 
         {isDesk ? (
-          <aside className="flex w-[240px] shrink-0 flex-col gap-3 border-l border-line bg-surface p-3">
-            <Face />
-          </aside>
+          <PinnedPanels />
         ) : null}
       </div>
     </AssistantRuntimeProvider>

@@ -37,12 +37,8 @@ export function App() {
     <div className="flex h-dvh flex-col overflow-hidden">
       <Topbar />
 
-      {/* Док плаває над вмістом, тож нижній відступ лишаємо тут, один раз,
-          а не в кожному розділі окремо. */}
-      {/* Місце під док лишає CSS за атрибутом data-dock на <html> — саме
-          тому, що док переносний: інакше довелось би протягувати його бік
-          через усі розділи. */}
-      <main className="u-under-dock flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Dock offsets follow data-dock; chat keeps its sidebars full-height. */}
+      <main data-section={section} className="u-under-dock flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <PanelBoundary section={section}>
           <Suspense
             fallback={

@@ -172,16 +172,16 @@
  * немає — інакше збільшений значок упирався б у власну рамку.
  */
 [data-dock='left'] .dock-panel[data-axis='y'] {
-  left: 0;
+  left: 7px;
   right: auto;
   align-items: flex-start;
-  padding: 0.6rem 0 0.6rem 0.6rem;
+  padding: 6px;
 }
 [data-dock='right'] .dock-panel[data-axis='y'] {
-  right: 0;
+  right: 7px;
   left: auto;
   align-items: flex-end;
-  padding: 0.6rem 0.6rem 0.6rem 0;
+  padding: 6px;
 }
 /*
  * Док У ШАПЦІ (бік «зверху»).
@@ -226,10 +226,9 @@
 [data-dock='right'] .dock-label { top: 50%; left: auto; right: calc(100% + 0.5rem); translate: 0 -50%; transform: none; }
 [data-dock='top'] .dock-label { top: auto; bottom: -2rem; }
 
-/* Панель тулиться до свого краю: з лівого боку заокруглення лишаються
-   тільки справа, і навпаки — док виглядає приклеєним, а не загубленим. */
-[data-dock='left'] .dock-panel { border-radius: 0 var(--r-xl) var(--r-xl) 0; border-left: 0; }
-[data-dock='right'] .dock-panel { border-radius: var(--r-xl) 0 0 var(--r-xl); border-right: 0; }
+/* Vertical docks float inside a separated navigation rail. */
+[data-dock='left'] .dock-panel,
+[data-dock='right'] .dock-panel { border-radius: var(--r-lg); box-shadow: none; }
 [data-dock='top'] .dock-panel {
   border-radius: 0 0 var(--r-xl) var(--r-xl);
   border-top: 0;

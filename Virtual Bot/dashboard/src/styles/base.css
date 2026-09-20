@@ -179,23 +179,37 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 }
 
 @layer components {
-  /*
-   * Місце під плаваючий док — з того краю, де він зараз стоїть.
-   *
-   * Атрибут `data-dock` ставить хук useDockSide; типове значення (док ще не
-   * переносили) — низ, тому воно й записане без атрибута.
-   */
-  .u-under-dock { padding-bottom: 76px; }
-  @media (min-width: 640px) { .u-under-dock { padding-bottom: 84px; } }
-
-  /* Зверху док живе В ШАПЦІ, і місце під нього вже зайняте нею — окремий
-     відступ тут додав би порожню смугу над вмістом. */
+  /* Reserve resting dock size; magnification floats over content. */
+  .u-under-dock { padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
   [data-dock='top'] .u-under-dock { padding-bottom: 0; }
-  [data-dock='left'] .u-under-dock { padding-bottom: 0; padding-left: 76px; }
-  [data-dock='right'] .u-under-dock { padding-bottom: 0; padding-right: 76px; }
-  @media (min-width: 640px) {
-    [data-dock='left'] .u-under-dock { padding-left: 84px; }
-    [data-dock='right'] .u-under-dock { padding-right: 84px; }
+  [data-dock='left'] .u-under-dock { padding-bottom: 0; padding-left: 72px; }
+  [data-dock='right'] .u-under-dock { padding-bottom: 0; padding-right: 72px; }
+
+  /* A continuous rail gives vertical navigation its own surface, not a gutter. */
+  [data-dock='left'] .u-under-dock::before,
+  [data-dock='right'] .u-under-dock::before {
+    content: '';
+    position: fixed;
+    top: 56px;
+    bottom: 0;
+    width: 72px;
+    background: var(--c-surface);
+    pointer-events: none;
+  }
+  [data-dock='left'] .u-under-dock::before { left: 0; border-right: 1px solid var(--c-border); }
+  [data-dock='right'] .u-under-dock::before { right: 0; border-left: 1px solid var(--c-border); }
+
+  /* Sidebars reach the bottom; only the composer sits above navigation. */
+  .u-under-dock[data-section='chat'] { padding-bottom: 0; }
+  .chat-conversation { padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); }
+  [data-dock='top'] .chat-conversation,
+  [data-dock='left'] .chat-conversation,
+  [data-dock='right'] .chat-conversation { padding-bottom: 0; }
+  /* Preserve the real 320x240 device viewport inside the compact sidebar. */
+  .pin-screen { width: 192px; height: 144px; }
+  .pin-screen-frame { width: 320px; height: 240px; max-width: none; transform: scale(0.6); transform-origin: top left; }
+  @media (max-width: 759px) {
+    .chat-conversation { padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px)); }
   }
 }
 
