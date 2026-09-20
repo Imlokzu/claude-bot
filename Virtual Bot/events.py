@@ -112,17 +112,24 @@ def publish_reply(text: str, emotion: str) -> None:
     publish({"type": "reply", "text": str(text)[:16000], "emotion": emotion})
 
 
+_TOOL_STATES = ("start", "done", "fail")
+
+
 def publish_tool(tool: str, detail: str = "", state: str = "start") -> None:
     """
-    Бот скористався інструментом. Потрібно, коли тули виконує НЕ панель, а
-    зовнішній мозок (OpenClaw через tools_mcp) — інакше в панелі не було б
-    видно ні що він шукає, ні що взагалі щось робить.
+    The bot used a tool. Needed when tools are executed NOT by the panel but
+    by the external brain (OpenClaw through tools_mcp): without this the panel
+    would show neither what it is looking for nor that it is doing anything.
+
+    "fail" is a state of its own, not a flavour of "done". A tool that raised
+    and a tool that answered look identical in the chat otherwise, and the
+    reader is left believing an answer rests on data that never arrived.
     """
     publish({
         "type": "tool",
         "tool": str(tool)[:60],
         "detail": str(detail)[:160],
-        "state": "done" if state == "done" else "start",
+        "state": state if state in _TOOL_STATES else "start",
     })
 
 

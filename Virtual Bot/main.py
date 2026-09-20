@@ -53,6 +53,7 @@ import brain_context
 import brains
 import chat_store
 import openclaw_models
+from tool_activity import ActivityLog, detail_for, result_failed
 import coding
 import coding_api
 import console_log
@@ -1608,6 +1609,7 @@ async def api_chat(request: Request, req: ChatRequest):
         # не успадковуватися автоматично.
         with _brain_context(sid, clerk_uid), trace_log.bind(turn_id):
             event_queue: asyncio.Queue[dict] = asyncio.Queue()
+            activity = ActivityLog()
 
             # Скільки тексту вже віддали СПРАВЖНІМ стрімом токенів (brains шле delta).
             # Якщо мозок стрімить — НЕ ріжемо готову відповідь на слова вдруге.
@@ -1617,6 +1619,8 @@ async def api_chat(request: Request, req: ChatRequest):
             tag_filter = emotions.StreamTagFilter()
 
             async def emit(event: dict) -> None:
+                if event.get("type") in ("tool_start", "tool_progress", "tool_done", "tool_result", "tool_error"):
+                    event = activity.record(event)
                 if event.get("type") == "delta":
                     visible, found = tag_filter.feed(event.get("chunk") or "")
                     if found:
@@ -1650,7 +1654,9 @@ async def api_chat(request: Request, req: ChatRequest):
                 **_chat_voice_kwargs(req.voice, req.spoken),
             ))
 
+            saved = False
             try:
+                yield f"event: session\ndata: {json.dumps({'session_id': sid})}\n\n"
                 # Читаємо події від тулзів, поки чат виконується
                 while not chat_task.done() or not event_queue.empty():
                     try:
@@ -1667,8 +1673,10 @@ async def api_chat(request: Request, req: ChatRequest):
                 log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
                 _save_history(
                     sid, history, message, reply,
+                    steps=activity.finish(),
                     attachments=req.attachments, participant_name=participant_name,
                 )
+                saved = True
                 asyncio.create_task(_autoname_chat(sid, message, reply))
 
                 # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом)
@@ -1698,7 +1706,7 @@ async def api_chat(request: Request, req: ChatRequest):
                         await asyncio.sleep(0.02)
 
                 yield f"event: emotion\ndata: {json.dumps({'emotion': final_emotion})}\n\n"
-                yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': final_emotion, 'session_id': sid, 'mode': mode, 'model': brains.get_last_model(), 'tool_results': tool_results})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': final_emotion, 'session_id': sid, 'mode': mode, 'model': brains.get_last_model(), 'tool_results': tool_results, 'steps': activity.finish()})}\n\n"
 
                 # Інтеграційний шар після стрімінгу
                 try:
@@ -1721,7 +1729,17 @@ async def api_chat(request: Request, req: ChatRequest):
                     events.publish_emotion("idle")
                 except Exception:  # noqa: BLE001
                     pass
-                yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+                yield f"event: error\ndata: {json.dumps({'error': str(exc), 'steps': activity.finish()})}\n\n"
+            finally:
+                # Disconnecting must not leave an orphaned agent or subscriber.
+                if not chat_task.done():
+                    chat_task.cancel()
+                if not saved:
+                    _save_history(sid, history, message, streamed["text"],
+                                  steps=activity.finish(), attachments=req.attachments,
+                                  participant_name=participant_name)
+                    trace_log.end_turn(error="interrupted")
+                await asyncio.gather(chat_task, return_exceptions=True)
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")
 
@@ -2293,12 +2311,8 @@ _UI_TOOL_NAMES = {"ask_question", "todo_list", "show_choice"}
 
 
 def _tool_detail(args: dict) -> str:
-    """Найінформативніший аргумент виклику — те, що показуємо в панелі."""
-    for key in ("query", "city", "path", "base"):
-        value = args.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+    """Share the same redaction as the per-response activity stream."""
+    return detail_for(args)[:160]
 
 
 @app.post("/api/tools/call")
@@ -2327,14 +2341,20 @@ async def api_tools_call(request: Request, req: ToolCallRequest) -> dict:
         with _brain_context(req.session_id, clerk_uid):
             result = await tools.execute_tool(req.name, req.args)
     except Exception as exc:  # noqa: BLE001 — крок консолі, помилку віддаємо далі
+        if show_generic:
+            events.publish_tool(req.name, detail, "fail")
         trace_log.step("tool", req.name, "fail", f"{type(exc).__name__}: {exc}",
                        (time.perf_counter() - tool_started) * 1000)
         raise
-    trace_log.step("tool", req.name, "ok", detail, (time.perf_counter() - tool_started) * 1000)
+    failed = result_failed(result)
+    trace_log.step("tool", req.name, "fail" if failed else "ok", detail, (time.perf_counter() - tool_started) * 1000)
 
     if show_generic:
+        # A tool that answered "error" did not do its job, and the panel has to
+        # say so: otherwise a reply built on a failed lookup looks as solid as
+        # one built on a real answer.
         try:
-            events.publish_tool(req.name, detail, "done")
+            events.publish_tool(req.name, detail, "fail" if failed else "done")
         except Exception:  # noqa: BLE001
             log.exception("Не вдалося опублікувати подію завершення тулзу")
     return {"tool": req.name, "args": req.args, "result": result}
@@ -2510,6 +2530,15 @@ _WORKSPACE_TOOL_NAMES = {
 }
 
 
+def _workspace_tool_failed(tool: str, detail: str, started: float) -> None:
+    """Close a workspace tool step as failed, so the line does not hang active."""
+    try:
+        events.publish_tool(tool, detail, "fail")
+    except Exception:  # noqa: BLE001 — indication must not break the operation
+        log.exception("Failed to publish workspace tool failure")
+    trace_log.step("tool", tool, "fail", detail, (time.perf_counter() - started) * 1000)
+
+
 def _workspace_call(session_id: str, fn, *args, **kwargs):
     """
     Спільна обгортка: активна сесія + переклад помилок у HTTP-коди.
@@ -2535,10 +2564,13 @@ def _workspace_call(session_id: str, fn, *args, **kwargs):
             trace_log.step("tool", tool, "ok", detail, (time.perf_counter() - started) * 1000)
             return result
     except FileNotFoundError as exc:
+        _workspace_tool_failed(tool, detail, started)
         raise HTTPException(status_code=404, detail=str(exc))
     except (ValueError, FileExistsError, NotADirectoryError, IsADirectoryError) as exc:
+        _workspace_tool_failed(tool, detail, started)
         raise HTTPException(status_code=400, detail=str(exc))
     except OSError as exc:
+        _workspace_tool_failed(tool, detail, started)
         trace_log.step("tool", tool, "fail", f"{type(exc).__name__}: {exc}",
                        (time.perf_counter() - started) * 1000)
         raise HTTPException(status_code=500, detail=f"Помилка файлової системи: {type(exc).__name__}")

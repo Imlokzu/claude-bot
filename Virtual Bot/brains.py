@@ -35,6 +35,7 @@ import trace_log
 from emotions import ALLOWED_EMOTIONS, extract_emotion, guess_emotion
 from memory import append_user_profile, find_relevant_notes, load_user_profile
 import openclaw_models
+from openclaw_activity import GatewayActivity
 import tools as tool_registry
 
 # Тип історії сесії: [{'role': 'user'|'assistant', 'content': str}, ...]
@@ -694,15 +695,28 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
 
     # Справжній стрімінг токенів (з відкотом на звичайний виклик)
     if emit is not None:
+        observed_work = False
+
+        async def tracked_emit(event):
+            nonlocal observed_work
+            if event.get("type") == "delta" or str(event.get("type", "")).startswith("tool_"):
+                observed_work = True
+            await emit(event)
+
         try:
-            text = await _stream_openai_compatible(
-                url, headers, payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env,
-                emit=emit, read_timeout=cfg.CHAT_OPENCLAW_WALL_S,
-            )
+            async with GatewayActivity(tracked_emit) as activity:
+                text = await _stream_openai_compatible(
+                    url, {**headers, "x-openclaw-session-key": activity.session_key},
+                    payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env,
+                    emit=tracked_emit, read_timeout=cfg.CHAT_OPENCLAW_WALL_S,
+                )
             return text, []
         except _NeedsTools:
             log.info("OpenClaw потребує тулзів — переходжу на нестрімовий виклик")
         except Exception as exc:  # noqa: BLE001
+            # Replaying a request after an observed tool could repeat a write.
+            if observed_work:
+                raise
             log.warning("Стрімінг OpenClaw не вдався (%s) — звичайний виклик", type(exc).__name__)
 
     return await _call_openai_compatible_with_tools(
