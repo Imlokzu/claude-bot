@@ -109,6 +109,31 @@ class ChatImageTests(unittest.TestCase):
         self.assertEqual(reply, "Бачу")
         self.assertEqual(mode, "openclaw")
 
+    def test_openclaw_session_key_is_forwarded(self) -> None:
+        captured = {}
+
+        async def fake_call(*args, **kwargs):
+            captured.update(args[1])
+            return "[емоція:idle] ok", []
+
+        with (
+            patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
+            patch.object(brains, "_call_openai_compatible_with_tools", side_effect=fake_call),
+        ):
+            result, _tools = asyncio.run(
+                brains.chat_openclaw("Привіт", "system", [], session_key="virtual-bot:stable")
+            )
+
+        self.assertEqual(result, "[емоція:idle] ok")
+        self.assertEqual(captured["x-openclaw-session-key"], "virtual-bot:stable")
+
+    def test_openclaw_session_key_is_stable_and_non_identifying(self) -> None:
+        first = main._openclaw_session_key("chat-1", "user-1")
+        self.assertEqual(first, main._openclaw_session_key("chat-1", "user-1"))
+        self.assertNotEqual(first, main._openclaw_session_key("chat-2", "user-1"))
+        self.assertNotIn("chat-1", first)
+        self.assertNotIn("user-1", first)
+
     def test_image_goes_straight_to_vision_model(self) -> None:
         """
         З картинками vision-модель питається ПЕРШОЮ, а не як fallback:

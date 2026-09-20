@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -1265,6 +1266,12 @@ def _get_or_create_session_id(req: ChatRequest) -> str:
     return uuid.uuid4().hex[:16]
 
 
+def _openclaw_session_key(session_id: str, clerk_user_id: str) -> str:
+    """Derive a stable, non-identifying Gateway key for one chat thread."""
+    digest = hashlib.sha256(f"{clerk_user_id}:{session_id}".encode()).hexdigest()[:32]
+    return f"virtual-bot:{digest}"
+
+
 def _get_history(sid: str, req_history: list[dict[str, str]]) -> list[dict[str, str]]:
     """Історія: спершу явно передана, інакше з in-memory сесії."""
     if req_history:
@@ -1554,6 +1561,7 @@ async def api_chat(request: Request, req: ChatRequest):
 
     with _brain_context(sid, clerk_uid):
         history = _get_history(sid, req.history)
+        openclaw_session_key = _openclaw_session_key(sid, clerk_uid)
         # Зберігаємо факти з цього повідомлення ДО відповіді (незалежно від мозку)
         await asyncio.to_thread(_extract_and_save_facts, message)
 
@@ -1564,6 +1572,7 @@ async def api_chat(request: Request, req: ChatRequest):
                         agent_message, history, **_chat_image_kwargs(images),
                         **_chat_reasoning_kwargs(req.reasoning_effort),
                         **_chat_voice_kwargs(req.voice, req.spoken),
+                        session_key=openclaw_session_key,
                     )
                 except Exception as exc:  # noqa: BLE001 — хід треба закрити, помилку віддаємо далі
                     trace_log.end_turn(error=f"{type(exc).__name__}: {exc}")
@@ -1652,6 +1661,7 @@ async def api_chat(request: Request, req: ChatRequest):
                 agent_message, history, emit=emit, **_chat_image_kwargs(images),
                 **_chat_reasoning_kwargs(req.reasoning_effort),
                 **_chat_voice_kwargs(req.voice, req.spoken),
+                session_key=openclaw_session_key,
             ))
 
             saved = False

@@ -122,7 +122,8 @@ class MemoryPersistenceTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("Subaru", observed["prompt"])
-        self.assertEqual(observed["kwargs"], {"reasoning_effort": "high"})
+        self.assertEqual(observed["kwargs"]["reasoning_effort"], "high")
+        self.assertTrue(observed["kwargs"]["session_key"].startswith("virtual-bot:"))
 
         owner_hash = hashlib.sha256(brain_context.DEFAULT_BRAIN_ID.encode()).hexdigest()
         profile = (self.runtime / owner_hash / "brain" / "people" / "user.md").read_text()

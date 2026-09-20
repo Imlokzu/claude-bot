@@ -662,7 +662,14 @@ def _openclaw_note_success() -> None:
     _openclaw_failed_at_mono = None
 
 
-async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, emit=None, images=None) -> tuple[str, list[dict]]:
+async def chat_openclaw(
+    message: str,
+    system_prompt: str,
+    history: ChatHistory,
+    emit=None,
+    images=None,
+    session_key: str | None = None,
+) -> tuple[str, list[dict]]:
     """Питає OpenClaw gateway (токен — секрет, у відповіді/логах не світимо)."""
     token = cfg.get_openclaw_token()
     if not token:
@@ -687,6 +694,8 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
             else openclaw_models.chat_headers()
         ),
     }
+    if session_key:
+        headers["x-openclaw-session-key"] = session_key
     url = f"{cfg.OPENCLAW_BASE_URL}/v1/chat/completions"
     trust_env = cfg.httpx_trust_env(cfg.OPENCLAW_BASE_URL)
 
@@ -701,7 +710,7 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
             await emit(event)
 
         try:
-            async with GatewayActivity(tracked_emit) as activity:
+            async with GatewayActivity(tracked_emit, session_key=session_key) as activity:
                 text = await _stream_openai_compatible(
                     url, {**headers, "x-openclaw-session-key": activity.session_key},
                     payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env,
@@ -1723,6 +1732,7 @@ async def chat(
     images: list[ImageAttachment] | None = None,
     voice: bool = False,
     spoken: bool = False,
+    session_key: str | None = None,
 ) -> tuple[str, str, str, list[dict]]:
     """
     Обробляє повідомлення користувача. Повертає (reply, emotion, mode, tool_results).
@@ -1754,7 +1764,14 @@ async def chat(
             started = time.perf_counter()
             try:
                 raw, tool_results = await asyncio.wait_for(
-                    chat_openclaw(message, system_prompt, history, emit=emit, images=images),
+                    chat_openclaw(
+                        message,
+                        system_prompt,
+                        history,
+                        emit=emit,
+                        images=images,
+                        session_key=session_key,
+                    ),
                     # Стеля на ВСЮ відповідь. Мовчання gateway ловить коротший
                     # мережевий таймаут усередині (CHAT_OPENCLAW_TIMEOUT_S);
                     # тут — лише запобіжник від нескінченної відповіді, інакше

@@ -86,6 +86,10 @@ class GatewayActivityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event["call_id"], "r1:call1")
         self.assertEqual(event["input"], {"command": "pwd"})
 
+    async def test_durable_session_key_is_preserved(self):
+        observer = GatewayActivity(AsyncMock(), session_key="virtual-bot:stable")
+        self.assertEqual(observer.session_key, "virtual-bot:stable")
+
     async def test_native_progress_failure_and_lifecycle(self):
         emit = AsyncMock()
         observer = GatewayActivity(emit)
@@ -159,7 +163,7 @@ class ChatActivityIntegrationTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         import main
 
-        async def chat(message, history, emit=None):
+        async def chat(message, history, emit=None, **kwargs):
             await emit({"type": "tool_start", "tool": "read", "call_id": "one", "input": {"path": "note.md"}})
             await emit({"type": "tool_done", "tool": "read", "call_id": "one", "result": {"text": "data"}})
             await emit({"type": "tool_start", "tool": "read", "call_id": "two"})
@@ -183,7 +187,7 @@ class ChatActivityIntegrationTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         import main
 
-        async def chat(message, history, emit=None):
+        async def chat(message, history, emit=None, **kwargs):
             await emit({"type": "tool_start", "tool": "read", "input": {"path": "note.md"}})
             raise RuntimeError('test failure')
 

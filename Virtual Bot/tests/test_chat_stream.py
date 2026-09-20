@@ -28,7 +28,7 @@ class ChatStreamEmotionTests(unittest.TestCase):
     """
 
     def _stream(self, chunks: list[str], reply: str, emotion: str = "searching"):
-        async def fake_chat(message, history, emit=None):
+        async def fake_chat(message, history, emit=None, **kwargs):
             for chunk in chunks:
                 await emit({"type": "delta", "chunk": chunk})
             return reply, emotion, "test", []

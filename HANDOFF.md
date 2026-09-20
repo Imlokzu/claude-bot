@@ -299,6 +299,12 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 - The app backend now routes both text and image turns through OpenClaw. Vision
   sends an explicit `x-openclaw-model` for the configured image model; no
   `20128` Omni request is made.
+- Virtual Bot chat requests now derive a stable, non-identifying
+  `virtual-bot:<hash>` Gateway session key from the user and chat id. Previously
+  every streamed turn used a random key, which prevented OpenClaw from keeping
+  one cache lineage and created unnecessary short-lived sessions. The request
+  still carries the bounded application history, while OpenClaw can now reuse
+  the stable session/cache path across turns.
 - OpenClaw was updated from 2026.9.1 to 2026.9.5. OpenCode Go now reaches its
   provider, which returns HTTP 403 because this account has no active Go
   subscription; OpenClaw correctly falls back to Regolo. With an active Go

@@ -1,9 +1,10 @@
 """Observe native Gateway tool events alongside the existing HTTP token stream.
 
-The subscription is established BEFORE sending the chat request. A random
-Gateway session key per request prevents concurrent chats/background runs from
-being mistaken for this response. Full conversation history still goes over HTTP.
-Protocol verified against the installed OpenClaw gateway/protocol documentation.
+The subscription is established BEFORE sending the chat request. Durable chat
+threads provide a stable key so OpenClaw can reuse their cache lineage; callers
+without a durable session still get an isolated random key. Full conversation
+history continues to go over HTTP. Protocol verified against the installed
+OpenClaw gateway/protocol documentation.
 """
 
 from __future__ import annotations
@@ -22,9 +23,11 @@ log = logging.getLogger("virtual_bot.openclaw_activity")
 
 
 class GatewayActivity:
-    def __init__(self, emit):
+    def __init__(self, emit, session_key: str | None = None):
         self.emit = emit
-        self.session_key = "virtual-bot:" + uuid.uuid4().hex
+        # Keep the random fallback for short-lived callers that do not own a
+        # durable conversation id.
+        self.session_key = session_key or "virtual-bot:" + uuid.uuid4().hex
         self.ws = None
         self.task = None
         self.terminal = asyncio.Event()

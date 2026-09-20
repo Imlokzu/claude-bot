@@ -393,7 +393,7 @@ class BrainApiIsolationTests(unittest.TestCase):
             self.assertNotIn("topics/note.md", bob_files)
 
     def test_chat_logs_to_isolated_brain(self) -> None:
-        async def fake_chat(message, history, emit=None):
+        async def fake_chat(message, history, emit=None, **kwargs):
             prompt = main.brains.build_system_prompt(message)
             return f"[емоція:happy] reply\n{prompt}", "happy", "test", []
 
@@ -430,7 +430,7 @@ class BrainApiIsolationTests(unittest.TestCase):
 
         observed: dict[str, str] = {}
 
-        async def fake_chat(message, history, emit=None):
+        async def fake_chat(message, history, emit=None, **kwargs):
             observed[message] = main.brains.build_system_prompt(message)
             return f"reply for {message}", "happy", "test", []
 
