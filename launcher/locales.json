@@ -17,7 +17,16 @@
     "busy": "Цей сервіс уже запускається. Зачекайте й повторіть.",
     "port_busy": "Порт {port} зайнятий іншим або ще не готовим сервісом. Чужі процеси не зупиняю.",
     "terminal": "Номер (Enter — вихід): ",
-    "error": "Помилка: {message}"
+    "error": "Помилка: {message}",
+    "gui.heading": "Що запускаємо?",
+    "gui.subtitle": "Обери сервіс. Якщо він уже працює — просто відкрию.",
+    "gui.idle": "Готовий до запуску",
+    "gui.starting": "Запускаю: {name}…",
+    "gui.logs": "Логи",
+    "gui.quit": "Вийти",
+    "gui.missing": "Папку проєкту не знайдено. Відкрий Launch Bot.command у проєкті.",
+    "gui.keepOpen": "Дочекайся завершення запуску.",
+    "gui.serviceHint": "Сервіси працюватимуть і після закриття цього вікна."
   },
   "en": {
     "title": "Claude Bot · launcher",
@@ -37,6 +46,15 @@
     "busy": "This service is already starting. Wait and try again.",
     "port_busy": "Port {port} belongs to another service or is not ready yet. No processes were stopped.",
     "terminal": "Number (Enter to exit): ",
-    "error": "Error: {message}"
+    "error": "Error: {message}",
+    "gui.heading": "What shall we start?",
+    "gui.subtitle": "Choose a service. If it is already running, just open it.",
+    "gui.idle": "Ready to launch",
+    "gui.starting": "Starting: {name}…",
+    "gui.logs": "Logs",
+    "gui.quit": "Quit",
+    "gui.missing": "Project folder not found. Open Launch Bot.command inside the project.",
+    "gui.keepOpen": "Wait for the current launch to finish.",
+    "gui.serviceHint": "Services keep running after this window closes."
   }
 }

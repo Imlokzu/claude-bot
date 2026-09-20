@@ -252,3 +252,21 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   HTTP smoke: dashboard/screen/OpenClaw health 200; memory path traversal 400 in
   an isolated loopback server with lifespan disabled. That test server and the
   test browser were stopped; requested production services remain running.
+
+### Native launcher window follow-up
+
+- Replaced the macOS no-argument launcher entry with a persistent AppKit window:
+  six service buttons, asynchronous launch feedback, visible errors and Logs.
+- The direct `launcher/build/Claude Bot Launcher.app` opens without Terminal.
+  `Launch Bot.command` builds/opens it; existing CLI arguments remain unchanged.
+  Windows/Linux pickers are unchanged. The native binary is local build output,
+  not a standalone distribution of the repository or its Python environments.
+- Shared Ukrainian/English locale keys drive the GUI. Minimal native typography
+  and flat warm surfaces follow the minimalist-ui direction, with no animation.
+- Independent review fixed deployment-target/cache invalidation and screenshot
+  false positives. Build explicitly targets macOS 11.0 on the build host's arch.
+- Validation: 415 Python tests passed with opt-in native GUI checks enabled,
+  excluding the external Regolo ASR live test. GUI tests exercise both locales,
+  real button-to-helper success/error paths, busy guards, and screenshot failures.
+  Native screenshots were inspected; isolated HTTP smoke returned 200 for app
+  and assets, 400 for memory traversal. The smoke server was shut down.
