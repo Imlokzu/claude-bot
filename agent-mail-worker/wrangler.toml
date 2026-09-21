@@ -1,0 +1,16 @@
+name = "agent-mail-worker"
+main = "src/index.js"
+compatibility_date = "2024-09-01"
+account_id = "395d94f0006b619bf9008d3cd0ca3ccf"
+
+routes = [
+  { pattern = "mail.waveio.me/*", zone_name = "waveio.me" }
+]
+
+[[kv_namespaces]]
+binding = "AG_MAILBOX"
+id = "0266ff7e479e4a1fae1e8508639e6edc"
+
+[vars]
+FORWARD_COPY = "lokzuhd@gmail.com"
+API_KEY = "agmail_secret_lokzu_2026"
