@@ -18,12 +18,14 @@ export function DialogContent({
   description,
   side = 'center',
   className,
+  bodyClassName,
   children,
 }: {
   title: string;
   description?: string;
   side?: 'center' | 'bottom';
   className?: string;
+  bodyClassName?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -65,7 +67,9 @@ export function DialogContent({
             </Button>
           </RadixDialog.Close>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5 sm:py-4">{children}</div>
+        <div className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5 sm:py-4', bodyClassName)}>
+          {children}
+        </div>
       </RadixDialog.Content>
     </RadixDialog.Portal>
   );

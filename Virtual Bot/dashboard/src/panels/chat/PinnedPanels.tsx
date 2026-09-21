@@ -4,6 +4,7 @@ import * as Popover from '@radix-ui/react-popover';
 import { Check, Eye, Folder, Monitor, Plus, ArrowUpRight, X } from 'lucide-react';
 import { get } from '@/lib/api';
 import { t } from '@/locales/workspace';
+import { cn } from '@/lib/cn';
 import { Face } from './Face';
 import { PIN_IDS, PINS_KEY, parsePins, type PinId } from './pins';
 
@@ -57,7 +58,7 @@ function VisionPin() {
   );
 }
 
-export function PinnedPanels() {
+export function PinnedPanels({ embedded = false }: { embedded?: boolean }) {
   const [pins, setPins] = useState<PinId[]>(() => {
     try { return parsePins(localStorage.getItem(PINS_KEY)); } catch { return []; }
   });
@@ -68,7 +69,13 @@ export function PinnedPanels() {
     current.includes(id) ? current.filter((pin) => pin !== id) : [...current, id]);
 
   return (
-    <aside aria-label={t('pins.title')} className="chat-pins flex min-h-0 w-[240px] shrink-0 flex-col border-l border-line bg-surface">
+    <aside
+      aria-label={t('pins.title')}
+      className={cn(
+        'chat-pins flex min-h-0 shrink-0 flex-col bg-surface',
+        embedded ? 'size-full' : 'w-[240px] border-l border-line',
+      )}
+    >
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
         <Face />
         {pins.map((id) => {

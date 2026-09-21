@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AssistantRuntimeProvider } from '@assistant-ui/react';
-import { MessagesSquare, X } from 'lucide-react';
+import { MessagesSquare, PanelRightOpen, X } from 'lucide-react';
 import { Thread } from './Thread';
 import { Composer } from './Composer';
 import { SessionList } from './SessionList';
@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import { get } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/Dialog';
+import { t as workspaceT } from '@/locales/workspace';
 
 /*
  * Чат. Три колонки на столі: розмови | стрічка | обличчя.
@@ -45,6 +46,7 @@ export default function ChatPanel() {
   const isDesk = useIsDesk();
   const chat = useChatRuntime();
   const [listOpen, setListOpen] = useState(false);
+  const [panelsOpen, setPanelsOpen] = useState(false);
 
   useEffect(() => {
     window.__vbotSendMessage = (text: string) => {
@@ -133,6 +135,21 @@ export default function ChatPanel() {
                 </DialogContent>
               </Dialog>
               <div className="flex-1" />
+              <Dialog open={panelsOpen} onOpenChange={setPanelsOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label={workspaceT('pins.title')}>
+                    <PanelRightOpen />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent
+                  title={workspaceT('pins.title')}
+                  side={isPhone ? 'bottom' : 'center'}
+                  className="h-[min(78dvh,680px)] p-0"
+                  bodyClassName="p-0 sm:p-0"
+                >
+                  <PinnedPanels embedded />
+                </DialogContent>
+              </Dialog>
               <Face compact className="h-9 w-16 shrink-0" />
             </div>
           ) : null}
