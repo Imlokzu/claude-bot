@@ -388,3 +388,6 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   browser smoke verified 390px pins sheet, 320/390/768/1024/1180px overflow and
   a real touch swipe from chat to memory. Generated `static/dash` assets were
   rebuilt after each UI change.
+- Final touch review also covers the 320px toolbar shrink case, 44px pin
+  actions/footer controls, and keyboard focus containment in Command Palette;
+  the independent reviewer’s initial P1 findings were fixed and rechecked.
