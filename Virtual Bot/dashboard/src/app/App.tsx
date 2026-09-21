@@ -10,6 +10,8 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useRoute } from './useRoute';
 import { WorkspacePreviewDock } from '@/components/shell/WorkspacePreviewDock';
 import { BotUiOverlay } from '@/components/shell/BotUiOverlay';
+import { SECTION_IDS } from './sections';
+import { useSwipeNavigation } from '@/hooks/useSwipeNavigation';
 
 /*
  * Розділи вантажаться ліниво. Це не мікрооптимізація: чат тягне за собою
@@ -32,6 +34,11 @@ export function App() {
   const [section, navigate] = useRoute();
   const accent = useAccentColor();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const swipeHandlers = useSwipeNavigation({
+    current: section,
+    onNavigate: navigate,
+    sectionIds: SECTION_IDS,
+  });
 
   const Panel = PANELS[section] ?? PANELS.overview;
 
@@ -42,7 +49,12 @@ export function App() {
       <Topbar />
 
       {/* Dock offsets follow data-dock; chat keeps its sidebars full-height. */}
-      <main data-section={section} className="u-under-dock flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <main
+        {...swipeHandlers}
+        data-section={section}
+        data-swipe-shell=""
+        className="u-under-dock flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      >
         <PanelBoundary section={section}>
           <Suspense
             fallback={
