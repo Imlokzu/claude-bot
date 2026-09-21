@@ -72,7 +72,7 @@ def _proxy_is_reachable(value: str) -> bool:
         return False
 
 
-def service_environment() -> dict[str, str]:
+def service_environment(service: str = "") -> dict[str, str]:
     """Copy the GUI environment, dropping dead local proxies only.
 
     Keep a reachable or remote proxy for external model/API traffic. Remove
@@ -84,6 +84,12 @@ def service_environment() -> dict[str, str]:
     for key in proxy_keys:
         if not _proxy_is_reachable(environment[key]):
             environment.pop(key, None)
+    # The bundled launcher serves the dashboard only on loopback. Requiring a
+    # second cloud login there blocks local tools and galleries even though the
+    # user already authenticated to OpenClaw. Explicit env still wins so a
+    # developer can test Clerk locally with CLERK_DISABLED=0.
+    if service == "web":
+        environment.setdefault("CLERK_DISABLED", "1")
     return environment
 
 
@@ -186,7 +192,7 @@ def start_service(service: str) -> None:
         with log_path.open("ab") as log:
             process = subprocess.Popen(command, cwd=directory, stdin=subprocess.DEVNULL,
                                        stdout=log, stderr=subprocess.STDOUT,
-                                       env=service_environment(), **options)
+                                       env=service_environment(service), **options)
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if healthy(service):

@@ -110,6 +110,14 @@ def test_service_environment_keeps_reachable_proxy(monkeypatch):
     assert launcher.service_environment()["HTTP_PROXY"] == "http://127.0.0.1:9"
 
 
+def test_web_launcher_defaults_to_local_auth(monkeypatch):
+    monkeypatch.setattr(launcher.os, "environ", {})
+    assert launcher.service_environment("web")["CLERK_DISABLED"] == "1"
+
+    monkeypatch.setattr(launcher.os, "environ", {"CLERK_DISABLED": "0"})
+    assert launcher.service_environment("web")["CLERK_DISABLED"] == "0"
+
+
 def test_posix_cleanup_targets_owned_group_even_after_leader_exits(monkeypatch):
     process = MagicMock(pid=12345)
     process.poll.return_value = 0
