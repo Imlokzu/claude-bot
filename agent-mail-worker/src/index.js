@@ -173,18 +173,27 @@ export default {
       );
     }
 
-    // Auth check
-    const authHeader = request.headers.get("Authorization") || "";
-    const xApiKey = request.headers.get("X-API-Key") || "";
-    const queryKey = url.searchParams.get("key") || "";
+    // If this is an agent send endpoint, let its dedicated handler perform agent token validation
+    const isSendEndpoint = url.pathname === "/api/send" || url.pathname === "/v1/send";
 
-    const providedKey = authHeader.replace(/^Bearer\s+/i, "") || xApiKey || queryKey;
-    if (env.API_KEY && providedKey !== env.API_KEY) {
-      return Response.json(
-        { error: "Unauthorized: invalid API key" },
-        { status: 401, headers: corsHeaders }
-      );
+    // General auth check for inbox / OTP management endpoints
+    if (!isSendEndpoint) {
+      const authHeader = request.headers.get("Authorization") || "";
+      const xApiKey = request.headers.get("X-API-Key") || "";
+      const queryKey = url.searchParams.get("key") || "";
+
+      const providedKey = authHeader.replace(/^Bearer\s+/i, "") || xApiKey || queryKey;
+      const validAdminKey = env.API_KEY;
+      const validAgentToken = env.DEFAULT_AGENT_TOKEN;
+
+      if (validAdminKey && providedKey !== validAdminKey && providedKey !== validAgentToken) {
+        return Response.json(
+          { error: "Unauthorized: invalid API key" },
+          { status: 401, headers: corsHeaders }
+        );
+      }
     }
+
 
     // GET /api/inbox?to=lokzu@ag.waveio.me
     if (url.pathname === "/api/inbox" && request.method === "GET") {
@@ -294,6 +303,123 @@ export default {
       return Response.json({ success: true, message: "Inbox cleared" }, { headers: corsHeaders });
     }
 
+    // POST /api/send or /v1/send — Secure outbound email gateway for AI agents
+    if ((url.pathname === "/api/send" || url.pathname === "/v1/send") && request.method === "POST") {
+      // 1. Validate agent token
+      const agentToken = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "") ||
+                         request.headers.get("X-Agent-Token") || "";
+      const validToken = env.DEFAULT_AGENT_TOKEN || "ag_tok_lokzu_sec_2026";
+      
+      if (!agentToken || agentToken !== validToken) {
+        return Response.json(
+          { error: "Unauthorized: invalid agent token. The agent does not have permission to send emails." },
+          { status: 401, headers: corsHeaders }
+        );
+      }
+
+      // 2. Parse request payload from agent
+      let payload = {};
+      try {
+        payload = await request.json();
+      } catch (err) {
+        return Response.json({ error: "Invalid JSON body" }, { status: 400, headers: corsHeaders });
+      }
+
+      const to = (payload.to || "").trim();
+      const subject = (payload.subject || "Message from AI Agent").trim();
+      const body = payload.body || payload.text || "";
+      const htmlBody = payload.html || "";
+
+      if (!to || !to.includes("@")) {
+        return Response.json({ error: "Missing or invalid recipient email ('to')" }, { status: 400, headers: corsHeaders });
+      }
+      if (!body && !htmlBody) {
+        return Response.json({ error: "Email body or text cannot be empty" }, { status: 400, headers: corsHeaders });
+      }
+
+      // 3. Resolve agent identity
+      const agentName = payload.sender_name || "Lokzu (AI Agent)";
+      const agentEmail = (payload.from_agent || "lokzu@ag.waveio.me").toLowerCase().trim();
+      const brevoApiKey = env.BREVO_API_KEY;
+      const verifiedSender = env.DEFAULT_SENDER_EMAIL || "noreply@waveio.me";
+
+      if (!brevoApiKey) {
+        return Response.json({ error: "BREVO_API_KEY secret is not configured in worker" }, { status: 500, headers: corsHeaders });
+      }
+
+      // 4. Construct rich HTML if not explicitly provided
+      const finalHtml = htmlBody || `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; background: #0f172a; color: #f8fafc; border-radius: 14px; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b;">
+          <div style="margin-bottom: 16px; border-bottom: 1px solid #334155; padding-bottom: 12px;">
+            <span style="font-size: 12px; color: #38bdf8; font-weight: 600; text-transform: uppercase;">Лист від ШІ-агента • ${agentEmail}</span>
+            <h2 style="margin: 8px 0 0 0; color: #ffffff; font-size: 20px;">${subject}</h2>
+          </div>
+          <div style="font-size: 15px; line-height: 1.6; color: #cbd5e1; white-space: pre-wrap;">${body}</div>
+          <div style="margin-top: 24px; padding-top: 14px; border-top: 1px solid #1e293b; font-size: 12px; color: #64748b;">
+            Відправлено агентом <b>${agentName}</b> через шлюз send.waveio.me. Відповісти: <a href="mailto:${agentEmail}" style="color: #38bdf8;">${agentEmail}</a>
+          </div>
+        </div>
+      `.trim();
+
+      // 5. Send via Brevo API
+      const brevoPayload = {
+        sender: { name: agentName, email: verifiedSender },
+        replyTo: { name: agentName, email: agentEmail },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: finalHtml,
+      };
+
+      try {
+        const brevoResp = await fetch("https://api.brevo.com/v3/smtp/email", {
+          method: "POST",
+          headers: {
+            "api-key": brevoApiKey,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(brevoPayload),
+        });
+
+        const brevoData = await brevoResp.json();
+        if (!brevoResp.ok) {
+          return Response.json(
+            { error: "Brevo delivery failed", status: brevoResp.status, details: brevoData },
+            { status: 502, headers: corsHeaders }
+          );
+        }
+
+        // Store in sent history in KV
+        const sentRecord = {
+          message_id: brevoData.messageId,
+          agent_email: agentEmail,
+          to,
+          subject,
+          snippet: body.substring(0, 200),
+          sent_at: new Date().toISOString(),
+        };
+
+        await env.AG_MAILBOX.put(
+          `sent:${agentEmail}:${Date.now()}`,
+          JSON.stringify(sentRecord),
+          { expirationTtl: 60 * 60 * 24 * 30 }
+        );
+
+        return Response.json(
+          {
+            success: true,
+            message_id: brevoData.messageId,
+            from: agentEmail,
+            to,
+            subject,
+          },
+          { headers: corsHeaders }
+        );
+      } catch (err) {
+        return Response.json({ error: err.message }, { status: 500, headers: corsHeaders });
+      }
+    }
+
     return Response.json({ error: "Not found" }, { status: 404, headers: corsHeaders });
+
   },
 };
