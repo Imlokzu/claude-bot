@@ -63,17 +63,12 @@ test('hidden tabs release their stream and reconnect only when visible', async (
 
   globalThis.EventSource = FakeEventSource;
   globalThis.document = new EventTarget();
-  Object.defineProperty(globalThis.document, 'hidden', { value: true, writable: true });
+  Object.defineProperty(globalThis.document, 'hidden', { value: false, writable: true });
   globalThis.window = { location: { origin: 'http://127.0.0.1:8100' } };
 
   try {
     const { subscribe } = await import(`../src/lib/events.ts?visibility=${Date.now()}`);
     const stop = subscribe(() => {});
-    await Promise.resolve();
-    assert.equal(streams.length, 0);
-
-    globalThis.document.hidden = false;
-    globalThis.document.dispatchEvent(new Event('visibilitychange'));
     await Promise.resolve();
     await Promise.resolve();
     assert.equal(streams.length, 1);
@@ -83,7 +78,15 @@ test('hidden tabs release their stream and reconnect only when visible', async (
     globalThis.document.dispatchEvent(new Event('visibilitychange'));
     assert.equal(streams[0].closed, true);
 
+    globalThis.document.hidden = false;
+    globalThis.document.dispatchEvent(new Event('visibilitychange'));
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(streams.length, 2);
+    assert.equal(streams[1].closed, false);
+
     stop();
+    assert.equal(streams[1].closed, true);
   } finally {
     globalThis.EventSource = previousEventSource;
     globalThis.document = previousDocument;

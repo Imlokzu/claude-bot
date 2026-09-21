@@ -48,65 +48,69 @@ function setConnected(value: boolean): void {
 }
 
 async function connect(): Promise<void> {
-  const url = await authStreamUrl('/api/events');
-  // The last listener may have unsubscribed, or this tab may have become
-  // hidden, while the auth token was loading.
-  if (!shouldOpen()) return;
-
-  const es = new EventSource(url);
-  source = es;
-
-  es.onopen = () => {
-    attempt = 0;
-    setConnected(true);
-  };
-
-  es.onmessage = (message) => {
-    let payload: BotEvent;
-    try {
-      payload = JSON.parse(message.data);
-    } catch {
-      return; // keep-alive або побитий кадр — мовчки пропускаємо
-    }
-    listeners.forEach((fn) => {
-      try {
-        fn(payload);
-      } catch (error) {
-        // Один зламаний підписник не має гасити стрічку для решти.
-        console.error('Підписник подій кинув помилку', error);
-      }
-    });
-  };
-
-  es.onerror = () => {
-    if (source !== es) {
-      es.close();
-      return;
-    }
-    setConnected(false);
-    es.close();
-    source = null;
+  try {
+    const url = await authStreamUrl('/api/events');
+    // The last listener may have unsubscribed, or this tab may have become
+    // hidden, while the auth token was loading.
     if (!shouldOpen()) return;
-    // Відступ із межею: бекенд міг перезапуститись, і довбати його щосекунди
-    // сенсу немає, але й чекати хвилину користувач не має.
-    attempt = Math.min(attempt + 1, 5);
-    const delay = Math.min(500 * 2 ** attempt, 10_000);
-    retryTimer = setTimeout(() => {
-      retryTimer = null;
-      void open();
-    }, delay);
-  };
+
+    const es = new EventSource(url);
+    source = es;
+
+    es.onopen = () => {
+      attempt = 0;
+      setConnected(true);
+    };
+
+    es.onmessage = (message) => {
+      let payload: BotEvent;
+      try {
+        payload = JSON.parse(message.data);
+      } catch {
+        return; // keep-alive або побитий кадр — мовчки пропускаємо
+      }
+      listeners.forEach((fn) => {
+        try {
+          fn(payload);
+        } catch (error) {
+          // Один зламаний підписник не має гасити стрічку для решти.
+          console.error('Підписник подій кинув помилку', error);
+        }
+      });
+    };
+
+    es.onerror = () => {
+      if (source !== es) {
+        es.close();
+        return;
+      }
+      setConnected(false);
+      es.close();
+      source = null;
+      if (!shouldOpen()) return;
+      // Відступ із межею: бекенд міг перезапуститись, і довбати його щосекунди
+      // сенсу немає, але й чекати хвилину користувач не має.
+      attempt = Math.min(attempt + 1, 5);
+      const delay = Math.min(500 * 2 ** attempt, 10_000);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void open();
+      }, delay);
+    };
+  } catch {
+    setConnected(false);
+  } finally {
+    // Clear before this async attempt resolves so a listener added in the next
+    // microtask can start a fresh connection instead of reusing a dead attempt.
+    opening = null;
+  }
 }
 
 function open(): Promise<void> {
   if (source || !shouldOpen()) return Promise.resolve();
   // Several widgets mount in the same React commit. Keep the asynchronous
   // token lookup single-flight so they cannot each open their own SSE stream.
-  if (!opening) {
-    opening = connect().finally(() => {
-      opening = null;
-    });
-  }
+  if (!opening) opening = connect();
   return opening;
 }
 
