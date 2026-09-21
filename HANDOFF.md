@@ -350,3 +350,9 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   of navigating away. Text and Markdown files reuse CodeMirror for inline edits
   and save back to workspace; images and HTML render as previews. Closing the
   dock leaves the conversation untouched.
+- Chat tables now establish a real minimum width and scroll inside the message;
+  the scroll-to-current control sits above the composer as a labelled pill.
+  Conversations are grouped into Today / This week / This month / Earlier,
+  with day-relative timestamps for the last week. Global `ask_question` and
+  `show_choice` UI events now render an actionable overlay that sends the
+  selected or custom answer back through the active chat runtime.

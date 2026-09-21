@@ -32,7 +32,14 @@ export function DataTable({ columns, rows, align, className }: DataTableProps) {
   const JUSTIFY = { left: "flex-start", center: "center", right: "flex-end" } as const;
   const at = (i: number) => JUSTIFY[align?.[i] ?? "left"];
   return (
-    <div className={styles.tbl + (className ? " " + className : "")}>
+    <div
+      className={styles.tbl + (className ? " " + className : "")}
+      style={columns.length >= 4 ? {
+        width: `${Math.max(560, columns.length * 150)}px`,
+        minWidth: `${Math.max(560, columns.length * 150)}px`,
+        maxWidth: 'none',
+      } : undefined}
+    >
       <div className={styles.tblHead}>
         {columns.map((head, i) => (
           <div key={i} className={styles.tblCell} style={{ justifyContent: at(i) }}>

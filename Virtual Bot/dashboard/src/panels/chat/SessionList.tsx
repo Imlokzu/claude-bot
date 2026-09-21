@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { AnimatedList, PulseHeart, SwipeRow } from '@/vendor/reactbits';
+import { PulseHeart, SwipeRow } from '@/vendor/reactbits';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/Button';
 import { Empty, SkeletonList } from '@/components/ui/Feedback';
@@ -9,6 +9,7 @@ import { useCssVar } from '@/hooks/useAccentRgb';
 import { del, post } from '@/lib/api';
 import { SessionCard } from './SessionCard';
 import type { SessionSummary } from './types';
+import { t } from '@/lib/i18n';
 
 /*
  * Список розмов.
@@ -24,13 +25,33 @@ import type { SessionSummary } from './types';
  * кнопок, а ховати все за «…» означає зробити зайвий клік обов'язковим.
  */
 
+type SessionGroup = 'today' | 'week' | 'month' | 'earlier';
+const GROUPS: SessionGroup[] = ['today', 'week', 'month', 'earlier'];
+
+function ageInDays(ts?: number): number {
+  if (!ts) return Number.POSITIVE_INFINITY;
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const date = new Date(ts * 1000);
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return Math.max(0, Math.round((start - day) / 86_400_000));
+}
+
+function groupOf(ts?: number): SessionGroup {
+  const days = ageInDays(ts);
+  if (days === 0) return 'today';
+  if (days <= 7) return 'week';
+  if (days <= 30) return 'month';
+  return 'earlier';
+}
+
 function when(ts?: number): string {
   if (!ts) return '';
   const date = new Date(ts * 1000);
-  const sameDay = date.toDateString() === new Date().toDateString();
-  return sameDay
-    ? date.toLocaleTimeString('uk', { hour: '2-digit', minute: '2-digit' })
-    : date.toLocaleDateString('uk', { day: '2-digit', month: '2-digit' });
+  const days = ageInDays(ts);
+  if (days === 0) return date.toLocaleTimeString('uk', { hour: '2-digit', minute: '2-digit' });
+  if (days <= 7) return t('sessions.daysAgo', { count: days });
+  return date.toLocaleDateString('uk', { day: '2-digit', month: '2-digit' });
 }
 
 export function SessionList({
@@ -84,7 +105,7 @@ export function SessionList({
     }
   };
 
-  const items = sessions.map((session) => {
+  const item = (session: SessionSummary) => {
     const row = (
       <div
         className={cn(
@@ -120,7 +141,6 @@ export function SessionList({
 
     return (
       <SessionCard
-        key={session.id}
         session={session}
         onDeleted={(id) => {
           if (id === current) onNew();
@@ -152,7 +172,12 @@ export function SessionList({
         </SwipeRow>
       </SessionCard>
     );
-  });
+  };
+
+  const grouped = GROUPS.map((group) => ({
+    group,
+    sessions: sessions.filter((session) => groupOf(session.updated) === group),
+  })).filter(({ sessions: items }) => items.length > 0);
 
   return (
     <div className={cn('flex min-h-0 flex-col', className)}>
@@ -169,25 +194,26 @@ export function SessionList({
         ) : sessions.length === 0 ? (
           <Empty title="Порожньо" hint="Напиши боту — розмова збережеться сама." />
         ) : (
-          <AnimatedList
-            items={items}
-            showGradients
-            /*
-             * Навігацію стрілками вимкнено свідомо. Вона вішає слухач на
-             * WINDOW і перехоплює Enter, Tab і стрілки по всій сторінці —
-             * тобто Enter у полі вводу чату «відкривав» виділену розмову й
-             * підміняв щойно надіслане повідомлення старою історією.
-             * У списку поруч із текстовим полем це неприйнятно.
-             */
-            enableArrowNavigation={false}
-            displayScrollbar
-            initialSelectedIndex={Math.max(0, sessions.findIndex((s) => s.id === current))}
-            onItemSelect={(_item, index) => {
-              const session = sessions[index];
-              if (session) onOpen(session.id);
-            }}
-            className="h-full"
-          />
+          <div className="h-full overflow-y-auto px-2 pb-3 [scrollbar-width:thin]">
+            {grouped.map(({ group, sessions: groupSessions }) => (
+              <section key={group} className="mb-3 last:mb-0">
+                <h2 className="u-label sticky top-0 z-10 bg-surface/95 px-2 py-1.5 backdrop-blur">
+                  {t(`sessions.${group}`)}
+                </h2>
+                <div className="space-y-1">
+                  {groupSessions.map((session) => (
+                    <div
+                      key={session.id}
+                      className="cursor-pointer"
+                      onClick={() => onOpen(session.id)}
+                    >
+                      {item(session)}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         )}
       </div>
     </div>

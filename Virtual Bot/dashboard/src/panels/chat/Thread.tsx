@@ -122,13 +122,14 @@ export function Thread({
       <ThreadPrimitive.ScrollToBottom asChild>
         <Button
           variant="quiet"
-          size="icon-sm"
-          aria-label="Донизу"
+          size="sm"
+          aria-label="До актуальної відповіді"
           // Внизу стрічки примітив вимикає кнопку — ховаємо її, а не лишаємо
           // блідою: кружечок без діла посеред розмови тільки відволікає.
-          className="absolute bottom-24 left-1/2 -translate-x-1/2 rounded-full border border-line shadow-raise transition-opacity disabled:pointer-events-none disabled:opacity-0"
+          className="absolute bottom-[118px] left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-surface/95 shadow-raise backdrop-blur transition-opacity disabled:pointer-events-none disabled:opacity-0"
         >
           <ArrowDown />
+          <span>До актуального</span>
         </Button>
       </ThreadPrimitive.ScrollToBottom>
 

@@ -46,6 +46,11 @@ export default function ChatPanel() {
   const chat = useChatRuntime();
   const [listOpen, setListOpen] = useState(false);
 
+  useEffect(() => {
+    window.__vbotSendMessage = (text: string) => void chat.send(text);
+    return () => { delete window.__vbotSendMessage; };
+  }, [chat.send]);
+
   /*
    * Проєкт із адреси (`#/chat?project=cats`) — так тека проєктів з «Огляду»
    * справді відкривається, а не просто веде в спільний список.

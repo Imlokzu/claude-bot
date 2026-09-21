@@ -9,6 +9,7 @@ import { useAccentColor } from '@/hooks/useAccentRgb';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useRoute } from './useRoute';
 import { WorkspacePreviewDock } from '@/components/shell/WorkspacePreviewDock';
+import { BotUiOverlay } from '@/components/shell/BotUiOverlay';
 
 /*
  * Розділи вантажаться ліниво. Це не мікрооптимізація: чат тягне за собою
@@ -37,6 +38,7 @@ export function App() {
   const tree = (
     <div className="flex h-dvh flex-col overflow-hidden">
       <WorkspacePreviewDock />
+      <BotUiOverlay />
       <Topbar />
 
       {/* Dock offsets follow data-dock; chat keeps its sidebars full-height. */}

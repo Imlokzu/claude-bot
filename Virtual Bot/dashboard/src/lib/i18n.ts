@@ -35,6 +35,14 @@ const uk = {
   'workspace.binaryHint': 'Цей файл не можна редагувати як текст.',
   'workspace.tooLarge': 'Завеликий файл',
   'workspace.tooLargeHint': 'Файл завеликий для вбудованого редактора.',
+  'sessions.today': 'Сьогодні',
+  'sessions.week': 'Цього тижня',
+  'sessions.month': 'Цього місяця',
+  'sessions.earlier': 'Раніше',
+  'sessions.daysAgo': '{count} дн тому',
+  'question.custom': 'Своя відповідь…',
+  'question.send': 'Відповісти',
+  'question.dismiss': 'Закрити питання',
 } as const;
 
 const en: Record<keyof typeof uk, string> = {
@@ -73,6 +81,14 @@ const en: Record<keyof typeof uk, string> = {
   'workspace.binaryHint': 'This file cannot be edited as text.',
   'workspace.tooLarge': 'File is too large',
   'workspace.tooLargeHint': 'The file is too large for the embedded editor.',
+  'sessions.today': 'Today',
+  'sessions.week': 'This week',
+  'sessions.month': 'This month',
+  'sessions.earlier': 'Earlier',
+  'sessions.daysAgo': '{count}d ago',
+  'question.custom': 'Custom answer…',
+  'question.send': 'Answer',
+  'question.dismiss': 'Dismiss question',
 };
 
 export function t(key: keyof typeof uk, values: Record<string, string | number> = {}): string {
