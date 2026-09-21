@@ -1,4 +1,4 @@
-import { authStreamUrl } from './auth';
+import { authStreamUrl } from './auth.ts';
 
 /*
  * Живі події бота (/api/events).
@@ -32,6 +32,7 @@ const listeners = new Set<Listener>();
 const statusListeners = new Set<StatusListener>();
 
 let source: EventSource | null = null;
+let opening: Promise<void> | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let attempt = 0;
 let connected = false;
@@ -42,10 +43,9 @@ function setConnected(value: boolean): void {
   statusListeners.forEach((fn) => fn(value));
 }
 
-async function open(): Promise<void> {
-  if (source || !listeners.size) return;
+async function connect(): Promise<void> {
   const url = await authStreamUrl('/api/events');
-  // Поки чекали на токен, останній підписник міг відписатись.
+  // The last listener may have unsubscribed while the auth token was loading.
   if (!listeners.size) return;
 
   const es = new EventSource(url);
@@ -87,6 +87,18 @@ async function open(): Promise<void> {
       void open();
     }, delay);
   };
+}
+
+function open(): Promise<void> {
+  if (source || !listeners.size) return Promise.resolve();
+  // Several widgets mount in the same React commit. Keep the asynchronous
+  // token lookup single-flight so they cannot each open their own SSE stream.
+  if (!opening) {
+    opening = connect().finally(() => {
+      opening = null;
+    });
+  }
+  return opening;
 }
 
 function closeIfIdle(): void {
