@@ -181,7 +181,7 @@ export function SessionList({
   })).filter(({ sessions: items }) => items.length > 0);
 
   return (
-    <div className={cn('flex min-h-0 flex-col', className)}>
+    <div data-swipe-ignore className={cn('flex min-h-0 flex-col', className)}>
       <div className="flex items-center justify-between gap-2 px-3 py-3">
         <span className="u-label">розмови</span>
         <Button variant="ghost" size="icon-sm" onClick={onNew} aria-label="Нова розмова">
