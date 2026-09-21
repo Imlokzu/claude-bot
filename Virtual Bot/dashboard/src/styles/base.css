@@ -130,9 +130,11 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 }
 .bot-ui-overlay { bottom: max(5rem, calc(5rem + env(safe-area-inset-bottom, 0px))); }
 .toast-stack { bottom: max(0px, env(safe-area-inset-bottom, 0px)); }
+.pin-panel-action { flex: 0 0 auto; width: 32px; height: 32px; }
 @media (max-width: 759px) {
   .bot-ui-overlay { bottom: calc(9rem + env(safe-area-inset-bottom, 0px)); }
   .toast-stack { padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px)); }
+  .pin-panel-action { width: 44px; height: 44px; }
 }
 
 /* --- нотатки памʼяті -------------------------------------------------- *

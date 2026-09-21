@@ -123,7 +123,7 @@ export default function ChatPanel() {
             <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
               <Dialog open={listOpen} onOpenChange={setListOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="ghost" size="sm" aria-label="Розмови">
+                  <Button variant="ghost" size="sm" className="min-w-0 flex-1" aria-label="Розмови">
                     <MessagesSquare />
                     <span className="max-w-[150px] truncate">
                       {chat.sessions.find((s) => s.id === chat.sessionId)?.title || 'Нова розмова'}
@@ -137,7 +137,7 @@ export default function ChatPanel() {
               <div className="flex-1" />
               <Dialog open={panelsOpen} onOpenChange={setPanelsOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" aria-label={workspaceT('pins.title')}>
+                  <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label={workspaceT('pins.title')}>
                     <PanelRightOpen />
                   </Button>
                 </DialogTrigger>

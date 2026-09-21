@@ -88,9 +88,9 @@ export function PinnedPanels({ embedded = false }: { embedded?: boolean }) {
                 <h2 className="min-w-0 flex-1 truncate text-xs font-medium text-ink-2">{name}</h2>
                 <a href={id === 'screen' ? '/screen' : id === 'vision' ? '#/vision' : '#/overview'}
                    target={id === 'screen' ? '_blank' : undefined} rel={id === 'screen' ? 'noreferrer' : undefined}
-                   aria-label={t('pins.open', { name })} className="grid size-8 place-items-center rounded-xs text-ink-3 hover:text-ink max-[759px]:size-11"><ArrowUpRight size={13} /></a>
+                   aria-label={t('pins.open', { name })} className="pin-panel-action grid place-items-center rounded-xs text-ink-3 hover:text-ink"><ArrowUpRight size={13} /></a>
                 <button type="button" aria-label={t('pins.remove', { name })} onClick={() => toggle(id)}
-                        className="grid size-8 place-items-center rounded-xs text-ink-3 hover:text-ink max-[759px]:size-11"><X size={13} /></button>
+                        className="pin-panel-action grid place-items-center rounded-xs text-ink-3 hover:text-ink"><X size={13} /></button>
               </header>
               {id === 'projects' ? <ProjectsPin /> : id === 'vision' ? <VisionPin /> : (
                 <div className="pin-screen overflow-hidden rounded-sm bg-bg">
@@ -104,7 +104,7 @@ export function PinnedPanels({ embedded = false }: { embedded?: boolean }) {
       <footer className="shrink-0 border-t border-line p-3 [padding-bottom:max(12px,env(safe-area-inset-bottom))]">
         <Popover.Root>
           <Popover.Trigger asChild>
-            <button type="button" className="flex w-full items-center justify-between rounded-sm px-2 py-2 text-xs text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink">
+            <button type="button" className="pins-add-trigger flex min-h-11 w-full items-center justify-between rounded-sm px-2 py-2 text-xs text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink">
               <span>{t('pins.add')}</span><Plus size={16} />
             </button>
           </Popover.Trigger>
@@ -115,7 +115,7 @@ export function PinnedPanels({ embedded = false }: { embedded?: boolean }) {
                 const Icon = ICONS[id];
                 return (
                   <button key={id} type="button" aria-pressed={pins.includes(id)} onClick={() => toggle(id)}
-                    className="flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-[13px] text-ink-2 hover:bg-surface-2">
+                    className="flex min-h-11 w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-[13px] text-ink-2 hover:bg-surface-2">
                     <Icon size={15} /><span className="flex-1">{t(`pins.${id}`)}</span>
                     {pins.includes(id) ? <Check size={14} className="text-accent" /> : <Plus size={14} />}
                   </button>

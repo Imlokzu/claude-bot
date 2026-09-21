@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { CornerDownLeft, Search } from 'lucide-react';
 import { SECTIONS } from '@/app/sections';
@@ -26,6 +26,8 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
   const { setTheme, setAccent } = useTheme();
   const serviceAction = useServiceAction();
 
@@ -88,6 +90,41 @@ export function CommandPalette() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Keep keyboard navigation inside the palette and return focus to the
+  // command trigger context when it closes. The palette is a custom dialog,
+  // so Radix cannot provide this boundary for us.
+  useEffect(() => {
+    if (!open) {
+      restoreFocusRef.current?.focus();
+      restoreFocusRef.current = null;
+      return;
+    }
+    restoreFocusRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    ));
+    const first = focusable()[0];
+    requestAnimationFrame(() => first?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) return;
+      const current = document.activeElement;
+      const index = items.indexOf(current as HTMLElement);
+      const next = event.shiftKey
+        ? (index <= 0 ? items.length - 1 : index - 1)
+        : (index === items.length - 1 ? 0 : index + 1);
+      event.preventDefault();
+      items[next].focus();
+    };
+    dialog.addEventListener('keydown', onKeyDown);
+    return () => dialog.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
   // Курсор не має лишатись за межами відфільтрованого списку.
   useEffect(() => {
     setCursor((value) => Math.min(value, Math.max(0, shown.length - 1)));
@@ -120,6 +157,7 @@ export function CommandPalette() {
           />
 
           <motion.div
+            ref={dialogRef}
             className="relative flex w-full max-w-[560px] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-pop"
             initial={{ opacity: 0, y: -8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
