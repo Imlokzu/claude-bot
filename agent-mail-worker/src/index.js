@@ -134,12 +134,18 @@ export default {
       }
     }
 
-    // Forward copy to owner's Gmail if configured
-    if (env.FORWARD_COPY && env.FORWARD_COPY !== normalizedTo) {
+    // Agent emails (*@ag.waveio.me) are strictly isolated and NEVER forwarded to personal email.
+    if (normalizedTo.endsWith("@ag.waveio.me")) {
+      // Kept exclusively in AG_MAILBOX for agents and dashboard.
+      return;
+    }
+
+    // Forward non-agent main domain emails (*@waveio.me) to owner's inbox if configured
+    if (env.FORWARD_MAIN_DOMAIN_TO && env.FORWARD_MAIN_DOMAIN_TO !== normalizedTo) {
       try {
-        await message.forward(env.FORWARD_COPY);
+        await message.forward(env.FORWARD_MAIN_DOMAIN_TO);
       } catch (fwdErr) {
-        console.error("Failed to forward copy to", env.FORWARD_COPY, fwdErr);
+        console.error("Failed to forward main domain email to", env.FORWARD_MAIN_DOMAIN_TO, fwdErr);
       }
     }
   },

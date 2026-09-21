@@ -12,5 +12,6 @@ binding = "AG_MAILBOX"
 id = "0266ff7e479e4a1fae1e8508639e6edc"
 
 [vars]
-FORWARD_COPY = "lokzuhd@gmail.com"
+FORWARD_MAIN_DOMAIN_TO = "lokzuhd@gmail.com"
 API_KEY = "agmail_secret_lokzu_2026"
+
