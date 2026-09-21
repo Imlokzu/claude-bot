@@ -80,7 +80,14 @@ export function CommandPalette() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
-        setOpen((value) => !value);
+        setOpen((value) => {
+          if (!value) {
+            restoreFocusRef.current = document.activeElement instanceof HTMLElement
+              ? document.activeElement
+              : null;
+          }
+          return !value;
+        });
         setQuery('');
         setCursor(0);
       }
@@ -99,9 +106,6 @@ export function CommandPalette() {
       restoreFocusRef.current = null;
       return;
     }
-    restoreFocusRef.current = document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null;
     const dialog = dialogRef.current;
     if (!dialog) return;
     const focusable = () => Array.from(dialog.querySelectorAll<HTMLElement>(
