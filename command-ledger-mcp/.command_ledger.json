@@ -1,0 +1,85 @@
+[
+  {
+    "id": "seed_openclaw_restart",
+    "command": "openclaw gateway run --force",
+    "status": "failed",
+    "summary": "Conflicts with running macOS LaunchAgent daemon (pid already owns state dir)",
+    "solution": "openclaw gateway restart",
+    "tags": [
+      "openclaw",
+      "macos",
+      "service"
+    ],
+    "created_at": "2026-09-21T19:41:39.731732Z",
+    "updated_at": "2026-09-21T19:41:39.731732Z"
+  },
+  {
+    "id": "seed_openclaw_auth_status",
+    "command": "openclaw models status",
+    "status": "works",
+    "summary": "Cleanly reports provider health, OAuth expiration and token usage quotas",
+    "solution": "Use after authentication or restart to verify live credentials",
+    "tags": [
+      "openclaw",
+      "auth"
+    ],
+    "created_at": "2026-09-21T19:41:39.731732Z",
+    "updated_at": "2026-09-21T19:41:39.731732Z"
+  },
+  {
+    "id": "seed_pytest_pythonpath",
+    "command": "cd \"Virtual Bot\" \u0026\u0026 pytest tests/ -q",
+    "status": "failed",
+    "summary": "ModuleNotFoundError when importing local app modules without PYTHONPATH",
+    "solution": "cd \"Virtual Bot\" \u0026\u0026 PYTHONPATH=\"$PWD\" .venv/bin/pytest tests/ -q",
+    "tags": [
+      "python",
+      "test",
+      "virtual-bot"
+    ],
+    "created_at": "2026-09-21T19:41:39.731732Z",
+    "updated_at": "2026-09-21T19:41:39.731732Z"
+  },
+  {
+    "id": "seed_grep_hang",
+    "command": "grep -rn \"pattern\" \"Virtual Bot\"",
+    "status": "hung",
+    "summary": "Scans large directories like .venv and node_modules, hanging background agents",
+    "solution": "git grep -i \"pattern\" \"Virtual Bot\" or grep --exclude-dir={.venv,node_modules}",
+    "tags": [
+      "bash",
+      "grep",
+      "performance"
+    ],
+    "created_at": "2026-09-21T19:41:39.731732Z",
+    "updated_at": "2026-09-21T19:41:39.731732Z"
+  },
+  {
+    "id": "seed_brevo_sender_domain",
+    "command": "curl -X POST send.waveio.me with sender=lokzuhd@gmail.com",
+    "status": "failed",
+    "summary": "Brevo rejects senders whose domains are not verified in Brevo account",
+    "solution": "Send from noreply@waveio.me with Reply-To set to agent inbox lokzu@ag.waveio.me",
+    "tags": [
+      "email",
+      "brevo",
+      "domain"
+    ],
+    "created_at": "2026-09-21T19:41:39.731732Z",
+    "updated_at": "2026-09-21T19:41:39.731732Z"
+  },
+  {
+    "id": "cmd_1790019706053546000",
+    "command": "openclaw models auth login --provider openai --device-code",
+    "status": "works",
+    "summary": "Authenticates ChatGPT Plus via browser device code flow cleanly",
+    "solution": "Check openclaw models status after auth",
+    "tags": [
+      "openclaw",
+      "auth",
+      "chatgpt"
+    ],
+    "created_at": "2026-09-21T19:41:46.053546Z",
+    "updated_at": "2026-09-21T19:41:46.053546Z"
+  }
+]
