@@ -1,5 +1,7 @@
 /** New dashboard strings live here; existing screens migrate when touched. */
 const uk = {
+  'brand.name': 'КЛОД БОТ',
+  'brand.virtual': '· ВІРТУАЛЬНИЙ',
   'activity.running': 'Працюю…',
   'activity.summary': 'Дії агента · {count}',
   'activity.expand': 'Показати дії агента',
@@ -24,6 +26,8 @@ const uk = {
 } as const;
 
 const en: Record<keyof typeof uk, string> = {
+  'brand.name': 'CLAUDE BOT',
+  'brand.virtual': '· VIRTUAL',
   'activity.running': 'Working…',
   'activity.summary': 'Agent activity · {count}',
   'activity.expand': 'Show agent activity',

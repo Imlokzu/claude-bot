@@ -5,6 +5,7 @@ import { GalleryScope } from './Gallery';
 import { TextType } from '@/vendor/reactbits';
 import { Thinking } from './Thinking';
 import { Button } from '@/components/ui/Button';
+import { BotIcon } from '@/components/ui/BotIcon';
 import { glue } from '@/lib/glue';
 import type { ToolStep } from './types';
 import type { AgentStatus } from '@/lib/chatStream';
@@ -39,11 +40,8 @@ function AssistantMessage() {
   };
   return (
     <MessagePrimitive.Root className="mb-6 flex gap-3">
-      {/* Мітка автора замість аватарки: у розмові двоє, портрет не потрібен,
-          а моноширинний знак тримає той самий «приладовий» ритм. */}
-      <span aria-hidden="true" className="mt-1 shrink-0 font-mono text-[11px] text-accent">
-        ▞▚
-      </span>
+      {/* Use the same static character as the header, aligned to the first line. */}
+      <BotIcon className="mt-1" />
       {/* Область картинок — на всю репліку: тоді «наступна» в переглядачі
           доходить і до тих, що лежали в іншому абзаці відповіді. */}
       <GalleryScope>
