@@ -143,6 +143,12 @@ export function Composer({
     [models],
   );
 
+  const pickerModels = models.length > 0 ? modelList : [{
+    key: '__openclaw-loading__',
+    name: <span className="text-ink-3">OpenClaw</span>,
+    tag: <span className="text-[10px] text-ink-3">завантаження</span>,
+  }];
+
   /*
    * Рівні беремо з відповіді бекенда, а не зі свого уявлення: у HTTP-шлюзі
    * OpenClaw поля під reasoning немає взагалі, і єдиний живий важіль — його
@@ -169,21 +175,15 @@ export function Composer({
   const currentThinking = brain.data?.thinking || '';
 
   /*
-   * Поки не знаємо моделі — поля вводу ще немає.
+   * Модельний каталог може запускати CLI OpenClaw і відповідати кілька секунд.
+   * Поле вводу не можна ховати через це: показуємо стабільний fallback, а
+   * picker заміниться реальним списком після відповіді каталогу.
    *
    * PromptBar читає `defaultModel` ЛИШЕ при монтуванні. Якщо змонтувати його
    * до відповіді бекенда, всередині осяде порожній ключ, і в рядку назавжди
    * стоятиме перша модель списку — тобто знову не та, що відповідає.
    * Каталог кешується на дві хвилини, тож ця заглушка видима один раз.
    */
-  if (brain.isPending) {
-    return (
-      <div className="u-safe-b shrink-0 px-4 pb-3 pt-2 sm:px-6">
-        <div className="mx-auto h-[86px] w-full max-w-[760px] animate-pulse rounded-lg bg-surface-2" />
-      </div>
-    );
-  }
-
   return (
     <div className="u-safe-b shrink-0 px-4 pb-3 pt-2 sm:px-6">
       <div className="mx-auto flex w-full max-w-[760px] flex-col items-stretch gap-1.5">
@@ -227,13 +227,13 @@ export function Composer({
             color={ink}
             menuBackground={surface3}
             sparkColor={accent}
-            models={modelList}
+            models={pickerModels}
             sources={[
               { key: 'files', name: 'Файли', description: 'Завантажити з пристрою', icon: Paperclip, attach: true },
               { key: 'web', name: 'Пошук у мережі', description: 'Знайти актуальне', icon: Globe },
               { key: 'memory', name: 'Памʼять', description: 'Додати нотатку', icon: FileText },
             ]}
-            defaultModel={current}
+            defaultModel={current || '__openclaw-loading__'}
             efforts={efforts}
             defaultEffort={currentThinking ? THINKING_LABELS[currentThinking] ?? currentThinking : AS_CONFIGURED}
             /*
@@ -256,6 +256,7 @@ export function Composer({
               });
             }}
             onModelChange={(key) =>
+              key === '__openclaw-loading__' ? undefined :
               selectModel.mutate(key, {
                 onError: (error) => toast.error('Модель не прийнялась', (error as Error).message),
               })

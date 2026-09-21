@@ -68,14 +68,14 @@ def close_all() -> None:
             pass
 
 
-def publish(payload: dict) -> None:
+def publish(payload: dict, *, audience: str | None = None) -> None:
     """
     Розсилає подію всім підписникам. Ніколи не кидає виняток і не блокує:
     переповнену чергу конкретного клієнта просто пропускаємо.
     """
     for queue in list(_subscribers):
         try:
-            queue.put_nowait(payload)
+            queue.put_nowait((payload, audience))
         except asyncio.QueueFull:
             log.debug("Черга SSE-клієнта переповнена — подію пропущено")
         except Exception:  # noqa: BLE001 — шина не має права валити відправника
@@ -168,14 +168,14 @@ def publish_video(command: dict) -> None:
     publish({"type": "video", **dict(command or {})})
 
 
-def publish_ui(kind: str, data: dict) -> None:
+def publish_ui(kind: str, data: dict, audience: str | None = None) -> None:
     """
     Елемент інтерфейсу від бота: питання з кнопками, чекліст, картки вибору.
 
     Панель домальовує його прямо у відповідь — щоб бот міг ПОКАЗАТИ, а не
     описувати текстом «оберіть варіант 1 або 2».
     """
-    publish({"type": "ui", "kind": str(kind)[:20], "data": data or {}})
+    publish({"type": "ui", "kind": str(kind)[:20], "data": data or {}}, audience=audience)
 
 
 def publish_preview(path: str) -> None:
@@ -217,7 +217,7 @@ def subscribers_count() -> int:
     return len(_subscribers)
 
 
-async def sse_stream() -> AsyncIterator[str]:
+async def sse_stream(audience: str | None = None) -> AsyncIterator[str]:
     """
     Генератор тіла text/event-stream для одного клієнта.
 
@@ -242,6 +242,10 @@ async def sse_stream() -> AsyncIterator[str]:
                 continue
             if payload is _CLOSE or _shutting_down:
                 break
+            if isinstance(payload, tuple):
+                payload, event_audience = payload
+                if event_audience and event_audience != audience:
+                    continue
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
     finally:
         _subscribers.discard(queue)

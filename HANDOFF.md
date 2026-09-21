@@ -359,3 +359,9 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 - Internal `[емоція:…]` markers are stripped from streamed `done` frames and
   loaded assistant history; the crab still receives the emotion separately, so
   the marker cannot leak into visible chat text.
+- Dashboard startup no longer blocks the composer on the slow OpenClaw model
+  catalog CLI: it shows a local fallback immediately, caches the last catalog
+  in browser storage, and defers the SSE connection briefly so critical queries
+  win the browser connection pool. UI question events are scoped to the Clerk
+  user when auth is enabled, and selecting an answer cancels the originating
+  tool turn before sending the new message.

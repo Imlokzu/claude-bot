@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+const settleEventStream = () => new Promise((resolve) => setTimeout(resolve, 300));
+
 test('simultaneous subscribers share one event stream and close it when idle', async () => {
   const previousEventSource = globalThis.EventSource;
   const previousDocument = globalThis.document;
@@ -28,8 +30,7 @@ test('simultaneous subscribers share one event stream and close it when idle', a
     const { subscribe } = await import(`../src/lib/events.ts?test=${Date.now()}`);
     const stops = [subscribe(() => {}), subscribe(() => {}), subscribe(() => {})];
 
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleEventStream();
 
     assert.equal(streams.length, 1);
     assert.equal(streams[0].closed, false);
@@ -69,8 +70,7 @@ test('hidden tabs release their stream and reconnect only when visible', async (
   try {
     const { subscribe } = await import(`../src/lib/events.ts?visibility=${Date.now()}`);
     const stop = subscribe(() => {});
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleEventStream();
     assert.equal(streams.length, 1);
     assert.equal(streams[0].closed, false);
 
@@ -80,8 +80,7 @@ test('hidden tabs release their stream and reconnect only when visible', async (
 
     globalThis.document.hidden = false;
     globalThis.document.dispatchEvent(new Event('visibilitychange'));
-    await Promise.resolve();
-    await Promise.resolve();
+    await settleEventStream();
     assert.equal(streams.length, 2);
     assert.equal(streams[1].closed, false);
 

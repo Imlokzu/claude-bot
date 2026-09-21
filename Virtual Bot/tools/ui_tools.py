@@ -16,6 +16,7 @@ import logging
 import uuid
 
 import events
+import brain_context
 
 log = logging.getLogger("virtual_bot.tools.ui")
 
@@ -43,7 +44,7 @@ async def ask_question(
         "options": items,
         "allow_custom": bool(allow_custom),
     }
-    events.publish_ui("question", payload)
+    events.publish_ui("question", payload, audience=brain_context.get_active_clerk_user())
     return {
         "ok": True,
         "shown": "question",
@@ -66,7 +67,7 @@ async def todo_list(title: str = "", items: list | None = None) -> dict:
     if not entries:
         return {"error": "Потрібен хоча б один пункт"}
     payload = {"id": uuid.uuid4().hex[:12], "title": _clean(title, 120), "items": entries}
-    events.publish_ui("todo", payload)
+    events.publish_ui("todo", payload, audience=brain_context.get_active_clerk_user())
     return {"ok": True, "shown": "todo", "count": len(entries)}
 
 
@@ -84,7 +85,7 @@ async def show_choice(title: str, options: list) -> dict:
     if not cards:
         return {"error": "Потрібні варіанти"}
     payload = {"id": uuid.uuid4().hex[:12], "title": _clean(title, 160), "options": cards}
-    events.publish_ui("choice", payload)
+    events.publish_ui("choice", payload, audience=brain_context.get_active_clerk_user())
     return {"ok": True, "shown": "choice", "note": "Вибір користувача прийде повідомленням."}
 
 

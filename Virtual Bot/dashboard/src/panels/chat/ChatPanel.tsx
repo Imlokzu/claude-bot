@@ -47,7 +47,16 @@ export default function ChatPanel() {
   const [listOpen, setListOpen] = useState(false);
 
   useEffect(() => {
-    window.__vbotSendMessage = (text: string) => void chat.send(text);
+    window.__vbotSendMessage = (text: string) => {
+      // UI questions can arrive while the originating tool turn is still
+      // winding down. Cancel that turn first so the selected answer is not
+      // silently rejected by the single-flight send guard.
+      if (chat.running) {
+        void chat.cancel().then(() => chat.send(text));
+      } else {
+        void chat.send(text);
+      }
+    };
     return () => { delete window.__vbotSendMessage; };
   }, [chat.send]);
 

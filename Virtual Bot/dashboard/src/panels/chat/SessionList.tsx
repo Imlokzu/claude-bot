@@ -142,6 +142,7 @@ export function SessionList({
     return (
       <SessionCard
         session={session}
+        onOpen={() => onOpen(session.id)}
         onDeleted={(id) => {
           if (id === current) onNew();
         }}
@@ -202,11 +203,7 @@ export function SessionList({
                 </h2>
                 <div className="space-y-1">
                   {groupSessions.map((session) => (
-                    <div
-                      key={session.id}
-                      className="cursor-pointer"
-                      onClick={() => onOpen(session.id)}
-                    >
+                    <div key={session.id}>
                       {item(session)}
                     </div>
                   ))}

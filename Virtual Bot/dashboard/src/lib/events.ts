@@ -34,6 +34,7 @@ const statusListeners = new Set<StatusListener>();
 let source: EventSource | null = null;
 let opening: Promise<void> | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let openTimer: ReturnType<typeof setTimeout> | null = null;
 let attempt = 0;
 let connected = false;
 
@@ -115,6 +116,10 @@ function open(): Promise<void> {
 }
 
 function closeStream(): void {
+  if (openTimer) {
+    clearTimeout(openTimer);
+    openTimer = null;
+  }
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
@@ -147,7 +152,14 @@ export function subscribe(listener: Listener): () => void {
   if (listeners.size === 1 && typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', handleVisibilityChange);
   }
-  void open();
+  // Let critical dashboard queries (sessions, models, status) claim the
+  // browser connection pool before opening the long-lived SSE stream.
+  if (!openTimer) {
+    openTimer = setTimeout(() => {
+      openTimer = null;
+      void open();
+    }, 250);
+  }
   return () => {
     listeners.delete(listener);
     closeIfIdle();

@@ -52,11 +52,13 @@ export function SessionCard({
   session,
   children,
   onDeleted,
+  onOpen,
 }: {
   session: SessionSummary;
   children: React.ReactNode;
   /** Відкрита розмова зникла — панель мусить піти на іншу. */
   onDeleted: (id: string) => void;
+  onOpen?: () => void;
 }) {
   const client = useQueryClient();
   const toast = useToast();
@@ -143,7 +145,13 @@ export function SessionCard({
   return (
     <Popover.Root open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
       <Popover.Anchor asChild>
-        <div {...hover}>{children}</div>
+        <div
+          {...hover}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('button')) return;
+            onOpen?.();
+          }}
+        >{children}</div>
       </Popover.Anchor>
 
       <Popover.Content

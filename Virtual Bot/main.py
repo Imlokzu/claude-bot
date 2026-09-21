@@ -2294,13 +2294,13 @@ async def api_processes() -> dict:
 
 
 @app.get("/api/events")
-async def api_events() -> StreamingResponse:
+async def api_events(request: Request) -> StreamingResponse:
     """
     SSE-стрічка живих подій бота (нативний EventSource, без CDN):
     emotion / say / vision за спільним контрактом; keep-alive ~15 с.
     """
     return _SSEResponse(
-        events.sse_stream(),
+        events.sse_stream(audience=await _require_user(request)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
