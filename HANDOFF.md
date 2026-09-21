@@ -335,7 +335,7 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   HTTP/1.1 SSE connections per origin at six, so the leaked streams could
   leave sessions and model queries in a permanent skeleton state. Opening is
   now single-flight, and a regression test covers sharing and cleanup.
-- Validation: dashboard build, typecheck, 11 unit tests, browser regression,
+- Validation: dashboard build, typecheck, 12 unit tests, browser regression,
   and live loopback checks for `/dash/`, referenced bundles, and `/api/status`
   passed. Existing tabs with old streams should be hard-refreshed once after
   the deployment so the service worker picks up the new bundle.
