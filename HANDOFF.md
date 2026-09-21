@@ -391,3 +391,6 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 - Final touch review also covers the 320px toolbar shrink case, 44px pin
   actions/footer controls, and keyboard focus containment in Command Palette;
   the independent reviewer’s initial P1 findings were fixed and rechecked.
+- Command Palette now captures the element focused before opening, traps Tab
+  inside the dialog, and restores that element after Escape (verified with the
+  chat composer focused first).
