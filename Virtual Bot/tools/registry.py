@@ -10,7 +10,7 @@ from typing import Awaitable, Callable
 from tools.currency import get_common_rates, get_rate
 from tools.facts import get_fact
 from tools.images import search_images
-from tools import music_tools, screen_tools, ui_tools, video_tools, workspace_tools
+from tools import email_tools, music_tools, screen_tools, ui_tools, video_tools, workspace_tools
 from tools.search import search_web
 from tools.weather import get_weather
 import memory
@@ -141,6 +141,8 @@ _TOOL_SCHEMAS: list[dict] = [
     *music_tools.SCHEMAS,
     # Відео з картинкою в застосунку youtube: показати, керувати, адблок
     *video_tools.SCHEMAS,
+    # Пошта агента (@ag.waveio.me): читання скриньки, очікування OTP кодів
+    *email_tools.SCHEMAS,
 ]
 
 async def _currency_handler(base: str, target: str = "UAH") -> dict:
@@ -213,6 +215,7 @@ _HANDLERS: dict[str, ToolHandler] = {
     **screen_tools.HANDLERS,
     **music_tools.HANDLERS,
     **video_tools.HANDLERS,
+    **email_tools.HANDLERS,
 }
 
 
