@@ -185,7 +185,7 @@ export function Composer({
    * Каталог кешується на дві хвилини, тож ця заглушка видима один раз.
    */
   return (
-    <div className="u-safe-b shrink-0 px-4 pb-3 pt-2 sm:px-6">
+    <div className="chat-composer u-safe-b shrink-0 px-4 pb-3 pt-2 sm:px-6">
       <div className="mx-auto flex w-full max-w-[760px] flex-col items-stretch gap-1.5">
         {/*
           Сяйво накладене ПОВЕРХ поля, а не обгортає його.

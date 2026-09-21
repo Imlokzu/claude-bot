@@ -209,7 +209,7 @@ export function Markdown() {
           // її розбере далі звичайна розмітка, ніж показати порожню картку.
           if (head.length === 0 || rows.length === 0) return <>{children}</>;
           return (
-            <div className="my-3 max-w-full overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:thin]">
+            <div data-horizontal-scroll className="markdown-table-scroll my-3 max-w-full pb-1 [scrollbar-width:thin]">
               <DataTable columns={head} rows={rows} />
             </div>
           );

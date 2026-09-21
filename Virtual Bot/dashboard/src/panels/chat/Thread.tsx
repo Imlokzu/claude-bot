@@ -66,7 +66,7 @@ export function Thread({
 }) {
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
-      <ThreadPrimitive.Viewport className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-5 sm:px-6">
+      <ThreadPrimitive.Viewport className="relative flex min-h-0 flex-1 touch-pan-y flex-col overflow-y-auto overscroll-contain px-4 pt-5 sm:px-6">
         <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col">
           <ThreadPrimitive.Empty>
             <div className="flex flex-1 flex-col items-center justify-center gap-7 py-16 text-center">
@@ -126,7 +126,7 @@ export function Thread({
           aria-label="До актуальної відповіді"
           // Внизу стрічки примітив вимикає кнопку — ховаємо її, а не лишаємо
           // блідою: кружечок без діла посеред розмови тільки відволікає.
-          className="absolute bottom-[118px] left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-surface/95 shadow-raise backdrop-blur transition-opacity disabled:pointer-events-none disabled:opacity-0"
+          className="chat-scroll-latest absolute bottom-[118px] left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-surface/95 shadow-raise backdrop-blur transition-opacity disabled:pointer-events-none disabled:opacity-0"
         >
           <ArrowDown />
           <span>До актуального</span>

@@ -65,7 +65,10 @@ export function DockNav({
    * встановитись, і тоді жест мовчки ламається.
    */
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0) return;
+    // Touch layouts keep the dock anchored to the bottom. Repositioning it
+    // from a one-handed tap is surprising and competes with horizontal swipes
+    // used by the app shell, so relocation remains a desktop gesture.
+    if (event.button !== 0 || isPhone || event.pointerType === 'touch') return;
     origin.current = { x: event.clientX, y: event.clientY };
     dragging.current = false;
 
@@ -107,7 +110,8 @@ export function DockNav({
   const dock = (
     <div
       className={cn(
-        'pointer-events-auto touch-none select-none',
+        'pointer-events-auto select-none',
+        isPhone ? 'touch-pan-x' : 'touch-none',
         aim ? 'cursor-grabbing' : 'cursor-grab',
       )}
       onPointerDown={onPointerDown}
@@ -134,8 +138,8 @@ export function DockNav({
         // У шапці все менше: смуга 56 px, і значок мусить у неї влазити
         // разом зі збільшенням. На телефоні збільшення не спрацьовує
         // (курсора нема), тож там усе просто менше й рівне.
-        baseItemSize={inTopbar ? 32 : isPhone ? 38 : vertical ? 44 : 38}
-        magnification={inTopbar ? 42 : isPhone ? 38 : 58}
+        baseItemSize={inTopbar ? 32 : isPhone ? 44 : vertical ? 44 : 38}
+        magnification={inTopbar ? 42 : isPhone ? 44 : 58}
         distance={inTopbar ? 110 : 150}
         panelHeight={inTopbar ? 42 : 52}
         dockHeight={inTopbar ? 42 : 140}

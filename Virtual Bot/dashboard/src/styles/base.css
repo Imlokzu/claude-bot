@@ -51,6 +51,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 img, svg, video, canvas { display: block; max-width: 100%; }
 a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
 
+@media (pointer: coarse) {
+  button, [role='button'], a, select { -webkit-tap-highlight-color: transparent; }
+}
+
 /*
  * Кільце фокуса одне на всю панель. Живе в шарі base навмисно: так утиліта
  * Tailwind (`focus-visible:outline-none`) може його зняти там, де фокус
@@ -117,6 +121,13 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 /* Безпечні зони iOS: панель ставиться на домашній екран як PWA. */
 .u-safe-b { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .u-safe-t { padding-top: env(safe-area-inset-top, 0px); }
+.chat-composer { padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px)); }
+.markdown-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
 
 /* --- нотатки памʼяті -------------------------------------------------- *
  * Tiptap віддає голий ProseMirror без стилів. Ритм тут той самий, що в
@@ -210,6 +221,12 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .pin-screen-frame { width: 320px; height: 240px; max-width: none; transform: scale(0.6); transform-origin: top left; }
   @media (max-width: 759px) {
     .chat-conversation { padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px)); }
+    .chat-scroll-latest { bottom: 126px; }
+    .chat-composer {
+      padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+      padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    }
+    .chat-layout, .chat-conversation { min-width: 0; }
   }
 }
 
