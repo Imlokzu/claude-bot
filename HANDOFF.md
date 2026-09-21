@@ -356,3 +356,6 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   with day-relative timestamps for the last week. Global `ask_question` and
   `show_choice` UI events now render an actionable overlay that sends the
   selected or custom answer back through the active chat runtime.
+- Internal `[емоція:…]` markers are stripped from streamed `done` frames and
+  loaded assistant history; the crab still receives the emotion separately, so
+  the marker cannot leak into visible chat text.

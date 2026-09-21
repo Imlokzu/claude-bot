@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useExternalStoreRuntime, type AppendMessage, type ThreadMessageLike } from '@assistant-ui/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { get } from '@/lib/api';
-import { streamChat, type AgentStatus, type ChatAttachment } from '@/lib/chatStream';
+import { cleanEmotionTag, streamChat, type AgentStatus, type ChatAttachment } from '@/lib/chatStream';
 import { t } from '@/lib/i18n';
 import { updateActivity, finishActivity, restoreActivity } from './activity';
 import { useToast } from '@/components/ui/Toaster';
@@ -78,7 +78,7 @@ export function useChatRuntime() {
           (data.messages ?? []).map((message, index) => ({
             id: `${id}-${index}`,
             role: message.role === 'assistant' ? 'assistant' : 'user',
-            content: message.content ?? '',
+            content: message.role === 'assistant' ? cleanEmotionTag(message.content ?? '') : message.content ?? '',
             ts: message.ts,
             attachments: message.attachments,
             steps: restoreActivity(message.steps),

@@ -68,6 +68,14 @@ export interface ChatPayload {
   history?: unknown[];
 }
 
+/** Remove an internal model emotion marker before text reaches the transcript. */
+export function cleanEmotionTag(text: string): string {
+  return text
+    .replace(/\[\s*(?:емоція|емоцiя|emotion)\s*[:：]\s*[a-zA-Zа-яіїєґА-ЯІЇЄҐʼ'-]+\s*\]/giu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
 /**
  * Шле репліку й розбирає потік. `signal` дозволяє перервати відповідь —
  * кнопка «Стоп» у чаті саме це й робить.
@@ -173,7 +181,7 @@ function dispatch(frame: string, handlers: ChatHandlers): boolean {
       break;
     }
     case 'done':
-      handlers.onDone?.(data as unknown as ChatDone);
+      handlers.onDone?.({ ...data, reply: cleanEmotionTag(String(data.reply ?? '')) } as unknown as ChatDone);
       return true;
     case 'error':
       handlers.onError?.(String(data.error ?? t('chat.unknownError')));
