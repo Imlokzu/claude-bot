@@ -325,3 +325,17 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   IDs returned 404/410 and were not selected. Direct Regolo text and Qwen
   vision endpoint probes returned 200. Gateway, dashboard, and OpenClaw
   remain loopback-only. The Omni shim is no longer required for chat.
+
+### Dashboard loading and bot identity follow-up (2026-09-21)
+
+- The dashboard header and assistant messages now share the static pixel-crab
+  mark from the device face; locale keys keep the wordmark translatable.
+- Fixed a race in the dashboard event bus: simultaneous widget mounts could
+  each open an SSE stream while the Clerk token was loading. Browsers cap
+  HTTP/1.1 SSE connections per origin at six, so the leaked streams could
+  leave sessions and model queries in a permanent skeleton state. Opening is
+  now single-flight, and a regression test covers sharing and cleanup.
+- Validation: dashboard build, typecheck, 11 unit tests, browser regression,
+  and live loopback checks for `/dash/`, referenced bundles, and `/api/status`
+  passed. Existing tabs with old streams should be hard-refreshed once after
+  the deployment so the service worker picks up the new bundle.
