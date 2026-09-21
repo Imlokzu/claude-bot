@@ -149,7 +149,7 @@ export function SessionList({
       >
         <SwipeRow
           className="session-swipe"
-          height={30}
+          height={44}
           radius={8}
           actionWidth={96}
           // Повний змах не видаляє: надто легко зробити випадково, а

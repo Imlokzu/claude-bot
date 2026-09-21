@@ -57,6 +57,7 @@ export function ImageViewer({
   const [zoom, setZoom] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const swipeRef = useRef<{ id: number; x: number; y: number } | null>(null);
 
   const image = images[index];
   const scale = ZOOM[zoom];
@@ -157,6 +158,20 @@ export function ImageViewer({
           {/* Клік по порожньому полю закриває — звичний жест для такого вікна. */}
           <div
             ref={scrollRef}
+            data-swipe-ignore
+            onPointerDown={(event) => {
+              if (!many || zoom > 0 || event.pointerType !== 'touch' || !event.isPrimary) return;
+              swipeRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+            }}
+            onPointerUp={(event) => {
+              const start = swipeRef.current;
+              swipeRef.current = null;
+              if (!start || start.id !== event.pointerId || zoom > 0) return;
+              const dx = event.clientX - start.x;
+              const dy = event.clientY - start.y;
+              if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.2) go(dx < 0 ? 1 : -1);
+            }}
+            onPointerCancel={() => { swipeRef.current = null; }}
             onClick={(event) => {
               if (event.target === event.currentTarget) onClose();
             }}
@@ -301,7 +316,7 @@ export function ImageViewer({
             <button
               type="button"
               aria-label="Закрити"
-              className="absolute right-4 top-4 grid size-9 place-items-center rounded-full border border-line bg-surface/95 text-ink-2 shadow-raise backdrop-blur transition-colors hover:text-ink"
+              className="absolute right-4 top-4 grid size-11 place-items-center rounded-full border border-line bg-surface/95 text-ink-2 shadow-raise backdrop-blur transition-colors hover:text-ink sm:size-9"
             >
               <X className="size-4" />
             </button>
@@ -333,7 +348,7 @@ function Action({
         onClick={onClick}
         disabled={disabled}
         aria-label={tip}
-        className="grid size-8 place-items-center rounded-full text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-35 [&_svg]:size-4"
+        className="grid size-11 place-items-center rounded-full text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-35 sm:size-8 [&_svg]:size-4"
       >
         {children}
       </button>

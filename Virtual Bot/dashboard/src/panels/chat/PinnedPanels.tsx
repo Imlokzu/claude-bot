@@ -88,9 +88,9 @@ export function PinnedPanels({ embedded = false }: { embedded?: boolean }) {
                 <h2 className="min-w-0 flex-1 truncate text-xs font-medium text-ink-2">{name}</h2>
                 <a href={id === 'screen' ? '/screen' : id === 'vision' ? '#/vision' : '#/overview'}
                    target={id === 'screen' ? '_blank' : undefined} rel={id === 'screen' ? 'noreferrer' : undefined}
-                   aria-label={t('pins.open', { name })} className="rounded-xs p-1 text-ink-3 hover:text-ink"><ArrowUpRight size={13} /></a>
+                   aria-label={t('pins.open', { name })} className="grid size-8 place-items-center rounded-xs text-ink-3 hover:text-ink max-[759px]:size-11"><ArrowUpRight size={13} /></a>
                 <button type="button" aria-label={t('pins.remove', { name })} onClick={() => toggle(id)}
-                        className="rounded-xs p-1 text-ink-3 hover:text-ink"><X size={13} /></button>
+                        className="grid size-8 place-items-center rounded-xs text-ink-3 hover:text-ink max-[759px]:size-11"><X size={13} /></button>
               </header>
               {id === 'projects' ? <ProjectsPin /> : id === 'vision' ? <VisionPin /> : (
                 <div className="pin-screen overflow-hidden rounded-sm bg-bg">

@@ -246,6 +246,18 @@
   .prompt-bar__input {
     font-size: 16px;
   }
+
+  .prompt-bar__tool,
+  .prompt-bar__send {
+    width: 44px;
+    height: 44px;
+  }
+
+  .prompt-bar__pick,
+  .prompt-bar__row {
+    min-height: 44px;
+    height: 44px;
+  }
 }
 
 .prompt-bar__bar {

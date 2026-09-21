@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { FolderFloat } from '@/vendor/reactbits';
 import { useCssVar } from '@/hooks/useAccentRgb';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { get } from '@/lib/api';
 
 /*
@@ -27,6 +28,7 @@ export function PacksTile() {
   const paper = useCssVar('--c-surface', '#fffdf8');
   const ink = useCssVar('--c-text', '#231e19');
   const ink2 = useCssVar('--c-text-2', '#6a6056');
+  const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)');
 
   const installed = useQuery({
     queryKey: ['screen-store-installed'],
@@ -48,7 +50,7 @@ export function PacksTile() {
           items={items}
           label="Пакети екрана"
           sublabel={`${apps.length} ${apps.length === 1 ? 'застосунок' : 'застосунки'}`}
-          trigger="hover"
+          trigger={finePointer ? 'hover' : 'click'}
           width={140}
           height={96}
           spread={118}

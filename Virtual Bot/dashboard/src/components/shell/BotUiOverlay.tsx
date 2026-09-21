@@ -59,7 +59,7 @@ export function BotUiOverlay() {
             <p className="u-label text-accent">{card.kind === 'question' ? 'Питання від бота' : data.title || 'Дія бота'}</p>
             {data.question ? <p className="mt-1 text-[14px] leading-relaxed text-ink">{data.question}</p> : null}
           </div>
-          <button type="button" onClick={() => setCard(null)} aria-label={t('question.dismiss')} className="rounded-sm p-1 text-ink-3 hover:bg-surface-2 hover:text-ink"><X size={15} /></button>
+          <button type="button" onClick={() => setCard(null)} aria-label={t('question.dismiss')} className="grid size-8 shrink-0 place-items-center rounded-sm text-ink-3 hover:bg-surface-2 hover:text-ink max-[759px]:size-11"><X size={15} /></button>
         </header>
 
         {card.kind === 'question' || card.kind === 'choice' ? (
