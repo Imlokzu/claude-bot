@@ -365,3 +365,26 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   win the browser connection pool. UI question events are scoped to the Clerk
   user when auth is enabled, and selecting an answer cancels the originating
   tool turn before sending the new message.
+
+### Touch and mobile dashboard follow-up (2026-09-22)
+
+- The dashboard now keeps the existing desktop components and switches to a
+  touch-first shell below 760px: bottom navigation is fixed to the safe area,
+  dock controls have 44px hit targets, and dock relocation stays a desktop
+  gesture so one-finger taps do not move the navigation.
+- Chat sessions and pinned Projects/Vision/Mini-screen panels are available in
+  bottom sheets on phones and tablets; the same `PinnedPanels` component is
+  reused instead of maintaining a second mobile implementation. Composer,
+  menus, session rows, image controls and bot-question actions grow their hit
+  targets only for coarse pointers.
+- Horizontal section swipes work on touch/coarse pointers with a 48px threshold,
+  axis lock, browser edge guard and exclusions for controls, editors, galleries,
+  tables, session swipes and FolderFloat gestures. Image viewing also supports
+  left/right swipes when not zoomed.
+- Mobile overlays reserve space above the composer and bottom dock; markdown
+  tables keep an inner horizontal scroll surface and no page-level horizontal
+  overflow was observed at 320, 390, 768, 1024 and 1180px widths.
+- Validation: dashboard tests 18 passed, typecheck and production build passed;
+  browser smoke verified 390px pins sheet, 320/390/768/1024/1180px overflow and
+  a real touch swipe from chat to memory. Generated `static/dash` assets were
+  rebuilt after each UI change.
