@@ -10,6 +10,7 @@ import { get, post } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { glue } from '@/lib/glue';
 import { useIsDesk } from '@/hooks/useMediaQuery';
+import { useRouteParam } from '@/app/useRoute';
 
 /*
  * Робоча тека бота.
@@ -45,11 +46,19 @@ export default function FilesPanel() {
   const isDesk = useIsDesk();
   const toast = useToast();
   const client = useQueryClient();
+  const requestedPath = useRouteParam('path');
 
   const [dir, setDir] = useState('');
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (!requestedPath) return;
+    setOpenPath(requestedPath);
+    const slash = requestedPath.lastIndexOf('/');
+    setDir(slash > 0 ? requestedPath.slice(0, slash) : '');
+  }, [requestedPath]);
 
   const listing = useQuery({
     queryKey: ['workspace', dir],

@@ -339,3 +339,10 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   and live loopback checks for `/dash/`, referenced bundles, and `/api/status`
   passed. Existing tabs with old streams should be hard-refreshed once after
   the deployment so the service worker picks up the new bundle.
+- The macOS/local launcher now starts the loopback dashboard with
+  `CLERK_DISABLED=1` by default (an explicit environment value still wins),
+  because Clerk is an unnecessary second login for a single-user local bot.
+  OpenClaw remains separately token-protected and loopback-only.
+- The chat model catalog is browser-cacheable for 30 seconds, the `+` menu now
+  uploads real attachments through `/api/chat/upload`, and gateway model events
+  are rendered as the first OpenClaw status line while a response streams.
