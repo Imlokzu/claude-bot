@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
-import { Brain, Eye, FileText, FolderTree, LifeBuoy, Paperclip, Zap } from 'lucide-react';
+import { useMemo, useRef } from 'react';
+import { Brain, Eye, FileText, Globe, LifeBuoy, Paperclip, Zap } from 'lucide-react';
 import VoiceBeam from 'voice-glow';
 import { PromptBar } from '@/vendor/reactbits';
-import { RadialMenu } from '@/vendor/bencho/RadialMenu';
 import { useToast } from '@/components/ui/Toaster';
+import { post } from '@/lib/api';
 import { useBrainModels, useSelectBrainModel, useSetThinking, type BrainModel } from '@/lib/queries';
 import { useCssVar } from '@/hooks/useAccentRgb';
 import { useDictation } from '@/hooks/useDictation';
@@ -75,7 +75,7 @@ export function Composer({
   busy: boolean;
   usedTokens: number;
   sessionId: string;
-  onSend: (text: string) => void;
+  onSend: (text: string, attachments?: unknown[]) => void;
   onStop: () => void;
   onCompacted: () => void;
 }) {
@@ -84,6 +84,23 @@ export function Composer({
   const setThinking = useSetThinking();
   const dictation = useDictation();
   const toast = useToast();
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const uploadFiles = async (files: FileList | File[]): Promise<unknown[]> => {
+    const uploaded = [];
+    for (const file of Array.from(files).slice(0, 8)) {
+      const body = new FormData();
+      body.append('file', file);
+      try {
+        uploaded.push(await post<{ url: string; name: string; type: string; size: number }>(
+          '/api/chat/upload', body,
+        ));
+      } catch (error) {
+        toast.error('Файл не додався', (error as Error).message);
+      }
+    }
+    return uploaded;
+  };
 
   const surface = useCssVar('--c-surface', '#fffdf8');
   const surface3 = useCssVar('--c-surface-3', '#e5ddd0');
@@ -151,8 +168,6 @@ export function Composer({
   );
   const currentThinking = brain.data?.thinking || '';
 
-  const soon = (what: string) => () => toast.toast(`${what} ще не підключено`);
-
   /*
    * Поки не знаємо моделі — поля вводу ще немає.
    *
@@ -213,6 +228,11 @@ export function Composer({
             menuBackground={surface3}
             sparkColor={accent}
             models={modelList}
+            sources={[
+              { key: 'files', name: 'Файли', description: 'Завантажити з пристрою', icon: Paperclip, attach: true },
+              { key: 'web', name: 'Пошук у мережі', description: 'Знайти актуальне', icon: Globe },
+              { key: 'memory', name: 'Памʼять', description: 'Додати нотатку', icon: FileText },
+            ]}
             defaultModel={current}
             efforts={efforts}
             defaultEffort={currentThinking ? THINKING_LABELS[currentThinking] ?? currentThinking : AS_CONFIGURED}
@@ -240,37 +260,21 @@ export function Composer({
                 onError: (error) => toast.error('Модель не прийнялась', (error as Error).message),
               })
             }
-            /* «+» замінений радіальним меню (bencho.dev): натиснути, повести в
-               бік потрібного, відпустити — один жест замість трьох дотиків. */
-            plusSlot={
-              <RadialMenu
-                label="Додати до розмови"
-                radius={72}
-                /*
-                 * Дуга вузька й повернута вправо-вгору: кнопка стоїть біля
-                 * лівого краю поля, і половина кола пішла б за екран, а нижня
-                 * чверть — під рядок керування.
-                 *
-                 * Кути виходять −120°, −80°, −40°: навіть найнижчий пункт
-                 * піднятий на 46 px над кнопкою й не лягає на рядок із
-                 * вибором моделі. За формулою з bencho
-                 * (gap = 2·R·sin(крок/2) − розмір) між кружечками ~15 px.
-                 */
-                spread={80}
-                bias={10}
-                items={[
-                  { key: 'file', label: 'Файл з диска', icon: <Paperclip className="size-4" />, onSelect: soon('Вкладення') },
-                  { key: 'workspace', label: 'Робоча тека', icon: <FolderTree className="size-4" />, onSelect: soon('Вибір із робочої теки') },
-                  { key: 'memory', label: 'Нотатка з памʼяті', icon: <FileText className="size-4" />, onSelect: soon('Вибір нотатки') },
-                ]}
-              />
-            }
+            onAttach={() => new Promise((resolve) => {
+              const input = fileInput.current;
+              if (!input) return resolve([]);
+              input.onchange = async () => {
+                resolve(await uploadFiles(input.files ?? []));
+                input.value = '';
+              };
+              input.click();
+            })}
             commands={[
               { key: 'memory', name: '/памʼять', description: 'Що ти про мене памʼятаєш' },
               { key: 'files', name: '/файли', description: 'Покажи робочу теку' },
               { key: 'status', name: '/стан', description: 'Що зараз працює' },
             ]}
-            onSend={(text) => onSend(text)}
+            onSend={(text, meta) => onSend(text, meta.attachments)}
             onStop={onStop}
             /*
              * Диктування зупиняється саме — по тиші: PromptBar не дає «стоп»,
@@ -286,6 +290,16 @@ export function Composer({
               if (!text && dictation.error) toast.error('Диктування', dictation.error);
               return text;
             }}
+          />
+
+          <input
+            ref={fileInput}
+            type="file"
+            multiple
+            accept="image/png,image/jpeg,image/webp,image/gif,.txt,.md,.json,.pdf"
+            className="hidden"
+            tabIndex={-1}
+            aria-hidden="true"
           />
 
           <div className="pointer-events-none absolute inset-0">

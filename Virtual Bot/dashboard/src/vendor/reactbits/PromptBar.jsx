@@ -101,6 +101,9 @@ const parseToken = draft => {
 const renderIcon = (icon, size) =>
   isValidElement(icon) ? icon : <HugeiconsIcon icon={icon} size={size} strokeWidth={1.8} />;
 
+const attachmentName = file =>
+  typeof file === 'string' ? file : String(file?.name || file?.filename || 'Вкладення');
+
 function SendGlyph({ busy, morphDuration, squash, tilt }) {
   const reduce = useReducedMotion();
   const svgRef = useRef(null);
@@ -591,20 +594,23 @@ export default function PromptBar({
         <canvas ref={sparkRef} className="prompt-bar__sparks" aria-hidden="true" />
         {attachments.length > 0 ? (
           <div className="prompt-bar__chips">
-            {attachments.map((file, i) => (
-              <span key={`${file}-${i}`} className="prompt-bar__chip">
+            {attachments.map((file, i) => {
+              const name = attachmentName(file);
+              return (
+              <span key={`${name}-${i}`} className="prompt-bar__chip">
                 <HugeiconsIcon icon={File02Icon} size={12} strokeWidth={2} />
-                <span className="prompt-bar__chip-name">{file}</span>
+                <span className="prompt-bar__chip-name">{name}</span>
                 <button
                   type="button"
                   className="prompt-bar__chip-x"
-                  aria-label={`Remove ${file}`}
+                  aria-label={`Remove ${name}`}
                   onClick={() => setAttachments(a => a.filter((_, j) => j !== i))}
                 >
                   <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
                 </button>
               </span>
-            ))}
+              );
+            })}
           </div>
         ) : null}
 

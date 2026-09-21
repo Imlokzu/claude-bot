@@ -6,6 +6,7 @@ export interface ChatMessage {
   ts?: number;
   attachments?: unknown[];
   participant?: string;
+  model?: string;
   steps?: ToolStep[];
 }
 

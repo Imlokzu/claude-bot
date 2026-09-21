@@ -36,7 +36,7 @@ function UserMessage() {
 
 function AssistantMessage() {
   const activity = useAuiState((state) => state.message.metadata.custom) as {
-    steps?: ToolStep[]; running?: boolean; agentStatus?: AgentStatus;
+    steps?: ToolStep[]; running?: boolean; agentStatus?: AgentStatus; model?: string;
   };
   return (
     <MessagePrimitive.Root className="mb-6 flex gap-3">
@@ -47,7 +47,7 @@ function AssistantMessage() {
       <GalleryScope>
         <div className="u-measure min-w-0 flex-1">
           {activity.running || activity.steps?.length ? <Thinking steps={activity.steps ?? []}
-            running={Boolean(activity.running)} status={activity.agentStatus} /> : null}
+            running={Boolean(activity.running)} status={activity.agentStatus} model={activity.model} /> : null}
           <MessagePrimitive.Parts components={{ Text: Markdown }} />
         </div>
       </GalleryScope>

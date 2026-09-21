@@ -38,6 +38,13 @@ export interface ChatDone {
   steps?: ToolStep[];
 }
 
+export interface ChatAttachment {
+  url: string;
+  name: string;
+  type: string;
+  size?: number;
+}
+
 export type AgentStatus = 'connecting' | 'running' | 'unavailable' | 'disconnected';
 
 export interface ChatHandlers {
@@ -45,6 +52,7 @@ export interface ChatHandlers {
   onEmotion?: (emotion: string) => void;
   onTool?: (event: ToolEvent) => void;
   onStatus?: (status: AgentStatus) => void;
+  onModel?: (model: string) => void;
   onSession?: (sessionId: string) => void;
   onDone?: (result: ChatDone) => void;
   onError?: (message: string) => void;
@@ -53,7 +61,7 @@ export interface ChatHandlers {
 export interface ChatPayload {
   message: string;
   session_id?: string;
-  attachments?: unknown[];
+  attachments?: ChatAttachment[];
   participant_name?: string;
   reasoning_effort?: string;
   voice?: boolean;
@@ -158,6 +166,12 @@ function dispatch(frame: string, handlers: ChatHandlers): boolean {
         handlers.onStatus?.(data.status as AgentStatus);
       }
       break;
+    case 'model': {
+      const provider = String(data.provider ?? '').trim();
+      const model = String(data.model ?? '').trim();
+      if (provider && model) handlers.onModel?.(`${provider}/${model}`);
+      break;
+    }
     case 'done':
       handlers.onDone?.(data as unknown as ChatDone);
       return true;

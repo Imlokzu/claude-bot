@@ -618,14 +618,17 @@ async def api_brain_models(request: Request, refresh: bool = Query(default=False
             "available": False,
         }
     models = await openclaw_models.catalog(force=refresh)
-    return {
+    return JSONResponse(
+        content={
         "models": models,
         "selected": openclaw_models.get_selected(),
         "default": openclaw_models.default_model(models),
         "thinking": await openclaw_models.get_thinking(),
         "thinking_levels": list(openclaw_models.THINKING_LEVELS),
         "available": True,
-    }
+        },
+        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=120"},
+    )
 
 
 @app.post("/api/brain/model")

@@ -721,6 +721,7 @@ async def chat_openclaw(
                 model = str(event.get("model") or "").strip()
                 if provider and model:
                     observed_model["value"] = f"{provider}/{model}"
+                await emit(event)
                 return
             if event.get("type") == "delta" or str(event.get("type", "")).startswith("tool_"):
                 observed_work = True

@@ -46,10 +46,18 @@ function ToolActivity({ step }: { step: ToolStep }) {
 }
 
 /** Real, request-scoped actions. No generated or simulated reasoning. */
-export function Thinking({ steps, running, status }: { steps: ToolStep[]; running: boolean; status?: AgentStatus }) {
+export function Thinking({ steps, running, status, model }: {
+  steps: ToolStep[]; running: boolean; status?: AgentStatus; model?: string;
+}) {
   const lines = useMemo(() => steps.map((step) => <ToolActivity key={step.id} step={step} />), [steps]);
   return (
     <div className="mb-4 min-w-0" data-agent-activity>
+      {model || running ? (
+        <p className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
+          <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" />
+          OpenClaw · {model || 'підключення'}
+        </p>
+      ) : null}
       <ThinkingReasoning
         lines={lines}
         busy={running}

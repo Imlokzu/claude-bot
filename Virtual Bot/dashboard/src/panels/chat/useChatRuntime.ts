@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useExternalStoreRuntime, type AppendMessage, type ThreadMessageLike } from '@assistant-ui/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { get } from '@/lib/api';
-import { streamChat, type AgentStatus } from '@/lib/chatStream';
+import { streamChat, type AgentStatus, type ChatAttachment } from '@/lib/chatStream';
 import { t } from '@/lib/i18n';
 import { updateActivity, finishActivity, restoreActivity } from './activity';
 import { useToast } from '@/components/ui/Toaster';
@@ -35,6 +35,7 @@ export function useChatRuntime() {
   const draftRef = useRef('');
   const generation = useRef(0);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('connecting');
+  const [streamModel, setStreamModel] = useState('');
   // Скільки реплік сховано за переказом. 0 — розмову не стискали.
   const [compactedFrom, setCompactedFrom] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -104,7 +105,7 @@ export function useChatRuntime() {
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, attachments: unknown[] = []) => {
       const trimmed = text.trim();
       if (!trimmed || abortRef.current) return;
 
@@ -113,12 +114,18 @@ export function useChatRuntime() {
       const version = ++generation.current;
       const isCurrent = () => version === generation.current && !controller.signal.aborted;
 
-      setMessages((current) => [...current, { id: nextId(), role: 'user', content: trimmed }]);
+      const safeAttachments = attachments.filter(
+        (item): item is ChatAttachment => Boolean(item && typeof item === 'object' && 'url' in item),
+      );
+      setMessages((current) => [...current, {
+        id: nextId(), role: 'user', content: trimmed, attachments: safeAttachments,
+      }]);
       setDraft('');
       setSteps([]);
       stepsRef.current = [];
       draftRef.current = '';
       setAgentStatus('connecting');
+      setStreamModel('');
 
       let accumulated = '';
       let terminal = false;
@@ -137,6 +144,7 @@ export function useChatRuntime() {
         {
           message: trimmed,
           session_id: sessionId || undefined,
+          attachments: safeAttachments,
           // reasoning_effort тут більше не шлемо. Він діяв лише на прямий
           // виклик Omni (картинки), а в чаті відповідає OpenClaw, і глибину
           // думання йому задає власний конфіг — див. /api/brain/thinking.
@@ -158,6 +166,9 @@ export function useChatRuntime() {
           onStatus: (status) => {
             if (isCurrent() && !terminal) setAgentStatus(status);
           },
+          onModel: (model) => {
+            if (isCurrent() && !terminal) setStreamModel(model);
+          },
           onSession: (id) => {
             if (isCurrent() && !terminal) setSessionId(id);
           },
@@ -167,10 +178,12 @@ export function useChatRuntime() {
             const finished = result.steps ?? finishActivity(stepsRef.current);
             setMessages((current) => [
               ...current,
-              { id: nextId(), role: 'assistant', content: result.reply, steps: finished },
+            { id: nextId(), role: 'assistant', content: result.reply, steps: finished,
+              model: result.model || streamModel },
             ]);
             setDraft(null);
             setSteps(finished);
+            if (result.model) setStreamModel(result.model);
             // Each assistant message owns its activity, including saved history.
             // Бекенд міг створити нову розмову й дати їй назву у фоні.
             if (result.session_id && result.session_id !== sessionId) setSessionId(result.session_id);
@@ -229,7 +242,8 @@ export function useChatRuntime() {
       role: message.role,
       content: [{ type: 'text', text: message.content }],
       metadata: { custom: { steps: message.steps ?? [], running: message.id === 'draft',
-        agentStatus: message.id === 'draft' ? agentStatus : undefined } },
+        agentStatus: message.id === 'draft' ? agentStatus : undefined,
+        model: message.model || (message.id === 'draft' ? streamModel : undefined) } },
     }),
     onNew: async (message: AppendMessage) => {
       const text = message.content
