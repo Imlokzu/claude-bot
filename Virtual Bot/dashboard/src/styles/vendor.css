@@ -137,6 +137,11 @@
 .dock-panel { overflow: visible; }
 @media (max-width: 759px) {
   .dock-panel { overflow-x: auto; }
+  .dock-panel .dock-item {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .dock-panel .dock-icon { min-width: 44px; min-height: 44px; }
 }
 
 /* --- док на будь-якому краю ----------------------------------------- *
