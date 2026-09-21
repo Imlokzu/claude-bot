@@ -27,8 +27,10 @@ class EmailToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("get_agent_email", names)
         self.assertIn("check_agent_inbox", names)
         self.assertIn("wait_for_otp_code", names)
+        self.assertIn("send_agent_email", names)
 
         # Test executing tool via registry dispatcher
         res = await execute_tool("get_agent_email", {"agent_name": "lokzu"})
         self.assertEqual(res["status"], "ok")
         self.assertEqual(res["email"], "lokzu@ag.waveio.me")
+

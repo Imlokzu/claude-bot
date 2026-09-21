@@ -152,6 +152,54 @@ async def wait_for_otp_code(
         }
 
 
+async def send_agent_email(
+    to: str,
+    subject: str,
+    body: str,
+    sender_name: str = "Claude Bot",
+) -> dict[str, Any]:
+    """
+    Send an email to any recipient using the configured Brevo outbound API.
+    """
+    brevo_api_key = os.getenv("BREVO_API_KEY", "")
+    if not brevo_api_key:
+        return {"status": "error", "error": "BREVO_API_KEY is not configured in .env"}
+
+    sender_email = os.getenv("BREVO_SENDER_EMAIL", "Lokzuhd@gmail.com")
+    payload = {
+        "sender": {"name": sender_name, "email": sender_email},
+        "to": [{"email": to.strip()}],
+        "subject": subject,
+        "textContent": body,
+    }
+
+    headers = {
+        "api-key": brevo_api_key,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post("https://api.brevo.com/v3/smtp/email", headers=headers, json=payload)
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                return {
+                    "status": "ok",
+                    "sent": True,
+                    "to": to,
+                    "message_id": data.get("messageId"),
+                    "subject": subject,
+                }
+            return {
+                "status": "error",
+                "code": resp.status_code,
+                "error": f"Brevo returned error {resp.status_code}: {resp.text}",
+            }
+    except Exception as exc:
+        log.warning("Failed to send email via Brevo: %s", exc)
+        return {"status": "error", "error": str(exc)}
+
+
 SCHEMAS: list[dict] = [
     {
         "type": "function",
@@ -209,11 +257,38 @@ SCHEMAS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_agent_email",
+            "description": "Надіслати електронний лист від імені бота чи агента на будь-яку адресу (наприклад, власнику або зовнішньому контакту).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Електронна адреса одержувача (напр. 'lokzuhd@gmail.com').",
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "Тема листа.",
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "Текст повідомлення.",
+                    },
+                },
+                "required": ["to", "subject", "body"],
+            },
+        },
+    },
 ]
 
 HANDLERS = {
     "get_agent_email": get_agent_email,
     "check_agent_inbox": check_agent_inbox,
     "wait_for_otp_code": wait_for_otp_code,
+    "send_agent_email": send_agent_email,
 }
+
 
