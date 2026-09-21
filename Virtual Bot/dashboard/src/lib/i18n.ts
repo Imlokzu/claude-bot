@@ -23,6 +23,18 @@ const uk = {
   'chat.connectionError': 'Збій звʼязку',
   'chat.unknownError': 'Невідома помилка',
   'chat.incomplete': 'Потік обірвався до завершення відповіді',
+  'workspace.preview': 'Попередній перегляд файлу',
+  'workspace.save': 'Зберегти',
+  'workspace.saved': 'Збережено',
+  'workspace.saveError': 'Не вдалося зберегти',
+  'workspace.unsaved': 'незбережено',
+  'workspace.reload': 'Перечитати',
+  'workspace.close': 'Закрити',
+  'workspace.openError': 'Не вдалося відкрити файл',
+  'workspace.binary': 'Двійковий файл',
+  'workspace.binaryHint': 'Цей файл не можна редагувати як текст.',
+  'workspace.tooLarge': 'Завеликий файл',
+  'workspace.tooLargeHint': 'Файл завеликий для вбудованого редактора.',
 } as const;
 
 const en: Record<keyof typeof uk, string> = {
@@ -49,6 +61,18 @@ const en: Record<keyof typeof uk, string> = {
   'chat.connectionError': 'Connection failed',
   'chat.unknownError': 'Unknown error',
   'chat.incomplete': 'The stream ended before the reply was complete',
+  'workspace.preview': 'File preview',
+  'workspace.save': 'Save',
+  'workspace.saved': 'Saved',
+  'workspace.saveError': 'Could not save',
+  'workspace.unsaved': 'unsaved',
+  'workspace.reload': 'Reload',
+  'workspace.close': 'Close',
+  'workspace.openError': 'Could not open file',
+  'workspace.binary': 'Binary file',
+  'workspace.binaryHint': 'This file cannot be edited as text.',
+  'workspace.tooLarge': 'File is too large',
+  'workspace.tooLargeHint': 'The file is too large for the embedded editor.',
 };
 
 export function t(key: keyof typeof uk, values: Record<string, string | number> = {}): string {

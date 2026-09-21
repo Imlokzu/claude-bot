@@ -346,3 +346,7 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
 - The chat model catalog is browser-cacheable for 30 seconds, the `+` menu now
   uploads real attachments through `/api/chat/upload`, and gateway model events
   are rendered as the first OpenClaw status line while a response streams.
+- `workspace_show` now opens a temporary right-side dock over the chat instead
+  of navigating away. Text and Markdown files reuse CodeMirror for inline edits
+  and save back to workspace; images and HTML render as previews. Closing the
+  dock leaves the conversation untouched.

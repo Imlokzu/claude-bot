@@ -8,16 +8,7 @@ import { Loader } from '@/components/ui/Status';
 import { useAccentColor } from '@/hooks/useAccentRgb';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { useRoute } from './useRoute';
-import { useBotEvents } from '@/hooks/useBotEvents';
-
-function WorkspacePreviewBridge() {
-  useBotEvents((event) => {
-    const path = event.type === 'preview' ? String(event.path || '') : '';
-    if (!path) return;
-    window.location.hash = `#/files?path=${encodeURIComponent(path)}`;
-  });
-  return null;
-}
+import { WorkspacePreviewDock } from '@/components/shell/WorkspacePreviewDock';
 
 /*
  * Розділи вантажаться ліниво. Це не мікрооптимізація: чат тягне за собою
@@ -45,7 +36,7 @@ export function App() {
 
   const tree = (
     <div className="flex h-dvh flex-col overflow-hidden">
-      <WorkspacePreviewBridge />
+      <WorkspacePreviewDock />
       <Topbar />
 
       {/* Dock offsets follow data-dock; chat keeps its sidebars full-height. */}
