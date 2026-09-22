@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useIsPhone } from '@/hooks/useMediaQuery';
+import { t } from '@/locales/chat';
 import * as Popover from '@radix-ui/react-popover';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, FolderInput, Pin, PinOff, Trash2 } from 'lucide-react';
@@ -41,12 +42,14 @@ function meta(session: SessionSummary): string {
 }
 
 function plural(count: number): string {
+  const isEn = typeof document !== 'undefined' && document.documentElement.lang.startsWith('en');
+  if (isEn) return count === 1 ? t('replies.one') : t('replies.many');
   const tail = count % 10;
   const teen = count % 100;
-  if (teen >= 11 && teen <= 14) return 'реплік';
-  if (tail === 1) return 'репліка';
-  if (tail >= 2 && tail <= 4) return 'репліки';
-  return 'реплік';
+  if (teen >= 11 && teen <= 14) return t('replies.many');
+  if (tail === 1) return t('replies.one');
+  if (tail >= 2 && tail <= 4) return t('replies.few');
+  return t('replies.many');
 }
 
 export function SessionCard({
@@ -83,7 +86,7 @@ export function SessionCard({
     mutationFn: (pinned: boolean) =>
       post(`/api/sessions/${encodeURIComponent(session.id)}/pin`, { pinned }),
     onSuccess: refresh,
-    onError: (error: Error) => toast.error('Не вдалося закріпити', error.message),
+    onError: (error: Error) => toast.error(t('sessions.pinFailed'), error.message),
   });
 
   const setProject = useMutation({
@@ -92,10 +95,10 @@ export function SessionCard({
     onSuccess: (_data, project) => {
       refresh();
       const name = projects.data?.projects.find((item) => item.id === project)?.name;
-      toast.toast(name ? `У проєкті «${name}»` : 'Знято з проєкту');
+      toast.toast(name ? t('sessions.inProject', { name }) : t('sessions.projectCleared'));
       close();
     },
-    onError: (error: Error) => toast.error('Не вдалося перенести', error.message),
+    onError: (error: Error) => toast.error(t('sessions.moveFailed'), error.message),
   });
 
   const remove = useMutation({
@@ -103,10 +106,10 @@ export function SessionCard({
     onSuccess: () => {
       refresh();
       onDeleted(session.id);
-      toast.toast('Розмову видалено');
+      toast.toast(t('sessions.deleted'));
       close();
     },
-    onError: (error: Error) => toast.error('Не вдалося видалити', error.message),
+    onError: (error: Error) => toast.error(t('sessions.deleteFailed'), error.message),
   });
 
   /*
@@ -220,13 +223,13 @@ export function SessionCard({
               onClick={() => setPicking(false)}
               className="mb-2 flex items-center gap-1 text-[12px] text-ink-3 transition-colors hover:text-ink"
             >
-              <ChevronLeft className="size-3.5" /> назад
+              <ChevronLeft className="size-3.5" /> {t('sessions.back')}
             </button>
             <div className="max-h-[220px] space-y-0.5 overflow-y-auto">
               <Choice
                 active={!session.project}
                 onClick={() => setProject.mutate('')}
-                label="Без проєкту"
+                label={t('sessions.noProject')}
               />
               {projects.data?.projects.map((project) => (
                 <Choice
@@ -237,11 +240,11 @@ export function SessionCard({
                 />
               ))}
               {projects.isPending ? (
-                <p className="px-2 py-1 text-[12px] text-ink-3">дивлюсь…</p>
+                <p className="px-2 py-1 text-[12px] text-ink-3">{t('sessions.checking')}</p>
               ) : null}
               {projects.data && projects.data.projects.length === 0 ? (
                 <p className="px-2 py-1 text-[12px] text-ink-3">
-                  Проєктів ще немає — їх заводять в «Огляді».
+                  {t('sessions.noProjects')}
                 </p>
               ) : null}
             </div>
@@ -249,21 +252,21 @@ export function SessionCard({
         ) : (
           <>
             <p className="text-[13px] font-medium leading-snug text-ink">
-              {session.title || 'Без назви'}
+              {session.title || t('sessions.untitled')}
             </p>
             <p className="mt-1 text-[11px] text-ink-3">{meta(session)}</p>
             {current || session.project ? (
               <p className="mt-1 text-[11px] text-ink-2">
-                проєкт: {current?.name || session.project}
+                {t('sessions.project', { name: current?.name || session.project || '' })}
               </p>
             ) : null}
 
             <div className="mt-2.5 flex flex-col gap-0.5 border-t border-line pt-2">
-              <Action icon={<FolderInput />} onClick={() => setPicking(true)} label="У проєкт" />
+              <Action icon={<FolderInput />} onClick={() => setPicking(true)} label={t('sessions.toProject')} />
               <Action
                 icon={session.pinned ? <PinOff /> : <Pin />}
                 onClick={() => setPinned.mutate(!session.pinned)}
-                label={session.pinned ? 'Відкріпити' : 'Закріпити'}
+                label={session.pinned ? t('sessions.unpin') : t('sessions.pin')}
               />
               {/*
                * Підтвердження прямо в кнопці, а не окремим вікном: питання
@@ -274,7 +277,7 @@ export function SessionCard({
                 icon={<Trash2 />}
                 danger
                 onClick={() => (sure ? remove.mutate() : setSure(true))}
-                label={sure ? 'Точно видалити?' : 'Видалити'}
+                label={sure ? t('sessions.deleteSure') : t('sessions.delete')}
               />
             </div>
           </>
@@ -330,7 +333,7 @@ function Choice({
       )}
     >
       <span className="truncate">{label}</span>
-      {active ? <span className="shrink-0 text-[11px] text-accent">тут</span> : null}
+      {active ? <span className="shrink-0 text-[11px] text-accent">{t('sessions.here')}</span> : null}
     </button>
   );
 }

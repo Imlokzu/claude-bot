@@ -12,6 +12,7 @@ import { AccordionGallery, AnimatedContent, GlareHover } from '@/vendor/reactbit
 import { useAccentColor, useCssVar } from '@/hooks/useAccentRgb';
 import { ImageViewer, type GalleryImage } from './ImageViewer';
 import { t } from '@/locales/workspace';
+import { t as chatT } from '@/locales/chat';
 
 /*
  * Картинки у відповіді бота.
@@ -147,7 +148,7 @@ export function ChatImage({ src, alt }: GalleryImage) {
           <button
             type="button"
             onClick={() => open(0)}
-            aria-label={alt ? `Відкрити: ${alt}` : 'Відкрити картинку'}
+            aria-label={alt ? chatT('image.openNamed', { alt }) : chatT('image.open')}
             className="block size-full cursor-zoom-in"
           >
             <img src={src} alt={alt} loading="lazy" draggable={false} />

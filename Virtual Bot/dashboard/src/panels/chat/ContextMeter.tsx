@@ -7,6 +7,7 @@ import { useToast } from '@/components/ui/Toaster';
 import { get, post } from '@/lib/api';
 import { shortNumber, tokensFromChars } from './tokens';
 import { cn } from '@/lib/cn';
+import { t } from '@/locales/chat';
 
 /*
  * Скільки контексту зайнято — і чим саме.
@@ -104,7 +105,7 @@ export function ContextMeter({
       setOpen(false);
       onCompacted();
     },
-    onError: (error) => toast.error('Не вдалося стиснути', (error as Error).message),
+    onError: (error) => toast.error(t('context.compactFailed'), (error as Error).message),
   });
 
   const fill = contextSize > 0 ? (usedTokens / contextSize) * 100 : 0;
@@ -117,12 +118,12 @@ export function ContextMeter({
         <button
           type="button"
           className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors hover:bg-surface-2"
-          aria-label="Контекст розмови"
+          aria-label={t('context.aria')}
         >
           {contextSize > 0 ? <Arc fill={fill} danger={danger} /> : null}
           <span className={cn('u-data text-[10.5px]', danger ? 'text-err' : 'text-ink-3')}>
             ≈{shortNumber(usedTokens)}
-            {contextSize > 0 ? ` / ${shortNumber(contextSize)}` : ' токенів'}
+            {contextSize > 0 ? ` / ${shortNumber(contextSize)}` : t('context.tokens')}
           </span>
         </button>
       </Popover.Trigger>
@@ -135,12 +136,12 @@ export function ContextMeter({
           style={{ zIndex: 'var(--z-pop)' }}
           className="u-pop w-[min(340px,calc(100vw-24px))] rounded-lg border border-line bg-surface p-3 shadow-pop"
         >
-          <p className="u-label mb-2.5">що зараз у контексті</p>
+          <p className="u-label mb-2.5">{t('context.title')}</p>
 
           {breakdown.isPending ? (
             <div className="flex items-center gap-2 py-3">
               <Orb variant="C4" size={14} />
-              <span className="text-[13px] text-ink-3">рахую…</span>
+              <span className="text-[13px] text-ink-3">{t('context.counting')}</span>
             </div>
           ) : breakdown.isError ? (
             <p className="py-2 text-[13px] text-err">{(breakdown.error as Error).message}</p>
@@ -153,7 +154,7 @@ export function ContextMeter({
                     <span className="min-w-0 flex-1 truncate text-ink-2">
                       {part.label}
                       {part.messages !== undefined ? (
-                        <span className="text-ink-3"> · {part.messages} реплік</span>
+                        <span className="text-ink-3"> · {part.messages} {t('context.replies')}</span>
                       ) : null}
                     </span>
                     {/* Смужка частки: із самих лише чисел не видно, що опис
@@ -186,9 +187,9 @@ export function ContextMeter({
                 // «0%» на мільйонному вікні — неправда: щось же зайнято.
                 // Тому все, що менше відсотка, називаємо «менше 1%».
                 ? fill < 1
-                  ? 'менше 1% вікна моделі'
+                  ? t('context.belowOne')
                   : `${Math.round(fill)}% вікна моделі`
-                : 'розмір вікна моделі не вказано'}
+                : t('context.unknown')}
             </span>
             <Button
               size="sm"
@@ -196,7 +197,7 @@ export function ContextMeter({
               disabled={!sessionId || compact.isPending}
               onClick={() => compact.mutate()}
             >
-              {compact.isPending ? 'Переказую…' : 'Стиснути'}
+              {compact.isPending ? t('context.compacting') : t('context.compact')}
             </Button>
           </div>
         </Popover.Content>

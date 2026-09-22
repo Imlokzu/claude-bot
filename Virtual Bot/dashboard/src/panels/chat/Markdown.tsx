@@ -1,3 +1,4 @@
+import { t } from '@/locales/chat';
 import {
   MarkdownTextPrimitive,
   type CodeHeaderProps,
@@ -98,14 +99,14 @@ function CodeHeader({ language, code }: CodeHeaderProps) {
 
   return (
     <div className="flex items-center justify-between rounded-t-md border border-b-0 border-line bg-surface-3 px-3 py-1.5">
-      <span className="u-label text-[10px]">{language || 'код'}</span>
+      <span className="u-label text-[10px]">{language || t('code.default')}</span>
       <button
         type="button"
         onClick={copy}
         className="flex items-center gap-1.5 rounded-xs px-1.5 py-0.5 text-[11px] text-ink-3 transition-colors hover:text-ink"
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-        {copied ? 'Скопійовано' : 'Копіювати'}
+        {copied ? t('code.copied') : t('code.copy')}
       </button>
     </div>
   );

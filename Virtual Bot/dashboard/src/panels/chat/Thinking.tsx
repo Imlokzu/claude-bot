@@ -4,6 +4,7 @@ import { Orb, ThinkingReasoning } from '@/vendor/aicss';
 import { LatticeLoader } from '@/vendor/reactbits';
 import { toolLook } from '@/lib/toolLabels';
 import { t } from '@/lib/i18n';
+import { t as chatT } from '@/locales/chat';
 import { cn } from '@/lib/cn';
 import type { AgentStatus } from '@/lib/chatStream';
 import type { ToolStep } from './types';
@@ -55,7 +56,7 @@ export function Thinking({ steps, running, status, model }: {
       {model || running ? (
         <p className="mb-2 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-ink-3">
           <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" />
-          OpenClaw · {model || 'підключення'}
+          OpenClaw · {model || chatT('thinking.connecting')}
         </p>
       ) : null}
       <ThinkingReasoning

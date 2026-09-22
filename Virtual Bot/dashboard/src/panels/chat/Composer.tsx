@@ -8,6 +8,7 @@ import { useBrainModels, useSelectBrainModel, useSetThinking, type BrainModel } 
 import { useCssVar } from '@/hooks/useAccentRgb';
 import { useDictation } from '@/hooks/useDictation';
 import { ContextMeter } from './ContextMeter';
+import { t } from '@/locales/chat';
 
 /*
  * Поле вводу — це PromptBar із React Bits (reactbits.dev/c/micro), як є.
@@ -24,17 +25,10 @@ import { ContextMeter } from './ContextMeter';
  */
 
 /** Рівні думання — рівно ті, що знає OpenClaw (agents.defaults.thinkingDefault). */
-const THINKING_LABELS: Record<string, string> = {
-  off: 'Без думання',
-  minimal: 'Мінімально',
-  low: 'Трохи',
-  medium: 'Середньо',
-  high: 'Глибоко',
-  xhigh: 'Дуже глибоко',
-  adaptive: 'За потребою',
-  max: 'Максимум',
-  ultra: 'Ультра',
-};
+type EffortKey = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive' | 'max' | 'ultra';
+const EFFORT_KEYS = new Set<string>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive', 'max', 'ultra']);
+const thinkingLabel = (level: string): string =>
+  EFFORT_KEYS.has(level) ? t(`effort.${level as EffortKey}`) : level;
 
 /*
  * Особливості моделі — значками, не текстом.
@@ -49,19 +43,19 @@ const THINKING_LABELS: Record<string, string> = {
  * запасний, видно лише в розгорнутому списку: у рядку це шум.
  */
 const TRAITS = [
-  { key: 'vision', Icon: Eye, title: () => 'бачить картинки' },
+  { key: 'vision', Icon: Eye, title: () => t('trait.vision') },
   {
     key: 'fast',
     Icon: Zap,
     title: (model: BrainModel) =>
-      model.seconds ? `швидка — близько ${model.seconds} с` : 'швидка',
+      model.seconds ? t('trait.fastSeconds', { seconds: model.seconds }) : t('trait.fast'),
   },
 ] as const;
 
 /** Значки другого ряду: роль моделі в ланцюжку OpenClaw. */
 const ROLES = [
-  { key: 'is_default', Icon: Brain, title: 'типова модель OpenClaw' },
-  { key: 'fallback', Icon: LifeBuoy, title: 'запасна модель OpenClaw' },
+  { key: 'is_default', Icon: Brain, title: t('role.default') },
+  { key: 'fallback', Icon: LifeBuoy, title: t('role.fallback') },
 ] as const;
 
 export function Composer({
@@ -96,7 +90,7 @@ export function Composer({
           '/api/chat/upload', body,
         ));
       } catch (error) {
-        toast.error('Файл не додався', (error as Error).message);
+        toast.error(t('composer.uploadFailed'), (error as Error).message);
       }
     }
     return uploaded;
@@ -146,7 +140,7 @@ export function Composer({
   const pickerModels = models.length > 0 ? modelList : [{
     key: '__openclaw-loading__',
     name: <span className="text-ink-3">OpenClaw</span>,
-    tag: <span className="text-[10px] text-ink-3">завантаження</span>,
+    tag: <span className="text-[10px] text-ink-3">{t('composer.loading')}</span>,
   }];
 
   /*
@@ -159,16 +153,16 @@ export function Composer({
    * означало б назвати невідоме конкретним — а це різні стани, і повернутись
    * із «off» у «не задано» інакше було б неможливо.
    */
-  const AS_CONFIGURED = 'Як у OpenClaw';
+  const AS_CONFIGURED = t('composer.asConfigured');
   const levels = brain.data?.thinking_levels ?? [];
   const efforts = useMemo(
-    () => [AS_CONFIGURED, ...levels.map((level) => THINKING_LABELS[level] ?? level)],
+    () => [AS_CONFIGURED, ...levels.map((level) => thinkingLabel(level))],
     [levels],
   );
   const effortByLabel = useMemo<Record<string, string>>(
     () => ({
       [AS_CONFIGURED]: '',
-      ...Object.fromEntries(levels.map((level) => [THINKING_LABELS[level] ?? level, level])),
+      ...Object.fromEntries(levels.map((level) => [thinkingLabel(level), level])),
     }),
     [levels],
   );
@@ -200,24 +194,24 @@ export function Composer({
         */}
         <div className="relative">
           <PromptBar
-            placeholder="Напиши боту…"
+            placeholder={t('composer.placeholder')}
             labels={{
-              effort: 'Думання',
-              effortHint: 'Глибше думання — довша відповідь. Це налаштування OpenClaw, воно діє на всі розмови.',
-              faster: 'Швидше',
-              smarter: 'Розумніше',
-              sources: 'Джерела',
-              commands: 'Команди',
-              models: 'Моделі',
-              chooseModel: 'Обрати модель',
-              chooseEffort: 'Рівень думання',
-              prompt: 'Повідомлення боту',
-              add: 'Додати до розмови',
-              listening: 'Слухаю…',
-              dictate: 'Продиктувати',
-              stopDictation: 'Припинити диктування',
-              send: 'Надіслати',
-              stop: 'Зупинити',
+              effort: t('composer.effort'),
+              effortHint: t('composer.effortHint'),
+              faster: t('composer.faster'),
+              smarter: t('composer.smarter'),
+              sources: t('composer.sources'),
+              commands: t('composer.commands'),
+              models: t('composer.models'),
+              chooseModel: t('composer.chooseModel'),
+              chooseEffort: t('composer.chooseEffort'),
+              prompt: t('composer.prompt'),
+              add: t('composer.add'),
+              listening: t('composer.listening'),
+              dictate: t('composer.dictate'),
+              stopDictation: t('composer.stopDictation'),
+              send: t('composer.send'),
+              stop: t('composer.stop'),
             }}
             width="100%"
             radius={16}
@@ -229,13 +223,13 @@ export function Composer({
             sparkColor={accent}
             models={pickerModels}
             sources={[
-              { key: 'files', name: 'Файли', description: 'Завантажити з пристрою', icon: Paperclip, attach: true },
-              { key: 'web', name: 'Пошук у мережі', description: 'Знайти актуальне', icon: Globe },
-              { key: 'memory', name: 'Памʼять', description: 'Додати нотатку', icon: FileText },
+              { key: 'files', name: t('composer.srcFiles'), description: t('composer.srcFilesDesc'), icon: Paperclip, attach: true },
+              { key: 'web', name: t('composer.srcWeb'), description: t('composer.srcWebDesc'), icon: Globe },
+              { key: 'memory', name: t('composer.srcMemory'), description: t('composer.srcMemoryDesc'), icon: FileText },
             ]}
             defaultModel={current || '__openclaw-loading__'}
             efforts={efforts}
-            defaultEffort={currentThinking ? THINKING_LABELS[currentThinking] ?? currentThinking : AS_CONFIGURED}
+            defaultEffort={currentThinking ? thinkingLabel(currentThinking) : AS_CONFIGURED}
             /*
              * Рівень думання — це НАЛАШТУВАННЯ OpenClaw, а не властивість
              * однієї репліки: поля під reasoning у його HTTP-ендпоінта немає,
@@ -249,16 +243,16 @@ export function Composer({
                 onSuccess: () =>
                   toast.toast(`Рівень думання: ${label}`, {
                     description: level
-                      ? 'Записано в конфіг OpenClaw — діє на всі розмови'
-                      : 'Налаштування знято — діє вбудоване значення OpenClaw',
+                      ? t('composer.effortSaved')
+                      : t('composer.effortCleared'),
                   }),
-                onError: (error) => toast.error('Рівень не прийнявся', (error as Error).message),
+                onError: (error) => toast.error(t('composer.effortFailed'), (error as Error).message),
               });
             }}
             onModelChange={(key) =>
               key === '__openclaw-loading__' ? undefined :
               selectModel.mutate(key, {
-                onError: (error) => toast.error('Модель не прийнялась', (error as Error).message),
+                onError: (error) => toast.error(t('composer.modelFailed'), (error as Error).message),
               })
             }
             onAttach={() => new Promise((resolve) => {
@@ -271,9 +265,9 @@ export function Composer({
               input.click();
             })}
             commands={[
-              { key: 'memory', name: '/памʼять', description: 'Що ти про мене памʼятаєш' },
-              { key: 'files', name: '/файли', description: 'Покажи робочу теку' },
-              { key: 'status', name: '/стан', description: 'Що зараз працює' },
+              { key: 'memory', name: t('composer.cmdMemory'), description: t('composer.cmdMemoryDesc') },
+              { key: 'files', name: t('composer.cmdFiles'), description: t('composer.cmdFilesDesc') },
+              { key: 'status', name: t('composer.cmdStatus'), description: t('composer.cmdStatusDesc') },
             ]}
             onSend={(text, meta) => onSend(text, meta.attachments)}
             onStop={onStop}
@@ -288,7 +282,7 @@ export function Composer({
             onDictateStop={dictation.finish}
             onDictate={async () => {
               const text = await dictation.listen();
-              if (!text && dictation.error) toast.error('Диктування', dictation.error);
+              if (!text && dictation.error) toast.error(t('composer.dictation'), dictation.error);
               return text;
             }}
           />
@@ -332,9 +326,9 @@ export function Composer({
           порахує повна модель і вставить його в поле.
         */}
         {dictation.recognizing ? (
-          <p className="self-center text-[12px] italic text-ink-3">розпізнаю…</p>
+          <p className="self-center text-[12px] italic text-ink-3">{t('composer.recognizing')}</p>
         ) : dictation.partial ? (
-          <p className="self-center text-[12px] italic text-ink-3">чую: {dictation.partial}</p>
+          <p className="self-center text-[12px] italic text-ink-3">{t('composer.hearing', { text: dictation.partial })}</p>
         ) : null}
 
         {/* Запас контексту. PromptBar про нього не знає, а знати треба: саме

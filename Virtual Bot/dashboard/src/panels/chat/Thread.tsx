@@ -7,6 +7,7 @@ import { Thinking } from './Thinking';
 import { Button } from '@/components/ui/Button';
 import { BotIcon } from '@/components/ui/BotIcon';
 import { glue } from '@/lib/glue';
+import { t } from '@/locales/chat';
 import type { ToolStep } from './types';
 import type { AgentStatus } from '@/lib/chatStream';
 
@@ -18,11 +19,7 @@ import type { AgentStatus } from '@/lib/chatStream';
  * абзацу заважає (DESIGN.md, правило 5).
  */
 
-const SUGGESTIONS = [
-  'Що ти зараз умієш?',
-  'Покажи, що в тебе в памʼяті',
-  'Зроби нотатку про сьогодні',
-];
+const SUGGESTIONS = ['thread.suggestion1', 'thread.suggestion2', 'thread.suggestion3'] as const;
 
 function UserMessage() {
   return (
@@ -71,12 +68,12 @@ export function Thread({
           <ThreadPrimitive.Empty>
             <div className="flex flex-1 flex-col items-center justify-center gap-7 py-16 text-center">
               <div>
-                <p className="u-label mb-2">нова розмова</p>
+                <p className="u-label mb-2">{t('thread.new')}</p>
                 {/* Питання друкується саме — порожній екран чату інакше
                     виглядає як екран, що не завантажився. */}
                 <TextType
                   as="h2"
-                  text={['Про що поговоримо?', 'Що зробити?', 'Чим зайнятись?']}
+                  text={[t('thread.prompt1'), t('thread.prompt2'), t('thread.prompt3')]}
                   typingSpeed={55}
                   deletingSpeed={28}
                   pauseDuration={3200}
@@ -86,13 +83,13 @@ export function Thread({
                 />
               </div>
               <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((text) => (
-                  <ThreadPrimitive.Suggestion key={text} prompt={text} method="replace" autoSend asChild>
+                {SUGGESTIONS.map((key) => (
+                  <ThreadPrimitive.Suggestion key={key} prompt={t(key)} method="replace" autoSend asChild>
                     <button
                       type="button"
                       className="rounded-full border border-line px-3.5 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-accent hover:text-ink"
                     >
-                      {glue(text)}
+                      {glue(t(key))}
                     </button>
                   </ThreadPrimitive.Suggestion>
                 ))}
@@ -106,7 +103,7 @@ export function Thread({
           {compactedFrom > 0 ? (
             <p className="u-label mb-4 flex items-center gap-2 text-ink-3">
               <span className="h-px flex-1 bg-line" />
-              нижче переказ {compactedFrom} реплік
+              {t('thread.compacted', { count: compactedFrom })}
               <span className="h-px flex-1 bg-line" />
             </p>
           ) : null}
@@ -123,13 +120,13 @@ export function Thread({
         <Button
           variant="quiet"
           size="sm"
-          aria-label="До актуальної відповіді"
+          aria-label={t('thread.toLatestAria')}
           // Внизу стрічки примітив вимикає кнопку — ховаємо її, а не лишаємо
           // блідою: кружечок без діла посеред розмови тільки відволікає.
           className="chat-scroll-latest absolute bottom-[118px] left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-surface/95 shadow-raise backdrop-blur transition-opacity disabled:pointer-events-none disabled:opacity-0"
         >
           <ArrowDown />
-          <span>До актуального</span>
+          <span>{t('thread.toLatest')}</span>
         </Button>
       </ThreadPrimitive.ScrollToBottom>
 
