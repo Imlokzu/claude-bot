@@ -232,30 +232,12 @@ export default function PromptBar({
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
-  /*
-   * «Клава вже схована» — як тільки textarea втратила фокус на тачі, більше
-   * НІКОЛИ її не підіймаємо під час роботи з меню/відправкою: шоу-хайд
-   * цикл клавіатури смикає layout рівно під пальцем, і тап потрапляє не
-   * туди. Фокус повертає лише прямий тап по полю.
-   */
-  const kbDropped = useRef(false);
-  useEffect(() => {
-    if (!coarse) return undefined;
-    const input = inputRef.current;
-    if (!input) return undefined;
-    const mark = () => { kbDropped.current = true; };
-    input.addEventListener('blur', mark);
-    return () => input.removeEventListener('blur', mark);
-  }, [coarse]);
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
+  /* На тачі меню відкриваємо без фокуса — клавіатура не потрібна для
+     вибору пункту й лише перекриває список. На десктопі фокус лишається:
+     стрілки/Enter одразу працюють. */
   const focusInputKeysOnly = () => {
-    if (!coarse) {
-      focusInput();
-      return;
-    }
-    /* На тачі: якщо клаву вже сховали (трапилось меню/відправка), НЕ
-       підіймаємо її знову — інакше layout стрибає під пальцем. */
-    if (!kbDropped.current) focusInput();
+    if (!coarse) focusInput();
   };
   const closeMenus = useCallback(() => {
     setPlusOpen(false);
@@ -447,7 +429,7 @@ export default function PromptBar({
     setAttachments([]);
     setDismissed(false);
     closeMenus();
-    if (!kbDropped.current) focusInput();
+    focusInputKeysOnly();
   };
 
   const toggleListen = () => {
@@ -624,10 +606,7 @@ export default function PromptBar({
         onPointerDown={e => {
           if (e.target === e.currentTarget || e.target === inputRef.current) closeMenus();
         }}
-        onClick={() => {
-          kbDropped.current = false;
-          focusInput();
-        }}
+        onClick={focusInput}
       >
         <canvas ref={sparkRef} className="prompt-bar__sparks" aria-hidden="true" />
         {attachments.length > 0 ? (
