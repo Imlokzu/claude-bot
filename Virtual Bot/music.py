@@ -24,6 +24,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Any
@@ -677,7 +678,11 @@ def _ytdlp_captions_sync(video_id: str, languages: list[str]) -> list[dict[str, 
     It is not a cure for an IP ban — a banned address gets HTTP 429 here too —
     so the caller still has to tell the user the truth when every path fails.
     """
-    binary = shutil.which("yt-dlp")
+    # Prefer the copy installed beside our own interpreter: that one carries
+    # curl_cffi, so it can impersonate a browser's TLS fingerprint, which some
+    # of YouTube's responses now require. A system-wide yt-dlp usually cannot.
+    local = pathlib.Path(sys.executable).parent / "yt-dlp"
+    binary = str(local) if local.exists() else shutil.which("yt-dlp")
     if not binary:
         raise RuntimeError("yt-dlp не встановлено")
 

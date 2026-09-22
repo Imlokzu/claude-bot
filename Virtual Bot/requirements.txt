@@ -13,4 +13,7 @@ faster-whisper>=1.1.0,<2
 # безкоштовний транскрайб субтитрів без ключа. Опціональні в коді: без них
 # музика/транскрайб чесно віддають 503, решта бота працює.
 yt-dlp>=2025.1.15
+# curl_cffi lets yt-dlp impersonate a browser's TLS fingerprint, which some
+# YouTube responses now demand; without it those requests are simply refused.
+curl-cffi>=0.7
 youtube-transcript-api>=1.0
