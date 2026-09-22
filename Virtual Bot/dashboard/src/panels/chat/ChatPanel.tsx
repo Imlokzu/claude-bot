@@ -16,6 +16,7 @@ import { get } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/Dialog';
 import { t as workspaceT } from '@/locales/workspace';
+import { t } from '@/lib/i18n';
 
 /*
  * Чат. Три колонки на столі: розмови | стрічка | обличчя.
@@ -120,6 +121,11 @@ export default function ChatPanel() {
           </aside>
         ) : null}
 
+        {/*
+         * Планшет: колонка 220 px з'їдала б третину вузького вікна, тож
+         * список розмов — та сама ліва шухляда, що й на телефоні.
+         */}
+
         <div className="chat-conversation relative flex min-h-0 min-w-0 flex-1 flex-col">
           {!isDesk ? (
             <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
@@ -127,13 +133,13 @@ export default function ChatPanel() {
                 variant="ghost"
                 size="sm"
                 className="min-w-0 flex-1"
-                aria-label="Розмови"
+                aria-label={t('chat.sessions')}
                 aria-expanded={listDrawer.open}
                 onClick={() => listDrawer.setOpen(true)}
               >
                 <MessagesSquare />
                 <span className="max-w-[150px] truncate">
-                  {chat.sessions.find((s) => s.id === chat.sessionId)?.title || 'Нова розмова'}
+                  {chat.sessions.find((s) => s.id === chat.sessionId)?.title || t('chat.newSession')}
                 </span>
               </Button>
               {listDrawer.open
@@ -146,15 +152,15 @@ export default function ChatPanel() {
                       />
                       <div
                         {...listDrawer.panelProps}
-                        aria-label="Розмови"
+                        aria-label={t('chat.sessions')}
                         className="u-sheet-l u-safe-t u-safe-b fixed inset-y-0 left-0 flex w-[300px] max-w-[85vw] flex-col border-r border-line bg-surface"
                         style={{ zIndex: 'var(--z-drawer)' }}
                       >
                         <header className="flex items-center justify-between border-b border-line px-4 py-3">
-                          <span className="text-[15px] font-semibold text-ink">Розмови</span>
+                          <span className="text-[15px] font-semibold text-ink">{t('chat.sessions')}</span>
                           <button
                             type="button"
-                            aria-label="Закрити"
+                            aria-label={t('chat.close')}
                             onClick={() => listDrawer.setOpen(false)}
                             className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-3"
                           >

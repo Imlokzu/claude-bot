@@ -43,6 +43,12 @@ const uk = {
   'question.custom': 'Своя відповідь…',
   'question.send': 'Відповісти',
   'question.dismiss': 'Закрити питання',
+  'nav.sections': 'Розділи',
+  'nav.all': 'Усі розділи',
+  'chat.sessions': 'Розмови',
+  'chat.newSession': 'Нова розмова',
+  'chat.untitled': 'Без назви',
+  'chat.close': 'Закрити',
 } as const;
 
 const en: Record<keyof typeof uk, string> = {
@@ -89,6 +95,12 @@ const en: Record<keyof typeof uk, string> = {
   'question.custom': 'Custom answer…',
   'question.send': 'Answer',
   'question.dismiss': 'Dismiss question',
+  'nav.sections': 'Sections',
+  'nav.all': 'All sections',
+  'chat.sessions': 'Conversations',
+  'chat.newSession': 'New conversation',
+  'chat.untitled': 'Untitled',
+  'chat.close': 'Close',
 };
 
 export function t(key: keyof typeof uk, values: Record<string, string | number> = {}): string {

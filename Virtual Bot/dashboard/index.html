@@ -23,6 +23,7 @@
           var r = document.documentElement;
           r.dataset.theme = dark ? 'dark' : 'light';
           r.dataset.accent = a;
+          r.lang = localStorage.getItem('claudeBotLang') === 'en' ? 'en' : 'uk';
         } catch (e) {}
       })();
     </script>

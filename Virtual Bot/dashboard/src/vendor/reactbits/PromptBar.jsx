@@ -221,7 +221,15 @@ export default function PromptBar({
   const level = efforts[effortIndex] ?? '';
   const maxed = efforts.length > 1 && effortIndex === efforts.length - 1;
 
-  const coarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+  const [coarse, setCoarse] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia('(pointer: coarse)');
+    const update = () => setCoarse(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
   const focusInputKeysOnly = () => {
     if (!coarse) focusInput();
@@ -389,7 +397,7 @@ export default function PromptBar({
       setModelKey(row.key);
       setModelOpen(false);
       if (row.key !== modelKey) latest.current.onModelChange?.(row.key);
-      focusInputKeysOnly();
+      if (coarse) inputRef.current?.blur(); else focusInput();
       return;
     }
     const head = token ? draft.slice(0, token.start) : draft;
@@ -416,7 +424,7 @@ export default function PromptBar({
     setAttachments([]);
     setDismissed(false);
     closeMenus();
-    focusInput();
+    if (coarse) inputRef.current?.blur(); else focusInput();
   };
 
   const toggleListen = () => {
@@ -649,7 +657,7 @@ export default function PromptBar({
               setEffortOpen(false);
               setActive(0);
               setPlusOpen(v => !v);
-              focusInputKeysOnly();
+              if (coarse) inputRef.current?.blur(); else focusInput();
             }}
           >
             <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2} />
@@ -668,7 +676,7 @@ export default function PromptBar({
                 setEffortOpen(false);
                 setActive(Math.max(0, models.indexOf(model)));
                 setModelOpen(v => !v);
-                focusInputKeysOnly();
+                if (coarse) inputRef.current?.blur(); else focusInput();
               }}
             >
               <span>{model.name}</span>
@@ -688,7 +696,7 @@ export default function PromptBar({
                 setPlusOpen(false);
                 setModelOpen(false);
                 setEffortOpen(v => !v);
-                focusInputKeysOnly();
+                if (coarse) inputRef.current?.blur(); else focusInput();
               }}
             >
               <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />

@@ -13,6 +13,7 @@ import { get, post } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { glue } from '@/lib/glue';
 import { ACCENTS, THEMES, useTheme } from '@/hooks/useTheme';
+import { useLanguage } from '@/hooks/useLanguage';
 import { JellyRadio } from '@/vendor/reactbits';
 import { useCssVar } from '@/hooks/useAccentRgb';
 import { StoreSection } from './StoreSection';
@@ -250,6 +251,7 @@ function SaveBar({ saving, onSave }: { saving: boolean; onSave: () => void }) {
  */
 function LookSection() {
   const { theme, accent, setTheme, setAccent } = useTheme();
+  const [lang, setLang] = useLanguage();
   const accentColor = useCssVar('--c-accent', '#b95f3d');
   const accentInk = useCssVar('--c-accent-ink', '#fff');
   const surface2 = useCssVar('--c-surface-2', '#efe9df');
@@ -265,6 +267,23 @@ function LookSection() {
           value={theme}
           onChange={(next) => setTheme(next as typeof theme)}
           items={THEMES.map((item) => ({ value: item.id, label: item.label }))}
+          radius={999}
+          chipColor={surface2}
+          activeColor={accentColor}
+          textColor={ink}
+          activeTextColor={accentInk}
+        />
+      </Field>
+
+      <Field label="Мова">
+        <JellyRadio
+          ariaLabel="Мова"
+          value={lang}
+          onChange={(next) => setLang(next as typeof lang)}
+          items={[
+            { value: 'uk', label: 'Українська' },
+            { value: 'en', label: 'English' },
+          ]}
           radius={999}
           chipColor={surface2}
           activeColor={accentColor}

@@ -16,6 +16,7 @@ import { useDrawer } from '@/hooks/useDrawer';
 import { SECTIONS } from '@/app/sections';
 import { useRoute } from '@/app/useRoute';
 import { cn } from '@/lib/cn';
+import { t } from '@/lib/i18n';
 import { useModels, useStatus } from '@/lib/queries';
 
 /*
@@ -61,7 +62,7 @@ export function Topbar() {
 
       {isPhone ? (
         <>
-          <nav aria-label="Розділи" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+          <nav aria-label={t('nav.sections')} className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
             {SECTIONS.filter((item) => item.primary).map((item) => {
               const Icon = item.icon;
               const active = item.id === section;
@@ -83,7 +84,7 @@ export function Topbar() {
             })}
             <button
               type="button"
-              aria-label="Усі розділи"
+              aria-label={t('nav.all')}
               aria-expanded={drawer.open}
               onClick={() => drawer.setOpen(true)}
               className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-3"
@@ -102,22 +103,22 @@ export function Topbar() {
                   />
                   <div
                     {...drawer.panelProps}
-                    aria-label="Усі розділи"
+                    aria-label={t('nav.all')}
                     className="u-sheet-l u-safe-t u-safe-b fixed inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col border-r border-line bg-surface"
                     style={{ zIndex: 'var(--z-drawer)' }}
                   >
                     <header className="flex items-center justify-between border-b border-line px-4 py-3">
-                      <span className="text-[15px] font-semibold text-ink">Розділи</span>
+                      <span className="text-[15px] font-semibold text-ink">{t('nav.sections')}</span>
                       <button
                         type="button"
-                        aria-label="Закрити"
+                        aria-label={t('chat.close')}
                         onClick={() => drawer.setOpen(false)}
                         className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-3"
                       >
                         <X size={18} />
                       </button>
                     </header>
-                    <nav aria-label="Усі розділи" className="flex-1 overflow-y-auto p-2">
+                    <nav aria-label={t('nav.all')} className="flex-1 overflow-y-auto p-2">
                       {SECTIONS.map((item) => {
                         const Icon = item.icon;
                         const active = item.id === section;
