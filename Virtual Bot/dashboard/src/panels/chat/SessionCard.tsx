@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useIsPhone } from '@/hooks/useMediaQuery';
 import * as Popover from '@radix-ui/react-popover';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronLeft, FolderInput, Pin, PinOff, Trash2 } from 'lucide-react';
@@ -62,6 +63,7 @@ export function SessionCard({
 }) {
   const client = useQueryClient();
   const toast = useToast();
+  const isPhone = useIsPhone();
   const [open, setOpen] = useState(false);
   const [picking, setPicking] = useState(false);
   const [sure, setSure] = useState(false);
@@ -137,6 +139,50 @@ export function SessionCard({
 
   const hover = { onMouseEnter: () => plan(true), onMouseLeave: () => plan(false) };
 
+  /*
+   * На телефоні наведення нема — замість нього довгий дотик (як нативне
+   * контекстне меню). 420 мс: швидше — спрацьовувало б під час скролу,
+   * довше — відчувалось би як гальмо. Рух пальцем чи скрол списку
+   * скасовує таймер, інакше картка вистрибувала б посеред гортання.
+   */
+  const press = useRef<{ id: number; x: number; y: number; timer: number } | null>(null);
+
+  const pressCancel = () => {
+    if (press.current) window.clearTimeout(press.current.timer);
+    press.current = null;
+  };
+
+  const touch = {
+    onPointerDown: (event: React.PointerEvent) => {
+      if (event.pointerType !== 'touch') return;
+      pressCancel();
+      press.current = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        timer: window.setTimeout(() => {
+          press.current = null;
+          setOpen(true);
+          /* Легкий відгук, як у нативному меню. Де вібрації нема — тихо
+             поверне false, і нічого не станеться. */
+          navigator.vibrate?.(8);
+        }, 420),
+      };
+    },
+    onPointerMove: (event: React.PointerEvent) => {
+      const state = press.current;
+      if (!state || event.pointerId !== state.id) return;
+      if (Math.hypot(event.clientX - state.x, event.clientY - state.y) > 10) pressCancel();
+    },
+    onPointerUp: pressCancel,
+    onPointerCancel: pressCancel,
+    /* Довгий дотик на iOS/Android сам по собі відкриває контекстне меню
+       браузера й виділення — глушимо, бо свою картку ми вже показали. */
+    onContextMenu: (event: React.MouseEvent) => {
+      if (isPhone) event.preventDefault();
+    },
+  };
+
   const current = useMemo(
     () => projects.data?.projects.find((item) => item.id === session.project),
     [projects.data, session.project],
@@ -146,7 +192,7 @@ export function SessionCard({
     <Popover.Root open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
       <Popover.Anchor asChild>
         <div
-          {...hover}
+          {...(isPhone ? touch : hover)}
           onClick={(event) => {
             if ((event.target as HTMLElement).closest('button')) return;
             onOpen?.();
@@ -155,16 +201,17 @@ export function SessionCard({
       </Popover.Anchor>
 
       <Popover.Content
-        side="right"
-        align="start"
+        side={isPhone ? 'bottom' : 'right'}
+        align={isPhone ? 'center' : 'start'}
         sideOffset={10}
         collisionPadding={12}
+        avoidCollisions
         // Фокус лишається там, де був: картка — підказка, а не діалог, і
         // забирати в людини каретку з поля вводу вона не мусить.
         onOpenAutoFocus={(event) => event.preventDefault()}
         style={{ zIndex: 'var(--z-pop)' }}
-        className="u-pop w-[268px] rounded-md border border-line bg-surface p-3 shadow-pop outline-none"
-        {...hover}
+        className="u-pop w-[min(268px,calc(100vw-24px))] rounded-md border border-line bg-surface p-3 shadow-pop outline-none"
+        {...(isPhone ? {} : hover)}
       >
         {picking ? (
           <>

@@ -8,6 +8,7 @@ import { Loader } from '@/components/ui/Status';
 import { useAccentColor } from '@/hooks/useAccentRgb';
 import { useMediaQuery, useIsPhone } from '@/hooks/useMediaQuery';
 import { useKeyboardOffset } from '@/hooks/useKeyboardOffset';
+import { useEdgeDrawer } from '@/hooks/useEdgeDrawer';
 import { useRoute } from './useRoute';
 import { WorkspacePreviewDock } from '@/components/shell/WorkspacePreviewDock';
 import { BotUiOverlay } from '@/components/shell/BotUiOverlay';
@@ -35,6 +36,10 @@ export function App() {
   const [section, navigate] = useRoute();
   const isPhone = useIsPhone();
   useKeyboardOffset();
+  useEdgeDrawer(
+    () => window.dispatchEvent(new Event('vbot:open-drawer')),
+    () => window.dispatchEvent(new Event('vbot:close-drawer')),
+  );
   const accent = useAccentColor();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
   const swipeHandlers = useSwipeNavigation({

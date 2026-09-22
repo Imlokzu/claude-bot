@@ -15,6 +15,20 @@ const CLOSE_AFTER = 96;
 
 export function useDrawer() {
   const [open, setOpen] = useState(false);
+
+  /* Крайовий жест (useEdgeDrawer) не знає, чия це шухляда, — просто
+     транслює подію. Слухаємо її тут: відкриття працює з будь-якого місця
+     застосунку, а не лише з кнопки. */
+  useEffect(() => {
+    const onOpenEvent = () => setOpen(true);
+    const onCloseEvent = () => setOpen(false);
+    window.addEventListener('vbot:open-drawer', onOpenEvent);
+    window.addEventListener('vbot:close-drawer', onCloseEvent);
+    return () => {
+      window.removeEventListener('vbot:open-drawer', onOpenEvent);
+      window.removeEventListener('vbot:close-drawer', onCloseEvent);
+    };
+  }, []);
   const panelRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ startX: number; lastX: number; lastT: number } | null>(null);
 
