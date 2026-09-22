@@ -543,6 +543,50 @@ def transcript_to_text(segments: list[dict[str, Any]], max_chars: int = 4000) ->
     return " ".join(parts)[:max_chars].strip()
 
 
+def transcript_parts(
+    segments: list[dict[str, Any]], part_chars: int = 12000
+) -> list[dict[str, Any]]:
+    """Ріже транскрайб на частини, які влазять в один запит до моделі.
+
+    Чому не один суцільний текст: година розмови — це десятки тисяч
+    символів, і цілком вони з'їдають вікно моделі. Чому не просто обрізати
+    початок, як робили раніше: з 82 хвилин мозок бачив перші п'ять, чесно
+    казав «текст обрізаний» — і на цьому все закінчувалось, бо попросити
+    продовження було нічим.
+
+    Кожна частина несе свій відрізок часу, щоб мозок міг сказати не просто
+    «далі», а «на 40-й хвилині».
+    """
+    chunks: list[dict[str, Any]] = []
+    buffer: list[str] = []
+    size = 0
+    start = float(segments[0].get("start", 0) or 0) if segments else 0.0
+
+    def flush(end: float) -> None:
+        if not buffer:
+            return
+        chunks.append({
+            "text": " ".join(buffer).strip(),
+            "start_sec": int(start),
+            "end_sec": int(end),
+        })
+
+    for seg in segments:
+        text = seg.get("text", "")
+        if not text:
+            continue
+        if size and size + len(text) + 1 > part_chars:
+            flush(float(seg.get("start", 0) or 0))
+            start = float(seg.get("start", 0) or 0)
+            buffer, size = [], 0
+        buffer.append(text)
+        size += len(text) + 1
+
+    last = float(segments[-1].get("start", 0) or 0) if segments else 0.0
+    flush(last)
+    return chunks
+
+
 # --- Фолбек транскрайбу через Invidious: субтитри беремо з інстансу, якщо
 # прямий timedtext YouTube закритий для цього IP ---
 
