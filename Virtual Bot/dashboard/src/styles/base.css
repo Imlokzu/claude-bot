@@ -233,10 +233,10 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .pin-screen { width: 192px; height: 144px; }
   .pin-screen-frame { width: 320px; height: 240px; max-width: none; transform: scale(0.6); transform-origin: top left; }
   @media (max-width: 759px) {
-    .chat-conversation { padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px)); }
-    /* Клавіатура піднялась — нижньої навігації нема, тож запас під неї зайвий. */
-    [data-kb] .chat-conversation { padding-bottom: 0; }
-    .chat-scroll-latest { bottom: 126px; }
+    /* На телефоні нижнього дока нема (навігація в шапці), тож запас під
+       нього — просто порожня смуга під композером. */
+    .chat-conversation { padding-bottom: 0; }
+    .chat-scroll-latest { bottom: 96px; }
     [data-kb] .chat-scroll-latest { bottom: 96px; }
     .chat-composer {
       padding-left: max(0.75rem, env(safe-area-inset-left, 0px));

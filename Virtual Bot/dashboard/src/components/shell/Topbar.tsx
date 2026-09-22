@@ -185,7 +185,7 @@ export function Topbar() {
         </AnimatePresence>
       </div>
 
-      {activeModel ? (
+      {activeModel && !isPhone ? (
         <Tip content="Модель, якою бот відповів останній раз" side="bottom">
           <span className="hidden max-w-[180px] truncate font-mono text-[11px] text-ink-3 sm:block">
             <Morph mono>{activeModel}</Morph>
@@ -193,22 +193,28 @@ export function Topbar() {
         </Tip>
       ) : null}
 
-      <Tip
-        content={backendOk ? 'Бекенд відповідає' : 'Бекенд не відповідає'}
-        side="bottom"
-      >
-        <span className="flex size-8 items-center justify-center">
-          <Dot kind={status.isPending ? 'idle' : backendOk ? 'ok' : 'err'} />
-        </span>
-      </Tip>
+      {/* На телефоні шапка лишає лише навігацію: лампочки статусу й бейдж
+          режиму їдять рядок, який і так вузький. */}
+      {!isPhone ? (
+        <>
+          <Tip
+            content={backendOk ? 'Бекенд відповідає' : 'Бекенд не відповідає'}
+            side="bottom"
+          >
+            <span className="flex size-8 items-center justify-center">
+              <Dot kind={status.isPending ? 'idle' : backendOk ? 'ok' : 'err'} />
+            </span>
+          </Tip>
 
-      <Tip content={eventsLive ? 'Стрічка подій жива' : 'Стрічка подій обірвана'} side="bottom">
-        <span className="flex size-8 items-center justify-center">
-          <Dot kind={eventsLive ? 'ok' : 'idle'} />
-        </span>
-      </Tip>
+          <Tip content={eventsLive ? 'Стрічка подій жива' : 'Стрічка подій обірвана'} side="bottom">
+            <span className="flex size-8 items-center justify-center">
+              <Dot kind={eventsLive ? 'ok' : 'idle'} />
+            </span>
+          </Tip>
 
-      <AuthCorner />
+          <AuthCorner />
+        </>
+      ) : null}
     </header>
   );
 }

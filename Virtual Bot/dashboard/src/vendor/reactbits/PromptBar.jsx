@@ -615,7 +615,12 @@ export default function PromptBar({
         onPointerDown={e => {
           if (e.target === e.currentTarget || e.target === inputRef.current) closeMenus();
         }}
-        onClick={focusInput}
+        onClick={e => {
+          /* Клавіатуру піднімає лише дотик по самому текстовому полю —
+             клік по пустій зоні навколо рядка кнопок не повинен її
+             відкривати, інакше кожен промах перетворювався на клаву. */
+          if (e.target === e.currentTarget || e.target === inputRef.current) focusInput();
+        }}
       >
         <canvas ref={sparkRef} className="prompt-bar__sparks" aria-hidden="true" />
         {attachments.length > 0 ? (
