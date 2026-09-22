@@ -160,6 +160,43 @@ TOOLS = [
     },
 ]
 
+TOOLS.append(
+    {
+        "name": "share_site",
+        "description": (
+            "Опублікувати сайт із робочої теки в інтернеті через Cloudflare Tunnel. "
+            "Повертає публічне посилання https://<slug>.waveio.me. Використовуй, коли "
+            "користувач просить показати чи поділитись сайтом, який ти зробив."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Шлях у workspace, напр. 'games/mario'."},
+                "slug": {"type": "string", "description": "Коротке ім'я для посилання (a-z, 0-9, дефіс)."},
+            },
+            "required": ["path", "slug"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "unshare_site",
+        "description": "Зняти сайт із публікації — посилання перестає працювати.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"slug": {"type": "string", "description": "Slug публікації."}},
+            "required": ["slug"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "list_shared_sites",
+        "description": "Показати всі сайти, що зараз опубліковані через тунель.",
+        "inputSchema": {"type": "object", "properties": {}},
+    }
+)
+
 _TOOL_NAMES = {t["name"] for t in TOOLS}
 
 

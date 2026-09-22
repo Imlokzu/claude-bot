@@ -84,6 +84,9 @@ def _load_dotenv(path: Path) -> None:
 # Секрети з .env (OMNI_API_KEY тощо) — до першого читання ключів.
 # Файл .env — секрет: у git/вікі/фронтенд не потрапляє.
 _load_dotenv(BASE_DIR / ".env")
+# Ключі інфраструктури (Cloudflare тощо) лежать у корені репозиторію —
+# завантажуємо й їх, не перезаписуючи локальні.
+_load_dotenv(BASE_DIR.parent / ".env")
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

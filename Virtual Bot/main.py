@@ -271,6 +271,26 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def rewrite_share_host(request: Request, call_next):
+    """
+    Публічні сайти через тунель приходять на цей самий сервер із Host
+    <slug>.waveio.me (ingress тунеля вказує на корінь, бо шляхи в ingress
+    Cloudflare не вміє). Переписуємо шлях на /site/<slug>/... — далі працює
+    звичайний роутер. Хости самої панелі не чіпаємо.
+    """
+    host = (request.headers.get("host") or "").split(":")[0]
+    if host.endswith(".waveio.me"):
+        slug = host[: -len(".waveio.me")]
+        if slug and slug not in {"www", "waveio"}:
+            path = request.url.path
+            if not path.startswith("/site/"):
+                scope = request.scope
+                scope["path"] = f"/site/{slug}{path if path != '/' else ''}"
+                scope["raw_path"] = scope["path"].encode("utf-8")
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def reject_oversized_asr_request(request: Request, call_next):
     """Відсікає завеликий multipart ASR до запуску парсера UploadFile."""
     if request.method == "POST" and request.url.path == "/api/asr":
@@ -2954,6 +2974,41 @@ _PREVIEW_TYPES = {
 }
 
 
+# ---------------------------------------------------------------- сайти через тунель
+
+class ShareRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=300)
+    slug: str = Field(min_length=1, max_length=63)
+
+
+class UnshareRequest(BaseModel):
+    slug: str = Field(min_length=1, max_length=63)
+
+
+@app.post("/api/share/site")
+async def api_share_site(request: Request, req: ShareRequest) -> dict:
+    """Публікує теку/файл із workspace за https://<slug>.waveio.me."""
+    await _require_user(request)
+    import site_share
+    return await site_share.share(req.path, req.slug)
+
+
+@app.post("/api/share/unshare")
+async def api_unshare_site(request: Request, req: UnshareRequest) -> dict:
+    """Знімає публікацію сайту."""
+    await _require_user(request)
+    import site_share
+    return await site_share.unshare(req.slug)
+
+
+@app.get("/api/share/list")
+async def api_share_list(request: Request) -> dict:
+    """Усі активні публікації."""
+    await _require_user(request)
+    import site_share
+    return site_share.list_shares()
+
+
 @app.get("/preview/{file_path:path}", include_in_schema=False)
 def serve_workspace_preview(file_path: str, session_id: str = Query(default="", max_length=64)):
     """
@@ -3120,6 +3175,37 @@ def serve_upload(file_path: str):
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Файл не знайдено")
     return FileResponse(target)
+
+
+# ---------------------------------------------------- публічні сайти (тунель)
+# ВАЖЛИВО: до catch-all статики й після /api/* — інакше перекриє панель.
+
+@app.get("/site/{slug}", include_in_schema=False)
+@app.get("/site/{slug}/{file_path:path}", include_in_schema=False)
+def serve_shared_site(slug: str, file_path: str = ""):
+    """
+    Публічна роздача пошареного сайту. https://<slug>.waveio.me/... сюди
+    потрапляє через ingress тунеля (origin — цей самий сервер). Slug → шлях
+    дивиться site_share; шлях додатково перевіряється workspace._resolve,
+    тож вийти за межі пошареної теки неможливо.
+    """
+    import site_share
+    shares = site_share.list_shares()["shares"]
+    base = next((item["path"] for item in shares if item["slug"] == slug), None)
+    if base is None:
+        raise HTTPException(status_code=404, detail="Немає такої публікації")
+    rel = f"{base}/{file_path}" if file_path else base
+    try:
+        target = workspace._resolve(rel, must_exist=True)
+    except (ValueError, FileNotFoundError):
+        raise HTTPException(status_code=404, detail="Немає такого файлу")
+    if target.is_dir():
+        index = target / "index.html"
+        if not index.is_file():
+            raise HTTPException(status_code=404, detail="У теці немає index.html")
+        target = index
+    media = _PREVIEW_TYPES.get(target.suffix.lower(), "application/octet-stream")
+    return FileResponse(target, media_type=media)
 
 
 # ------------------------------------------------------------------ статика
