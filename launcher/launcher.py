@@ -21,7 +21,7 @@ STRINGS = json.loads(Path(__file__).with_name("locales.json").read_text(encoding
 LANG = "uk"
 ACTIONS = ("web", "screen", "openclaw", "vision", "display", "pair")
 SERVICES = {
-    "web": ("Virtual Bot", 8100, "/dash/", ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8100", "--timeout-graceful-shutdown", "3"]),
+    "web": ("Virtual Bot", 8100, "/dash/", ["-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8100", "--timeout-graceful-shutdown", "3"]),
     "vision": ("Vision Agent", 8000, "/health", ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"]),
     "display": ("claude-bot-display", 8001, "/health", ["-m", "backend.server", "--host", "127.0.0.1", "--port", "8001"]),
     "openclaw": (".", 18789, "/health", ["gateway", "run", "--bind", "loopback", "--port", "18789"]),
