@@ -225,6 +225,9 @@
   .dock-panel[data-axis='y'] { overflow-x: visible; overflow-y: auto; }
 }
 
+/* Клавіатура піднялась: док унізу лише забирав би рядок над нею. */
+[data-kb] [data-dock='bottom'] { display: none; }
+
 /* Підпис відсувається вбік, а не вгору: над вертикальним доком його нема
    куди подіти, і сусідні значки він би перекривав. */
 [data-dock='left'] .dock-label { top: 50%; left: calc(100% + 0.5rem); translate: 0 -50%; transform: none; }

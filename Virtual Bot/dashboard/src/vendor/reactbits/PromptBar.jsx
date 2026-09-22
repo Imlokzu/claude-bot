@@ -221,7 +221,11 @@ export default function PromptBar({
   const level = efforts[effortIndex] ?? '';
   const maxed = efforts.length > 1 && effortIndex === efforts.length - 1;
 
+  const coarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
+  const focusInputKeysOnly = () => {
+    if (!coarse) focusInput();
+  };
   const closeMenus = useCallback(() => {
     setPlusOpen(false);
     setModelOpen(false);
@@ -385,7 +389,7 @@ export default function PromptBar({
       setModelKey(row.key);
       setModelOpen(false);
       if (row.key !== modelKey) latest.current.onModelChange?.(row.key);
-      focusInput();
+      focusInputKeysOnly();
       return;
     }
     const head = token ? draft.slice(0, token.start) : draft;
@@ -402,7 +406,7 @@ export default function PromptBar({
     }
     setPlusOpen(false);
     setDismissed(false);
-    focusInput();
+    focusInputKeysOnly();
   };
 
   const send = () => {
@@ -645,7 +649,7 @@ export default function PromptBar({
               setEffortOpen(false);
               setActive(0);
               setPlusOpen(v => !v);
-              focusInput();
+              focusInputKeysOnly();
             }}
           >
             <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2} />
@@ -664,7 +668,7 @@ export default function PromptBar({
                 setEffortOpen(false);
                 setActive(Math.max(0, models.indexOf(model)));
                 setModelOpen(v => !v);
-                focusInput();
+                focusInputKeysOnly();
               }}
             >
               <span>{model.name}</span>
@@ -684,7 +688,7 @@ export default function PromptBar({
                 setPlusOpen(false);
                 setModelOpen(false);
                 setEffortOpen(v => !v);
-                focusInput();
+                focusInputKeysOnly();
               }}
             >
               <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />

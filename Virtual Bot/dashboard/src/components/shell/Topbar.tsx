@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Menu, X } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Brand } from './Brand';
 import { AuthCorner } from './AuthCorner';
@@ -9,6 +11,11 @@ import { toolLook } from '@/lib/toolLabels';
 import { Tip } from '@/components/ui/Tip';
 import { useBotEvents, useEventsConnected } from '@/hooks/useBotEvents';
 import { useDockSide } from '@/hooks/useDockSide';
+import { useIsPhone } from '@/hooks/useMediaQuery';
+import { useDrawer } from '@/hooks/useDrawer';
+import { SECTIONS } from '@/app/sections';
+import { useRoute } from '@/app/useRoute';
+import { cn } from '@/lib/cn';
 import { useModels, useStatus } from '@/lib/queries';
 
 /*
@@ -17,6 +24,9 @@ import { useModels, useStatus } from '@/lib/queries';
  * переносимо як є.
  */
 export function Topbar() {
+  const isPhone = useIsPhone();
+  const [section, navigate] = useRoute();
+  const drawer = useDrawer();
   const status = useStatus();
   const models = useModels();
   const eventsLive = useEventsConnected();
@@ -49,6 +59,96 @@ export function Topbar() {
             style={{ zIndex: 'var(--z-topbar)' }}>
       <Brand compact className="shrink-0" />
 
+      {isPhone ? (
+        <>
+          <nav aria-label="Розділи" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+            {SECTIONS.filter((item) => item.primary).map((item) => {
+              const Icon = item.icon;
+              const active = item.id === section;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={active ? 'page' : undefined}
+                  onClick={() => navigate(item.id)}
+                  className={cn(
+                    'flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] transition-colors',
+                    active ? 'bg-accent-soft font-medium text-ink' : 'text-ink-3',
+                  )}
+                >
+                  <Icon size={16} strokeWidth={active ? 2.1 : 1.75} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-label="Усі розділи"
+              aria-expanded={drawer.open}
+              onClick={() => drawer.setOpen(true)}
+              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-ink-3"
+            >
+              <Menu size={18} />
+            </button>
+          </nav>
+
+          {drawer.open
+            ? createPortal(
+                <>
+                  <div
+                    {...drawer.veilProps}
+                    className="u-veil fixed inset-0"
+                    style={{ background: 'var(--c-overlay)', zIndex: 'var(--z-drawer)' }}
+                  />
+                  <div
+                    {...drawer.panelProps}
+                    aria-label="Усі розділи"
+                    className="u-sheet-l u-safe-t u-safe-b fixed inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col border-r border-line bg-surface"
+                    style={{ zIndex: 'var(--z-drawer)' }}
+                  >
+                    <header className="flex items-center justify-between border-b border-line px-4 py-3">
+                      <span className="text-[15px] font-semibold text-ink">Розділи</span>
+                      <button
+                        type="button"
+                        aria-label="Закрити"
+                        onClick={() => drawer.setOpen(false)}
+                        className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-3"
+                      >
+                        <X size={18} />
+                      </button>
+                    </header>
+                    <nav aria-label="Усі розділи" className="flex-1 overflow-y-auto p-2">
+                      {SECTIONS.map((item) => {
+                        const Icon = item.icon;
+                        const active = item.id === section;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            aria-current={active ? 'page' : undefined}
+                            onClick={() => {
+                              navigate(item.id);
+                              drawer.setOpen(false);
+                            }}
+                            className={cn(
+                              'flex min-h-11 w-full items-center gap-3 rounded-md px-3 text-left text-[14px] transition-colors',
+                              active ? 'bg-accent-soft font-medium text-ink' : 'text-ink-2',
+                            )}
+                          >
+                            <Icon size={17} strokeWidth={active ? 2.1 : 1.75} />
+                            <span>{item.label}</span>
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </div>
+                </>,
+                document.body,
+              )
+            : null}
+        </>
+      ) : null}
+
       {/*
         Порожня середина шапки — це місце для дока, коли він стоїть зверху.
         Він потрапляє сюди порталом із DockNav (там же лишається все
@@ -56,7 +156,7 @@ export function Topbar() {
         з'їдала ще 84 px і читалась як дві випадково злиплі панелі.
       */}
       <div
-        className="flex min-w-0 flex-1 items-center justify-center gap-3"
+        className={cn("min-w-0 flex-1 items-center justify-center gap-3", isPhone ? "hidden" : "flex")}
         // Значок під курсором виростає нижче за смугу — хай виростає.
         style={side === 'top' ? { overflow: 'visible' } : undefined}
       >

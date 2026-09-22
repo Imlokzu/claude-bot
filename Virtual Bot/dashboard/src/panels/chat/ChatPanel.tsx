@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AssistantRuntimeProvider } from '@assistant-ui/react';
+import { createPortal } from 'react-dom';
 import { MessagesSquare, PanelRightOpen, X } from 'lucide-react';
 import { Thread } from './Thread';
 import { Composer } from './Composer';
@@ -8,6 +9,7 @@ import { Face } from './Face';
 import { PinnedPanels } from './PinnedPanels';
 import { useChatRuntime } from './useChatRuntime';
 import { useIsDesk, useIsPhone } from '@/hooks/useMediaQuery';
+import { useDrawer } from '@/hooks/useDrawer';
 import { useRouteParam } from '@/app/useRoute';
 import { useQuery } from '@tanstack/react-query';
 import { get } from '@/lib/api';
@@ -45,7 +47,7 @@ export default function ChatPanel() {
   const isPhone = useIsPhone();
   const isDesk = useIsDesk();
   const chat = useChatRuntime();
-  const [listOpen, setListOpen] = useState(false);
+  const listDrawer = useDrawer();
   const [panelsOpen, setPanelsOpen] = useState(false);
 
   useEffect(() => {
@@ -99,11 +101,11 @@ export default function ChatPanel() {
       current={chat.sessionId}
       onOpen={(id) => {
         void chat.openSession(id);
-        setListOpen(false);
+        listDrawer.setOpen(false);
       }}
       onNew={() => {
         chat.newSession();
-        setListOpen(false);
+        listDrawer.setOpen(false);
       }}
     />
   );
@@ -121,19 +123,51 @@ export default function ChatPanel() {
         <div className="chat-conversation relative flex min-h-0 min-w-0 flex-1 flex-col">
           {!isDesk ? (
             <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
-              <Dialog open={listOpen} onOpenChange={setListOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="sm" className="min-w-0 flex-1" aria-label="Розмови">
-                    <MessagesSquare />
-                    <span className="max-w-[150px] truncate">
-                      {chat.sessions.find((s) => s.id === chat.sessionId)?.title || 'Нова розмова'}
-                    </span>
-                  </Button>
-                </DialogTrigger>
-                <DialogContent title="Розмови" side={isPhone ? 'bottom' : 'center'} className="p-0">
-                  <div className="max-h-[60dvh]">{list}</div>
-                </DialogContent>
-              </Dialog>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="min-w-0 flex-1"
+                aria-label="Розмови"
+                aria-expanded={listDrawer.open}
+                onClick={() => listDrawer.setOpen(true)}
+              >
+                <MessagesSquare />
+                <span className="max-w-[150px] truncate">
+                  {chat.sessions.find((s) => s.id === chat.sessionId)?.title || 'Нова розмова'}
+                </span>
+              </Button>
+              {listDrawer.open
+                ? createPortal(
+                    <>
+                      <div
+                        {...listDrawer.veilProps}
+                        className="u-veil fixed inset-0"
+                        style={{ background: 'var(--c-overlay)', zIndex: 'var(--z-drawer)' }}
+                      />
+                      <div
+                        {...listDrawer.panelProps}
+                        aria-label="Розмови"
+                        className="u-sheet-l u-safe-t u-safe-b fixed inset-y-0 left-0 flex w-[300px] max-w-[85vw] flex-col border-r border-line bg-surface"
+                        style={{ zIndex: 'var(--z-drawer)' }}
+                      >
+                        <header className="flex items-center justify-between border-b border-line px-4 py-3">
+                          <span className="text-[15px] font-semibold text-ink">Розмови</span>
+                          <button
+                            type="button"
+                            aria-label="Закрити"
+                            onClick={() => listDrawer.setOpen(false)}
+                            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-3"
+                          >
+                            <X size={18} />
+                          </button>
+                        </header>
+                        {project ? <ProjectChip name={projectName} /> : null}
+                        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{list}</div>
+                      </div>
+                    </>,
+                    document.body,
+                  )
+                : null}
               <div className="flex-1" />
               <Dialog open={panelsOpen} onOpenChange={setPanelsOpen}>
                 <DialogTrigger asChild>

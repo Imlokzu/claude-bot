@@ -6,7 +6,8 @@ import { CommandPalette } from '@/components/shell/CommandPalette';
 import { PanelBoundary } from '@/components/shell/PanelBoundary';
 import { Loader } from '@/components/ui/Status';
 import { useAccentColor } from '@/hooks/useAccentRgb';
-import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useMediaQuery, useIsPhone } from '@/hooks/useMediaQuery';
+import { useKeyboardOffset } from '@/hooks/useKeyboardOffset';
 import { useRoute } from './useRoute';
 import { WorkspacePreviewDock } from '@/components/shell/WorkspacePreviewDock';
 import { BotUiOverlay } from '@/components/shell/BotUiOverlay';
@@ -32,6 +33,8 @@ const PANELS: Record<string, React.LazyExoticComponent<() => React.ReactElement>
 
 export function App() {
   const [section, navigate] = useRoute();
+  const isPhone = useIsPhone();
+  useKeyboardOffset();
   const accent = useAccentColor();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
   const swipeHandlers = useSwipeNavigation({
@@ -43,7 +46,7 @@ export function App() {
   const Panel = PANELS[section] ?? PANELS.overview;
 
   const tree = (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="app-shell flex h-dvh flex-col overflow-hidden">
       <WorkspacePreviewDock />
       <BotUiOverlay />
       <Topbar />
@@ -68,7 +71,7 @@ export function App() {
         </PanelBoundary>
       </main>
 
-      <DockNav current={section} onNavigate={navigate} />
+      {isPhone ? null : <DockNav current={section} onNavigate={navigate} />}
       <CommandPalette />
     </div>
   );

@@ -198,6 +198,11 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 }
 
 @layer components {
+  /* Екранна клавіатура: --kb ставить useKeyboardOffset. Висота вікна на
+     телефоні під клавіатурою не змінюється, тож шел стискаємо вручну —
+     поле вводу лишається над клавіатурою, а не під нею. */
+  [data-kb] .app-shell { height: calc(100dvh - var(--kb, 0px)); }
+
   /* Reserve resting dock size; magnification floats over content. */
   .u-under-dock { padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
   [data-dock='top'] .u-under-dock { padding-bottom: 0; }
@@ -229,7 +234,10 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .pin-screen-frame { width: 320px; height: 240px; max-width: none; transform: scale(0.6); transform-origin: top left; }
   @media (max-width: 759px) {
     .chat-conversation { padding-bottom: calc(62px + env(safe-area-inset-bottom, 0px)); }
+    /* Клавіатура піднялась — нижньої навігації нема, тож запас під неї зайвий. */
+    [data-kb] .chat-conversation { padding-bottom: 0; }
     .chat-scroll-latest { bottom: 126px; }
+    [data-kb] .chat-scroll-latest { bottom: 96px; }
     .chat-composer {
       padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
       padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
@@ -267,6 +275,9 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .u-sheet[data-state='open'] { animation: u-sheet-in 300ms var(--e-spring) both; }
   .u-sheet[data-state='closed'] { animation: u-sheet-out 180ms var(--e-out) both; }
 
+  /* Ліва шухляда (розмови, розділи на телефоні) — приїжджає зліва. */
+  .u-sheet-l { animation: u-sheet-l-in 280ms var(--e-spring) both; }
+
   /*
    * Сходинка для рядків усередині меню. Затримка — по порядку, не миттєво
    * все разом: око встигає побачити, що пунктів кілька й де вони.
@@ -302,6 +313,10 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 @keyframes u-sheet-out {
   from { opacity: 1; transform: none; }
   to   { opacity: 0; transform: translateY(10px); }
+}
+@keyframes u-sheet-l-in {
+  from { transform: translateX(-100%); }
+  to   { transform: none; }
 }
 @keyframes u-rise {
   from { opacity: 0; transform: translateY(5px); }
