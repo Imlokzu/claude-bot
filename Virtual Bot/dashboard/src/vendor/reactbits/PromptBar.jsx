@@ -214,6 +214,33 @@ export default function PromptBar({
   const token = dismissed ? null : parseToken(draft);
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
   menuOpenRef.current = open !== null;
+
+  /* Закриття з рухом: компонент раніше знімав меню з DOM тієї ж миті, і
+     анімувати зникнення було нічим. Тепер, коли `open` стає null, меню
+     лишається змонтованим ще 180 мс у стані `closing` — CSS дограє
+     scale-down, і лише тоді воно зникає. Під час closing меню не реагує
+     на вказівник. */
+  const [closing, setClosing] = useState(null);
+  const closeTimer = useRef(0);
+  const prevOpen = useRef(null);
+  useEffect(() => {
+    if (open) {
+      clearTimeout(closeTimer.current);
+      prevOpen.current = open;
+      setClosing(null);
+      return undefined;
+    }
+    if (prevOpen.current) {
+      const kind = prevOpen.current;
+      prevOpen.current = null;
+      setClosing(kind);
+      clearTimeout(closeTimer.current);
+      closeTimer.current = setTimeout(() => setClosing(null), 180);
+    }
+    return undefined;
+  }, [open]);
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+  const shown = open ?? closing;
   const query = plusOpen ? '' : (token?.query ?? '');
   const list = useMemo(() => {
     if (open === 'at') return sources.filter(s => s.name.toLowerCase().includes(query));
@@ -509,22 +536,23 @@ export default function PromptBar({
         '--pb-press': pressScale
       }}
     >
-      {open ? (
+      {shown ? (
         <div
           className={`prompt-bar__menu${coarse ? ' prompt-bar__menu--vv' : ''}`}
-          role={open === 'effort' ? 'dialog' : 'listbox'}
+          role={shown === 'effort' ? 'dialog' : 'listbox'}
           aria-label={
-            open === 'at'
+            shown === 'at'
               ? (labels?.sources ?? 'Sources')
-              : open === 'slash'
+              : shown === 'slash'
                 ? (labels?.commands ?? 'Commands')
-                : open === 'model'
+                : shown === 'model'
                   ? (labels?.models ?? 'Models')
                   : (labels?.effort ?? 'Effort')
           }
-          data-kind={open}
+          data-kind={shown}
+          data-state={open ? 'open' : 'closed'}
         >
-          {open === 'effort' ? (
+          {shown === 'effort' ? (
             <>
               <div className="prompt-bar__effort-head">
                 <span className="prompt-bar__effort-title">{labels?.effort ?? 'Effort'}</span>
@@ -589,10 +617,10 @@ export default function PromptBar({
                     pick(row);
                   }}
                 >
-                  {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
+                  {shown === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
                   <span className="prompt-bar__row-name">{row.name}</span>
                   {row.description ? <span className="prompt-bar__row-desc">{row.description}</span> : null}
-                  {open === 'model' ? (
+                  {shown === 'model' ? (
                     <>
                       <span className="prompt-bar__row-tag">{row.tag}</span>
                       <span className="prompt-bar__row-check" data-on={row.key === model?.key ? '' : undefined}>
