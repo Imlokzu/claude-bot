@@ -35,6 +35,11 @@ _QUEUE_MAX = 200
 # Черги активних підписників (по одній на SSE-клієнта)
 _subscribers: set[asyncio.Queue] = set()
 
+# Останній todo-чекліст на користувача (clerk uid; "" — локальний режим).
+# Клієнт, що підключився після події, одразу отримує актуальний список —
+# інакше перезавантажена вкладка втрачала б чекліст, який бот уже показав.
+_latest_todo: dict[str, dict] = {}
+
 # Сентинел «потік завершено»: close_all() кладе його в кожну чергу,
 # генератор sse_stream, побачивши його, негайно завершується.
 _CLOSE = object()
@@ -175,7 +180,12 @@ def publish_ui(kind: str, data: dict, audience: str | None = None) -> None:
     Панель домальовує його прямо у відповідь — щоб бот міг ПОКАЗАТИ, а не
     описувати текстом «оберіть варіант 1 або 2».
     """
-    publish({"type": "ui", "kind": str(kind)[:20], "data": data or {}}, audience=audience)
+    kind = str(kind)[:20]
+    if kind == "todo":
+        # Чекліст — стан, а не мить: запам'ятовуємо останній, щоб новий
+        # клієнт (перезавантаження, другий пристрій) бачив актуальний список.
+        _latest_todo[audience or ""] = data or {}
+    publish({"type": "ui", "kind": kind, "data": data or {}}, audience=audience)
 
 
 def publish_preview(path: str) -> None:
@@ -234,6 +244,11 @@ async def sse_stream(audience: str | None = None) -> AsyncIterator[str]:
     try:
         # Одразу шлемо коментар, щоб проксі/браузер відкрили потік
         yield ": ping\n\n"
+        # Останній чекліст цього користувача — одразу після підключення,
+        # щоб панель не чекала наступної дії бота.
+        todo = _latest_todo.get(audience or "")
+        if todo:
+            yield f"data: {json.dumps({'type': 'ui', 'kind': 'todo', 'data': todo}, ensure_ascii=False)}\n\n"
         while not _shutting_down:
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_S)

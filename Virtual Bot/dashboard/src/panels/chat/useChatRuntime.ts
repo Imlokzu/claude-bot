@@ -266,6 +266,8 @@ export function useChatRuntime() {
     running: draft !== null,
     compactedFrom,
     usedTokens,
+    // Сира історія — для панелі витрат (вхідні/вихідні рахуються окремо).
+    messages,
     // PromptBar володіє власним текстом, тож надсилання й зупинка потрібні
     // назовні напряму, повз композер assistant-ui.
     send,

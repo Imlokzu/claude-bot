@@ -16,6 +16,14 @@ const uk = {
   'pins.cameraError': 'Камера недоступна',
   'pins.watch': 'Дивитися',
   'pins.stop': 'Зупинити',
+  'pins.todo': 'Список справ',
+  'pins.todoEmpty': 'Бот ще не створював список',
+  'pins.usage': 'Витрати сесії',
+  'pins.usageIn': 'Вхідні',
+  'pins.usageOut': 'Вихідні',
+  'pins.usageCost': 'Оцінка витрат',
+  'pins.usageFree': 'безкоштовний провайдер',
+  'pins.usageNote': 'Оцінка за видимою розмовою; точні числа — у провайдера',
   'gallery.hint': 'Зображень: {count} · натисніть, щоб відкрити',
 } as const;
 
@@ -37,6 +45,14 @@ const en: Record<keyof typeof uk, string> = {
   'pins.cameraError': 'Camera unavailable',
   'pins.watch': 'Watch',
   'pins.stop': 'Stop',
+  'pins.todo': 'Todo list',
+  'pins.todoEmpty': 'The bot has not made a list yet',
+  'pins.usage': 'Session usage',
+  'pins.usageIn': 'Input',
+  'pins.usageOut': 'Output',
+  'pins.usageCost': 'Cost estimate',
+  'pins.usageFree': 'free provider',
+  'pins.usageNote': 'Estimated from the visible conversation; exact numbers live at the provider',
   'gallery.hint': 'Images: {count} · click to open',
 };
 

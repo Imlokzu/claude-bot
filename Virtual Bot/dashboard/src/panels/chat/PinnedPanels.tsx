@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, Eye, Folder, Monitor, Plus, ArrowUpRight, X } from 'lucide-react';
+import { Check, Eye, Folder, ListTodo, Monitor, Plus, ArrowUpRight, Wallet, X } from 'lucide-react';
 import { get } from '@/lib/api';
 import { t } from '@/locales/workspace';
 import { cn } from '@/lib/cn';
+import { useBotEvents } from '@/hooks/useBotEvents';
+import { estimateTokens, shortNumber } from './tokens';
 import { Face } from './Face';
 import { PIN_IDS, PINS_KEY, parsePins, type PinId } from './pins';
+import type { ChatMessage } from './types';
 
-const ICONS = { projects: Folder, vision: Eye, screen: Monitor };
+const ICONS = { projects: Folder, vision: Eye, screen: Monitor, todo: ListTodo, usage: Wallet };
 
 function ProjectsPin() {
   const projects = useQuery({
@@ -36,6 +39,77 @@ function ProjectsPin() {
   );
 }
 
+interface TodoItem { text?: string; done?: boolean }
+interface TodoData { title?: string; items?: TodoItem[] }
+
+/* Чекліст, який бот створює тулзою todo_list. Подія приходить живцем через
+   SSE, а бекенд шле останню версію ще й одразу після підключення — тож список
+   переживає перезавантаження вкладки. Галочки тут лише для читання: станом
+   володіє бот, він же його й оновлює наступним викликом. */
+function TodoPin() {
+  const [todo, setTodo] = useState<TodoData | null>(null);
+  useBotEvents((event) => {
+    if (event.type !== 'ui' || event.kind !== 'todo') return;
+    setTodo(event.data && typeof event.data === 'object' ? event.data as TodoData : null);
+  });
+  const items = todo?.items ?? [];
+  if (!items.length) return <p className="text-xs text-ink-3">{t('pins.todoEmpty')}</p>;
+  const doneCount = items.filter((item) => item.done).length;
+  return (
+    <div>
+      {todo?.title ? <p className="mb-1.5 truncate text-[11px] font-medium text-ink-2">{todo.title}</p> : null}
+      <ul className="max-h-44 space-y-1 overflow-y-auto">
+        {items.map((item, index) => (
+          <li key={`${item.text}-${index}`} className="flex items-center gap-2 text-[12.5px] text-ink-2">
+            <span className={cn(
+              'grid size-4 shrink-0 place-items-center rounded border',
+              item.done ? 'border-accent bg-accent-soft' : 'border-line',
+            )}>
+              {item.done ? <Check size={11} className="text-accent" /> : null}
+            </span>
+            <span className={cn('min-w-0 flex-1 truncate', item.done && 'text-ink-3 line-through')}>
+              {item.text}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-[10.5px] text-ink-3">{doneCount}/{items.length}</p>
+    </div>
+  );
+}
+
+/* Витрати поточної розмови: вхідні/вихідні токени та груба оцінка в грошах.
+   Це ОЦІНКА з видимої історії — точні числа знає лише провайдер, тож підпис
+   чесно каже про це, а не видає похибку за факт. */
+function UsagePin({ messages }: { messages: ChatMessage[] }) {
+  const userMessages = messages.filter((m) => m.role === 'user');
+  const botMessages = messages.filter((m) => m.role === 'assistant');
+  const input = estimateTokens(userMessages);
+  const output = estimateTokens(botMessages);
+  // Середня ціна типового API (~$3 / $15 за мільйон). Більшість провайдерів
+  // у ланцюгу безкоштовні, тож це стеля «скільки б це коштувало», а не рахунок.
+  const cost = (input / 1_000_000) * 3 + (output / 1_000_000) * 15;
+  return (
+    <div className="space-y-1.5 text-[12.5px]">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-ink-3">{t('pins.usageIn')}</span>
+        <span className="u-data text-ink-2">≈{shortNumber(input)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-ink-3">{t('pins.usageOut')}</span>
+        <span className="u-data text-ink-2">≈{shortNumber(output)}</span>
+      </div>
+      <div className="flex items-center justify-between gap-2 border-t border-line pt-1.5">
+        <span className="text-ink-3">{t('pins.usageCost')}</span>
+        <span className="u-data text-ink-2">
+          {cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`}
+        </span>
+      </div>
+      <p className="text-[10.5px] leading-snug text-ink-3">{t('pins.usageNote')}</p>
+    </div>
+  );
+}
+
 function VisionPin() {
   const [streaming, setStreaming] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -58,7 +132,7 @@ function VisionPin() {
   );
 }
 
-export function PinnedPanels({ embedded = false }: { embedded?: boolean }) {
+export function PinnedPanels({ embedded = false, messages = [] }: { embedded?: boolean; messages?: ChatMessage[] }) {
   const [pins, setPins] = useState<PinId[]>(() => {
     try { return parsePins(localStorage.getItem(PINS_KEY)); } catch { return []; }
   });
@@ -86,13 +160,19 @@ export function PinnedPanels({ embedded = false }: { embedded?: boolean }) {
               <header className="mb-2 flex items-center gap-2">
                 <Icon size={14} className="shrink-0 text-ink-3" />
                 <h2 className="min-w-0 flex-1 truncate text-xs font-medium text-ink-2">{name}</h2>
+                {id === 'todo' || id === 'usage' ? null : (
                 <a href={id === 'screen' ? '/screen' : id === 'vision' ? '#/vision' : '#/overview'}
                    target={id === 'screen' ? '_blank' : undefined} rel={id === 'screen' ? 'noreferrer' : undefined}
                    aria-label={t('pins.open', { name })} className="pin-panel-action grid place-items-center rounded-xs text-ink-3 hover:text-ink"><ArrowUpRight size={13} /></a>
+                )}
                 <button type="button" aria-label={t('pins.remove', { name })} onClick={() => toggle(id)}
                         className="pin-panel-action grid place-items-center rounded-xs text-ink-3 hover:text-ink"><X size={13} /></button>
               </header>
-              {id === 'projects' ? <ProjectsPin /> : id === 'vision' ? <VisionPin /> : (
+              {id === 'projects' ? <ProjectsPin />
+                : id === 'vision' ? <VisionPin />
+                : id === 'todo' ? <TodoPin />
+                : id === 'usage' ? <UsagePin messages={messages} />
+                : (
                 <div className="pin-screen overflow-hidden rounded-sm bg-bg">
                   <iframe src="/screen" title={name} className="pin-screen-frame border-0" />
                 </div>

@@ -187,7 +187,7 @@ export default function ChatPanel() {
                   className="h-[min(78dvh,680px)] p-0"
                   bodyClassName="p-0 sm:p-0"
                 >
-                  <PinnedPanels embedded />
+                  <PinnedPanels embedded messages={chat.messages} />
                 </DialogContent>
               </Dialog>
               <Face compact className="h-9 w-16 shrink-0" />
@@ -213,7 +213,7 @@ export default function ChatPanel() {
         </div>
 
         {isDesk ? (
-          <PinnedPanels />
+          <PinnedPanels messages={chat.messages} />
         ) : null}
       </div>
     </AssistantRuntimeProvider>
