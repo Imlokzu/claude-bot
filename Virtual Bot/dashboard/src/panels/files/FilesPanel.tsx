@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, Code, Eye, File, Folder, FolderOpen, RotateCw, Save } from 'lucide-react';
+import { ChevronRight, Code, ExternalLink, Eye, File, Folder, FolderOpen, RotateCw, Save } from 'lucide-react';
 import { Panel, PanelHead } from '@/components/ui/Panel';
 import { Button } from '@/components/ui/Button';
 import { Empty, SkeletonList } from '@/components/ui/Feedback';
@@ -214,14 +214,27 @@ export default function FilesPanel() {
               actions={
                 <>
                   {isHtml ? (
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={showPreview ? 'Показати код' : 'Показати сторінку'}
-                      onClick={() => setShowPreview((v) => !v)}
-                    >
-                      {showPreview ? <Code /> : <Eye />}
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={showPreview ? 'Показати код' : 'Показати сторінку'}
+                        onClick={() => setShowPreview((v) => !v)}
+                      >
+                        {showPreview ? <Code /> : <Eye />}
+                      </Button>
+                      {/* Відкриття у новій вкладці йде через наш /preview/ —
+                          так файл працює і з телефона, і через тунель, бо
+                          адреса лишається на цьому ж домені. */}
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Відкрити в новій вкладці"
+                        onClick={() => window.open(previewUrl(openPath!), '_blank', 'noopener')}
+                      >
+                        <ExternalLink />
+                      </Button>
+                    </>
                   ) : null}
                   <Button
                     variant="ghost"
