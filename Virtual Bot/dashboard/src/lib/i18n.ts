@@ -49,6 +49,7 @@ const uk = {
   'chat.newSession': 'Нова розмова',
   'chat.untitled': 'Без назви',
   'chat.close': 'Закрити',
+  'chat.showAll': 'Показати всі розмови',
 } as const;
 
 const en: Record<keyof typeof uk, string> = {
@@ -101,6 +102,7 @@ const en: Record<keyof typeof uk, string> = {
   'chat.newSession': 'New conversation',
   'chat.untitled': 'Untitled',
   'chat.close': 'Close',
+  'chat.showAll': 'Show all conversations',
 };
 
 export function t(key: keyof typeof uk, values: Record<string, string | number> = {}): string {

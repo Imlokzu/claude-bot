@@ -32,7 +32,7 @@ function ProjectChip({ name }: { name: string }) {
       <span className="u-label truncate text-accent">{name}</span>
       <button
         type="button"
-        aria-label="Показати всі розмови"
+        aria-label={t('chat.showAll')}
         className="ml-auto rounded-xs p-0.5 text-ink-3 transition-colors hover:text-ink"
         onClick={() => {
           window.location.hash = '#/chat';
