@@ -15,9 +15,9 @@ const KEY = 'claudeBotLang';
 
 function read(): Language {
   try {
-    return localStorage.getItem(KEY) === 'en' ? 'en' : 'uk';
+    return localStorage.getItem(KEY) === 'uk' ? 'uk' : 'en';
   } catch {
-    return 'uk';
+    return 'en';
   }
 }
 
