@@ -576,7 +576,7 @@ export default function PromptBar({
                   role="option"
                   aria-selected={i === cursor}
                   className="prompt-bar__row"
-                  onMouseDown={e => e.preventDefault()}
+                  onMouseDown={e => { if (!coarse) e.preventDefault(); }}
                   onPointerEnter={() => setActive(i)}
                   onClick={() => pick(row)}
                 >
@@ -656,7 +656,7 @@ export default function PromptBar({
             aria-label={labels?.add ?? 'Add files and sources'}
             aria-expanded={plusOpen}
             data-on={plusOpen ? '' : undefined}
-            onMouseDown={e => e.preventDefault()}
+            onMouseDown={e => { if (!coarse) e.preventDefault(); }}
             onClick={() => {
               setModelOpen(false);
               setEffortOpen(false);
@@ -675,7 +675,7 @@ export default function PromptBar({
               aria-label={labels?.chooseModel ?? 'Choose model'}
               aria-expanded={modelOpen}
               data-on={modelOpen ? '' : undefined}
-              onMouseDown={e => e.preventDefault()}
+              onMouseDown={e => { if (!coarse) e.preventDefault(); }}
               onClick={() => {
                 setPlusOpen(false);
                 setEffortOpen(false);
@@ -696,7 +696,7 @@ export default function PromptBar({
               aria-expanded={effortOpen}
               data-on={effortOpen ? '' : undefined}
               data-max={maxed ? '' : undefined}
-              onMouseDown={e => e.preventDefault()}
+              onMouseDown={e => { if (!coarse) e.preventDefault(); }}
               onClick={() => {
                 setPlusOpen(false);
                 setModelOpen(false);
@@ -716,7 +716,7 @@ export default function PromptBar({
               aria-label={listening ? (labels?.stopDictation ?? 'Stop dictation') : (labels?.dictate ?? 'Dictate')}
               aria-pressed={listening}
               data-on={listening ? '' : undefined}
-              onMouseDown={e => e.preventDefault()}
+              onMouseDown={e => { if (!coarse) e.preventDefault(); }}
               onClick={toggleListen}
             >
               {listening ? (
@@ -737,7 +737,7 @@ export default function PromptBar({
             aria-label={busy ? (labels?.stop ?? 'Stop') : (labels?.send ?? 'Send')}
             data-armed={armed ? '' : undefined}
             data-pressed={pressed ? '' : undefined}
-            onMouseDown={e => e.preventDefault()}
+            onMouseDown={e => { if (!coarse) e.preventDefault(); }}
             onPointerDown={down}
             onPointerUp={up}
             onPointerCancel={up}

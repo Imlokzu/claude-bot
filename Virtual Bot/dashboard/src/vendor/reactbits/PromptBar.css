@@ -282,6 +282,19 @@
     min-height: 44px;
     height: 44px;
   }
+
+  /*
+   * На тачі кнопки меню (+, модель, думання, мікрофон) мають реагувати на
+   * ПЕРШИЙ дотик, а не на другий. iOS/Android інакше віддають перший тап
+   * на зняття фокуса з поля (сховати клавіатуру), і click до кнопки просто
+   * не доходить. touch-action: manipulation прибирає цю затримку.
+   */
+  .prompt-bar__tool,
+  .prompt-bar__pick,
+  .prompt-bar__send,
+  .prompt-bar__row {
+    touch-action: manipulation;
+  }
 }
 
 .prompt-bar__bar {
