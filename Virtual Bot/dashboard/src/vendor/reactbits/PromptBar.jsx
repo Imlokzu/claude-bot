@@ -582,7 +582,12 @@ export default function PromptBar({
                   className="prompt-bar__row"
                   onMouseDown={e => { if (!coarse) e.preventDefault(); }}
                   onPointerEnter={() => setActive(i)}
-                  onClick={() => pick(row)}
+                  onClick={() => {
+                    /* Той самий дотик, що відкрив меню, не повинен одразу
+                       вибирати пункт під пальцем. */
+                    if (Date.now() - touchOpenedRef.current < 500) return;
+                    pick(row);
+                  }}
                 >
                   {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
                   <span className="prompt-bar__row-name">{row.name}</span>
