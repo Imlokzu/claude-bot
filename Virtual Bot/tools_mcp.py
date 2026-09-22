@@ -197,7 +197,66 @@ TOOLS.append(
     }
 )
 
+# Media. These live in tools/music_tools.py and the local registry already had
+# them, but the bridge never declared them — so through OpenClaw the bot
+# honestly answered "I have no video tool" while the capability sat unused.
+# Descriptions are kept in sync with tools/music_tools.py SCHEMAS.
+TOOLS.append(
+    {
+        "name": "listen_to_video",
+        "description": (
+            "ПРОЧИТАТИ зміст YouTube-відео через субтитри (безкоштовний "
+            "транскрайб) і ввімкнути його звук на екрані пристрою. "
+            "Використовуй, коли користувач кидає посилання на відео або "
+            "просить «подивись/послухай це відео»."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Посилання на відео: https://youtube.com/watch?v=… або https://youtu.be/…",
+                },
+                "lang": {
+                    "type": "string",
+                    "description": "Бажана мова субтитрів (uk, en…). Типово uk.",
+                },
+            },
+            "required": ["url"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "play_music",
+        "description": (
+            "Увімкнути музику на екрані пристрою: шукає трек на YouTube за "
+            "назвою або виконавцем і починає відтворення."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Назва пісні або виконавець."},
+            },
+            "required": ["query"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "stop_music",
+        "description": "Зупинити відтворення на екрані пристрою.",
+        "inputSchema": {"type": "object", "properties": {}},
+    }
+)
+
 _TOOL_NAMES = {t["name"] for t in TOOLS}
+
+
+# Fetching subtitles for a long video is a download, not a lookup: the default
+# 30s budget cut it off and the agent saw a timeout instead of the transcript.
+SLOW_TOOLS = {"listen_to_video": 120, "play_music": 60}
+DEFAULT_TIMEOUT_S = 30
 
 
 def _call_panel(name: str, args: dict) -> dict:
@@ -210,7 +269,7 @@ def _call_panel(name: str, args: dict) -> dict:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=SLOW_TOOLS.get(name, DEFAULT_TIMEOUT_S)) as resp:
             return json.loads(resp.read().decode("utf-8")).get("result", {})
     except urllib.error.HTTPError as exc:
         try:
