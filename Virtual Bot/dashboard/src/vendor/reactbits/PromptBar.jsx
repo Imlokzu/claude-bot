@@ -202,6 +202,10 @@ export default function PromptBar({
   });
   const [dismissed, setDismissed] = useState(false);
   const menuOpenRef = useRef(false);
+  /* На тачі меню відкриваємо на pointerdown (до того, як blur клавіатури
+     може проковтнути click). Click одразу після того самого дотику треба
+     пропустити — інакше меню відкриється й одразу закриється. */
+  const touchOpenedRef = useRef(0);
   const [active, setActive] = useState(0);
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -657,7 +661,16 @@ export default function PromptBar({
             aria-expanded={plusOpen}
             data-on={plusOpen ? '' : undefined}
             onMouseDown={e => { if (!coarse) e.preventDefault(); }}
+            onPointerDown={e => {
+              if (e.pointerType !== 'touch') return;
+              touchOpenedRef.current = Date.now();
+              setModelOpen(false);
+              setEffortOpen(false);
+              setActive(0);
+              setPlusOpen(v => !v);
+            }}
             onClick={() => {
+              if (Date.now() - touchOpenedRef.current < 500) return;
               setModelOpen(false);
               setEffortOpen(false);
               setActive(0);
@@ -676,7 +689,16 @@ export default function PromptBar({
               aria-expanded={modelOpen}
               data-on={modelOpen ? '' : undefined}
               onMouseDown={e => { if (!coarse) e.preventDefault(); }}
+              onPointerDown={e => {
+                if (e.pointerType !== 'touch') return;
+                touchOpenedRef.current = Date.now();
+                setPlusOpen(false);
+                setEffortOpen(false);
+                setActive(Math.max(0, models.indexOf(model)));
+                setModelOpen(v => !v);
+              }}
               onClick={() => {
+                if (Date.now() - touchOpenedRef.current < 500) return;
                 setPlusOpen(false);
                 setEffortOpen(false);
                 setActive(Math.max(0, models.indexOf(model)));
@@ -697,7 +719,15 @@ export default function PromptBar({
               data-on={effortOpen ? '' : undefined}
               data-max={maxed ? '' : undefined}
               onMouseDown={e => { if (!coarse) e.preventDefault(); }}
+              onPointerDown={e => {
+                if (e.pointerType !== 'touch') return;
+                touchOpenedRef.current = Date.now();
+                setPlusOpen(false);
+                setModelOpen(false);
+                setEffortOpen(v => !v);
+              }}
               onClick={() => {
+                if (Date.now() - touchOpenedRef.current < 500) return;
                 setPlusOpen(false);
                 setModelOpen(false);
                 setEffortOpen(v => !v);
