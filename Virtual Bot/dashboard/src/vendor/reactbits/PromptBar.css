@@ -40,6 +40,30 @@
   transform-origin: bottom left;
 }
 
+/*
+ * На тачі меню прибите до НИЗУ ВИДИМОГО в'юпорта, а не до поля вводу.
+ * Поле під час відкриття меню стоїть просто над клавіатурою, тож меню,
+ * прив'язане до нього, перриваблюється над нею — і частина пунктів
+ * опиняється під клавіатурою. `position: fixed` у в'юпорті цього уникає.
+ */
+@media (pointer: coarse) {
+  .prompt-bar__menu--vv {
+    position: fixed;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    width: auto;
+    max-height: 52dvh;
+    overflow-y: auto;
+    transform-origin: bottom center;
+    z-index: 50;
+  }
+  .prompt-bar__menu--vv[data-kind='model'] {
+    right: 12px;
+    width: auto;
+  }
+}
+
 @keyframes prompt-bar-pop {
   from {
     opacity: 0;

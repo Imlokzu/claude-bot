@@ -201,6 +201,7 @@ export default function PromptBar({
     return i >= 0 ? i : Math.max(0, Math.floor((efforts.length - 1) / 2));
   });
   const [dismissed, setDismissed] = useState(false);
+  const menuOpenRef = useRef(false);
   const [active, setActive] = useState(0);
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -208,6 +209,7 @@ export default function PromptBar({
   const model = models.find(m => m.key === modelKey) ?? models[0];
   const token = dismissed ? null : parseToken(draft);
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
+  menuOpenRef.current = open !== null;
   const query = plusOpen ? '' : (token?.query ?? '');
   const list = useMemo(() => {
     if (open === 'at') return sources.filter(s => s.name.toLowerCase().includes(query));
@@ -230,9 +232,30 @@ export default function PromptBar({
     media.addEventListener('change', update);
     return () => media.removeEventListener('change', update);
   }, []);
+  /*
+   * «Клава вже схована» — як тільки textarea втратила фокус на тачі, більше
+   * НІКОЛИ її не підіймаємо під час роботи з меню/відправкою: шоу-хайд
+   * цикл клавіатури смикає layout рівно під пальцем, і тап потрапляє не
+   * туди. Фокус повертає лише прямий тап по полю.
+   */
+  const kbDropped = useRef(false);
+  useEffect(() => {
+    if (!coarse) return undefined;
+    const input = inputRef.current;
+    if (!input) return undefined;
+    const mark = () => { kbDropped.current = true; };
+    input.addEventListener('blur', mark);
+    return () => input.removeEventListener('blur', mark);
+  }, [coarse]);
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
   const focusInputKeysOnly = () => {
-    if (!coarse) focusInput();
+    if (!coarse) {
+      focusInput();
+      return;
+    }
+    /* На тачі: якщо клаву вже сховали (трапилось меню/відправка), НЕ
+       підіймаємо її знову — інакше layout стрибає під пальцем. */
+    if (!kbDropped.current) focusInput();
   };
   const closeMenus = useCallback(() => {
     setPlusOpen(false);
@@ -397,7 +420,7 @@ export default function PromptBar({
       setModelKey(row.key);
       setModelOpen(false);
       if (row.key !== modelKey) latest.current.onModelChange?.(row.key);
-      if (coarse) inputRef.current?.blur(); else focusInput();
+      focusInputKeysOnly();
       return;
     }
     const head = token ? draft.slice(0, token.start) : draft;
@@ -424,7 +447,7 @@ export default function PromptBar({
     setAttachments([]);
     setDismissed(false);
     closeMenus();
-    if (coarse) inputRef.current?.blur(); else focusInput();
+    if (!kbDropped.current) focusInput();
   };
 
   const toggleListen = () => {
@@ -502,7 +525,7 @@ export default function PromptBar({
     >
       {open ? (
         <div
-          className="prompt-bar__menu"
+          className={`prompt-bar__menu${coarse ? ' prompt-bar__menu--vv' : ''}`}
           role={open === 'effort' ? 'dialog' : 'listbox'}
           aria-label={
             open === 'at'
@@ -601,7 +624,10 @@ export default function PromptBar({
         onPointerDown={e => {
           if (e.target === e.currentTarget || e.target === inputRef.current) closeMenus();
         }}
-        onClick={focusInput}
+        onClick={() => {
+          kbDropped.current = false;
+          focusInput();
+        }}
       >
         <canvas ref={sparkRef} className="prompt-bar__sparks" aria-hidden="true" />
         {attachments.length > 0 ? (
@@ -656,12 +682,8 @@ export default function PromptBar({
               setModelOpen(false);
               setEffortOpen(false);
               setActive(0);
-              setPlusOpen(v => {
-                const next = !v;
-                if (coarse) { if (next) inputRef.current?.blur(); }
-                else focusInput();
-                return next;
-              });
+              setPlusOpen(v => !v);
+              focusInputKeysOnly();
             }}
           >
             <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2} />
@@ -679,12 +701,8 @@ export default function PromptBar({
                 setPlusOpen(false);
                 setEffortOpen(false);
                 setActive(Math.max(0, models.indexOf(model)));
-                setModelOpen(v => {
-                  const next = !v;
-                  if (coarse) { if (next) inputRef.current?.blur(); }
-                  else focusInput();
-                  return next;
-                });
+                setModelOpen(v => !v);
+                focusInputKeysOnly();
               }}
             >
               <span>{model.name}</span>
@@ -703,12 +721,8 @@ export default function PromptBar({
               onClick={() => {
                 setPlusOpen(false);
                 setModelOpen(false);
-                setEffortOpen(v => {
-                  const next = !v;
-                  if (coarse) { if (next) inputRef.current?.blur(); }
-                  else focusInput();
-                  return next;
-                });
+                setEffortOpen(v => !v);
+                focusInputKeysOnly();
               }}
             >
               <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />
