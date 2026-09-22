@@ -258,6 +258,108 @@ TOOLS.append(
     }
 )
 
+# Відео з картинкою на екрані пристрою (tools/video_tools.py). Окреме від
+# listen_to_video: те читає субтитри, а це показує ролик. Бот справедливо
+# скаржився, що «інструмент відтворення недоступний» — міст його не оголошував.
+TOOLS.append(
+    {
+        "name": "play_video",
+        "description": (
+            "Показати ВІДЕО з YouTube на екрані пристрою — з КАРТИНКОЮ, на весь "
+            "екран, з автоматичним пропуском вклеєної реклами. Використовуй, коли "
+            "просять «покажи відео», «увімкни ролик», «постав на екран …», "
+            "«знайди відео про …» або кидають посилання й хочуть ДИВИТИСЬ. "
+            "Якщо просять саме МУЗИКУ/звук у фоні — бери play_music."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Що шукати, напр. «огляд Raspberry Pi 5» або назва кліпу.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "Пряме посилання, якщо дали його: watch?v=… або youtu.be/…",
+                },
+                "start": {
+                    "type": "string",
+                    "description": "З якої секунди/хвилини почати, напр. «2:30» або «150». Не обовʼязково.",
+                },
+            },
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "video_control",
+        "description": (
+            "Керувати відео, яке ВЖЕ грає на екрані: пауза, продовжити, зупинити, "
+            "перемотати вперед/назад, стрибнути на час, у початок, у кінець, "
+            "змінити швидкість, приглушити. Використовуй на «стоп», «пауза», "
+            "«перемотай вперед», «на 5 хвилині», «в кінець», «швидше»."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["pause", "resume", "stop", "forward", "back", "seek",
+                             "restart", "end", "speed", "mute", "unmute"],
+                    "description": (
+                        "pause — пауза; resume — далі; stop — зупинити й закрити; "
+                        "forward/back — перемотати на seconds; seek — на position; "
+                        "restart — з початку; end — у кінець; speed — швидкість rate; "
+                        "mute/unmute — звук."
+                    ),
+                },
+                "seconds": {
+                    "type": "string",
+                    "description": "На скільки перемотати для forward/back. Типово 10 секунд.",
+                },
+                "position": {
+                    "type": "string",
+                    "description": "Куди стрибнути для seek: «2:30», «1:05:00» або секунди.",
+                },
+                "rate": {
+                    "type": "string",
+                    "description": "Швидкість для speed: 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2.",
+                },
+            },
+            "required": ["action"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "video_status",
+        "description": (
+            "Дізнатися, що зараз грає на екрані: назва, позиція, скільки лишилось, "
+            "швидкість, скільки реклами пропущено. Викликай ПЕРЕД тим, як казати "
+            "щось про поточне відео — інакше вигадаєш."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    }
+)
+TOOLS.append(
+    {
+        "name": "video_settings",
+        "description": (
+            "Показати або змінити налаштування відео: пропуск вклеєної реклами "
+            "(SponsorBlock), які категорії пропускати, чи тягнути прев'ю через "
+            "бота замість серверів Google. Без аргументів — просто показує стан."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "skip_sponsors": {"type": "boolean", "description": "Пропускати вклеєну рекламу."},
+                "categories": {"type": "string", "description": "Категорії через кому."},
+                "proxy_thumbs": {"type": "boolean", "description": "Тягнути прев'ю через бота."},
+            },
+        },
+    }
+)
+
 _TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
