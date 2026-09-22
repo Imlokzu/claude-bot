@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Brain, Palette, Puzzle, Sparkles, User } from 'lucide-react';
+import { AudioLines, Brain, Palette, Puzzle, Sparkles, User, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Panel, PanelHead } from '@/components/ui/Panel';
 import { Button } from '@/components/ui/Button';
@@ -17,6 +17,7 @@ import { useLanguage } from '@/hooks/useLanguage';
 import { JellyRadio } from '@/vendor/reactbits';
 import { useCssVar } from '@/hooks/useAccentRgb';
 import { StoreSection } from './StoreSection';
+import { ToolsSection } from './ToolsSection';
 import { FirstRun } from './FirstRun';
 import { VoiceSection } from './VoiceSection';
 import { SectionHeader } from '@/components/shell/SectionHeader';
@@ -37,6 +38,7 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'voice', label: 'Голос', icon: AudioLines },
   { id: 'brain', label: 'Мозок і ключі', icon: Brain },
   { id: 'skills', label: 'Уміння', icon: Puzzle },
+  { id: 'tools', label: 'Інструменти', icon: Wrench },
 ];
 
 export default function SettingsPanel() {
@@ -226,6 +228,7 @@ export default function SettingsPanel() {
               {section === 'voice' ? <VoiceSection /> : null}
               {section === 'brain' ? <BrainSection setup={setup.data!} /> : null}
               {section === 'skills' ? <StoreSection /> : null}
+              {section === 'tools' ? <ToolsSection /> : null}
             </>
           )}
         </div>

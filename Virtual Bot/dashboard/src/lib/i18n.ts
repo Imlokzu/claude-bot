@@ -50,6 +50,21 @@ const uk = {
   'chat.untitled': 'Без назви',
   'chat.close': 'Закрити',
   'chat.showAll': 'Показати всі розмови',
+  'tools.label': 'ІНСТРУМЕНТИ',
+  'tools.title': 'Що боту дозволено робити',
+  'tools.hint': 'Оголошений інструмент ще не означає доступний: шлюз пропускає лише дозволені.',
+  'tools.head': 'доступ до інструментів',
+  'tools.headHint': 'Вимкнений інструмент бот не бачить взагалі',
+  'tools.profile': 'Профіль шлюзу: {profile}',
+  'tools.unreadable': 'Конфіг OpenClaw недоступний — показати дозволи не можу.',
+  'tools.enabled': '{on} з {total} увімкнено',
+  'tools.sensitive': 'Діє поза цією машиною',
+  'tools.confirm': 'Цей інструмент діє поза цією машиною. Увімкнути?',
+  'tools.saved': 'Збережено',
+  'tools.failed': 'Не вдалося змінити',
+  'tools.serverTools': 'Інструменти панелі',
+  'tools.serverWorkspace': 'Робоча тека',
+  'tools.serverEmotions': 'Емоції',
 } as const;
 
 const en: Record<keyof typeof uk, string> = {
@@ -103,6 +118,21 @@ const en: Record<keyof typeof uk, string> = {
   'chat.untitled': 'Untitled',
   'chat.close': 'Close',
   'chat.showAll': 'Show all conversations',
+  'tools.label': 'TOOLS',
+  'tools.title': 'What the bot is allowed to do',
+  'tools.hint': 'A declared tool is not yet an available one: the gateway only passes those that are allowed.',
+  'tools.head': 'tool access',
+  'tools.headHint': 'A disabled tool is invisible to the bot',
+  'tools.profile': 'Gateway profile: {profile}',
+  'tools.unreadable': 'The OpenClaw config is unavailable — permissions cannot be shown.',
+  'tools.enabled': '{on} of {total} enabled',
+  'tools.sensitive': 'Acts beyond this machine',
+  'tools.confirm': 'This tool acts beyond this machine. Enable it?',
+  'tools.saved': 'Saved',
+  'tools.failed': 'Could not change',
+  'tools.serverTools': 'Panel tools',
+  'tools.serverWorkspace': 'Workspace',
+  'tools.serverEmotions': 'Emotions',
 };
 
 export function t(key: keyof typeof uk, values: Record<string, string | number> = {}): string {
