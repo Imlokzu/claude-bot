@@ -80,6 +80,7 @@ import openclaw_store
 import profile_store
 import services_manager
 import setup_suggestions
+import tool_access
 import tools
 import projects
 import vision_watcher
@@ -2393,6 +2394,33 @@ async def api_tools_call(request: Request, req: ToolCallRequest) -> dict:
         except Exception:  # noqa: BLE001
             log.exception("Не вдалося опублікувати подію завершення тулзу")
     return {"tool": req.name, "args": req.args, "result": result}
+
+
+class ToolAccessRequest(BaseModel):
+    qualified: str = Field(min_length=1, max_length=120)
+    enabled: bool
+
+
+@app.get("/api/tools/catalog")
+async def api_tools_catalog(request: Request) -> dict:
+    """Які тули оголошені мостами й які з них шлюз пропускає до агента.
+
+    Оголошення тула мостом ще не означає, що агент його бачить: OpenClaw
+    тримає профіль `minimal` і власний білий список. Панель показує обидва
+    боки, бо інакше вимкнений тул виглядає як зламаний.
+    """
+    await _require_user(request)
+    return await asyncio.to_thread(tool_access.catalog)
+
+
+@app.post("/api/tools/access")
+async def api_tools_access(request: Request, req: ToolAccessRequest) -> dict:
+    """Дозволити або заборонити агенту один тул."""
+    await _require_user(request)
+    result = await asyncio.to_thread(tool_access.set_enabled, req.qualified, req.enabled)
+    if result.get("error"):
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 
 # ------------------------------------------------------------------ зір
