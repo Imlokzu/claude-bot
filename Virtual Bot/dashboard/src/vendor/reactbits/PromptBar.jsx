@@ -656,8 +656,12 @@ export default function PromptBar({
               setModelOpen(false);
               setEffortOpen(false);
               setActive(0);
-              setPlusOpen(v => !v);
-              if (coarse) inputRef.current?.blur(); else focusInput();
+              setPlusOpen(v => {
+                const next = !v;
+                if (coarse) { if (next) inputRef.current?.blur(); }
+                else focusInput();
+                return next;
+              });
             }}
           >
             <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2} />
@@ -675,8 +679,12 @@ export default function PromptBar({
                 setPlusOpen(false);
                 setEffortOpen(false);
                 setActive(Math.max(0, models.indexOf(model)));
-                setModelOpen(v => !v);
-                if (coarse) inputRef.current?.blur(); else focusInput();
+                setModelOpen(v => {
+                  const next = !v;
+                  if (coarse) { if (next) inputRef.current?.blur(); }
+                  else focusInput();
+                  return next;
+                });
               }}
             >
               <span>{model.name}</span>
@@ -695,8 +703,12 @@ export default function PromptBar({
               onClick={() => {
                 setPlusOpen(false);
                 setModelOpen(false);
-                setEffortOpen(v => !v);
-                if (coarse) inputRef.current?.blur(); else focusInput();
+                setEffortOpen(v => {
+                  const next = !v;
+                  if (coarse) { if (next) inputRef.current?.blur(); }
+                  else focusInput();
+                  return next;
+                });
               }}
             >
               <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />
