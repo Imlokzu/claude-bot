@@ -745,6 +745,10 @@ export interface PromptBarCommand {
   description?: string;
 }
 
+export interface PromptBarControl {
+  addAttachments: (files: unknown[]) => void;
+}
+
 export interface PromptBarProps extends Common {
   placeholder?: string;
   sources?: PromptBarSource[];
@@ -758,6 +762,8 @@ export interface PromptBarProps extends Common {
   onModelChange?: (key: string) => void;
   /** Чим замінити кнопку «+» (у нас — радіальне меню). */
   plusSlot?: ReactNode;
+  /** Our edit: lets a sheet outside the bar add attachments to it. */
+  controlRef?: { current: PromptBarControl | null };
   /** Підписи компонента — у вендора вони зашиті англійською. */
   labels?: {
     effort?: string;

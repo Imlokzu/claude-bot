@@ -22,6 +22,13 @@ import './PromptBar.css';
  * ПРАВКИ в цьому файлі (дві, обидві позначені тут, щоб не загубились при
  * оновленні з reactbits.dev):
  *
+ * 5) `controlRef` — a way to add attachments from outside the bar. On a
+ *    phone the "+" opens our own sheet (camera, photos, files) instead of
+ *    the vendor's source list, and the files it picks must land in the
+ *    same chip row the bar sends with. The attachment list is internal
+ *    state with no prop for it, so the bar hands out an `addAttachments`
+ *    function through this ref.
+ *
  * 4) `onDictateStop` — людина натиснула мікрофон удруге, тобто договорила.
  *    Свого «стоп» компонент не мав узагалі: повторний натиск просто кидав
  *    обіцянку, мікрофон лишався відкритим до кінця фрази, а сказане
@@ -159,6 +166,7 @@ export default function PromptBar({
   onEffortChange,
   onModelChange,
   plusSlot,
+  controlRef,
   labels,
   onDictateStop,
   busy = false,
@@ -209,6 +217,17 @@ export default function PromptBar({
   const [active, setActive] = useState(0);
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
+
+  /* Edit 5: see the header. Assigned during render so the handle exists
+     before any parent effect can call it. */
+  if (controlRef) {
+    controlRef.current = {
+      addAttachments: files => {
+        const list = Array.isArray(files) ? files : [files];
+        if (list.length) setAttachments(a => [...a, ...list]);
+      }
+    };
+  }
 
   const model = models.find(m => m.key === modelKey) ?? models[0];
   const token = dismissed ? null : parseToken(draft);

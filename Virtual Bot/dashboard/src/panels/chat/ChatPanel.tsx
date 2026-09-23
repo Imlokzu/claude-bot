@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AssistantRuntimeProvider } from '@assistant-ui/react';
 import { createPortal } from 'react-dom';
-import { MessagesSquare, PanelRightOpen, X } from 'lucide-react';
+import { List, Plus, X } from 'lucide-react';
 import { Thread } from './Thread';
 import { Composer } from './Composer';
 import { SessionList } from './SessionList';
-import { Face } from './Face';
 import { PinnedPanels } from './PinnedPanels';
+import { ModelMenu } from './ModelMenu';
 import { SelectionActions } from './SelectionActions';
 import { useChatRuntime } from './useChatRuntime';
 import { useIsDesk, useIsPhone } from '@/hooks/useMediaQuery';
@@ -15,7 +15,7 @@ import { useRouteParam } from '@/app/useRoute';
 import { useQuery } from '@tanstack/react-query';
 import { get } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
-import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/Dialog';
+import { Dialog, DialogContent } from '@/components/ui/Dialog';
 import { t as workspaceT } from '@/locales/workspace';
 import { t } from '@/lib/i18n';
 
@@ -136,20 +136,36 @@ export default function ChatPanel() {
          */}
 
         <div className="chat-conversation relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {/*
+           * Narrow header: conversations | model | new conversation.
+           *
+           * The model is the title because on a phone it is the setting you
+           * change most and the one the prompt bar has no room for. The
+           * conversation's own name is one tap away in the list, and the
+           * compact face that used to sit here is dropped: at this width it
+           * was a 64 px ornament competing with the model name.
+           */}
           {!isDesk ? (
-            <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+            <div className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 border-b border-line px-2 py-1.5">
               <Button
                 variant="ghost"
-                size="sm"
-                className="min-w-0 flex-1"
+                size="icon"
                 aria-label={t('chat.sessions')}
                 aria-expanded={listDrawer.open}
                 onClick={() => listDrawer.setOpen(true)}
               >
-                <MessagesSquare />
-                <span className="max-w-[150px] truncate">
-                  {chat.sessions.find((s) => s.id === chat.sessionId)?.title || t('chat.newSession')}
-                </span>
+                <List />
+              </Button>
+              <div className="flex min-w-0 justify-center">
+                <ModelMenu />
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t('chat.newSession')}
+                onClick={() => chat.newSession()}
+              >
+                <Plus />
               </Button>
               {listDrawer.open
                 ? createPortal(
@@ -183,13 +199,7 @@ export default function ChatPanel() {
                     document.body,
                   )
                 : null}
-              <div className="flex-1" />
               <Dialog open={panelsOpen} onOpenChange={setPanelsOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" className="shrink-0" aria-label={workspaceT('pins.title')}>
-                    <PanelRightOpen />
-                  </Button>
-                </DialogTrigger>
                 <DialogContent
                   title={workspaceT('pins.title')}
                   side={isPhone ? 'bottom' : 'center'}
@@ -199,7 +209,6 @@ export default function ChatPanel() {
                   <PinnedPanels embedded messages={chat.messages} />
                 </DialogContent>
               </Dialog>
-              <Face compact className="h-9 w-16 shrink-0" />
             </div>
           ) : null}
 
@@ -209,6 +218,8 @@ export default function ChatPanel() {
             onRetry={chat.retry}
             composer={
               <Composer
+                lean={!isDesk}
+                onOpenPanels={() => setPanelsOpen(true)}
                 busy={chat.running}
                 usedTokens={chat.usedTokens}
                 sessionId={chat.sessionId}

@@ -1,46 +1,56 @@
-import { useMemo, useRef } from 'react';
-import { Brain, Eye, FileText, Globe, LifeBuoy, Paperclip, Zap } from 'lucide-react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { Brain, Eye, FileText, Globe, LifeBuoy, Paperclip, Plus, Zap } from 'lucide-react';
 import VoiceBeam from 'voice-glow';
-import { PromptBar } from '@/vendor/reactbits';
+import { PromptBar, type PromptBarControl } from '@/vendor/reactbits';
 import { useToast } from '@/components/ui/Toaster';
+import { Dialog, DialogContent } from '@/components/ui/Dialog';
 import { post } from '@/lib/api';
-import { useBrainModels, useSelectBrainModel, useSetThinking, type BrainModel } from '@/lib/queries';
+import type { BrainModel } from '@/lib/queries';
 import { useCssVar } from '@/hooks/useAccentRgb';
 import { useDictation } from '@/hooks/useDictation';
+import { ToolsSection } from '@/panels/settings/ToolsSection';
 import { ContextMeter } from './ContextMeter';
+import { AttachSheet } from './AttachSheet';
+import { thinkingLabel, useBrainChoice } from './useBrainChoice';
 import { t } from '@/locales/chat';
+import { t as appT } from '@/lib/i18n';
 
 /*
- * Поле вводу — це PromptBar із React Bits (reactbits.dev/c/micro), як є.
+ * The input is React Bits' PromptBar (reactbits.dev/c/micro), as is.
  *
- * Своя версія цього рядка колись була й повторювала його гірше. Ми лише
- * підключаємо його до бекенда й додаємо збоку те, чого в ньому немає:
- * запас контексту та радіальне меню замість «+».
+ * A home-made version of this row existed once and repeated it worse. We only
+ * connect it to the backend and add what it lacks: the context meter, and on
+ * narrow screens our own "+" sheet.
  *
- * ГОЛОВНЕ про список моделей. Раніше тут стояв список Omni з config.yaml —
- * і вибір НЕ ВПЛИВАВ ні на що: у чаті відповідає OpenClaw своєю моделлю,
- * тож на екрані могло бути «MiniMax M3», поки насправді писав gpt-oss-120b.
- * Тепер список беремо з самого OpenClaw (`openclaw models list`), а вибір
- * їде заголовком `x-openclaw-model` — тобто вибирає те, що й показує.
+ * THE MAIN THING about the model list. It used to be the Omni list from
+ * config.yaml — and choosing from it CHANGED NOTHING: OpenClaw answers the
+ * chat with its own model, so the screen could say "MiniMax M3" while
+ * gpt-oss-120b was actually writing. The list now comes from OpenClaw itself
+ * (`openclaw models list`) and the choice travels as `x-openclaw-model` — it
+ * picks what it shows.
+ *
+ * Two layouts:
+ *
+ *   desk — the pickers live inside the bar and the meter sits under it;
+ *          there is width for all of it.
+ *   lean — phone and tablet. Model and thinking move to the chat header
+ *          (ModelMenu), the meter and tools move into the "+" sheet, and the
+ *          bar keeps only what you type with. On a phone the two pickers
+ *          squeezed the field down to a few words.
  */
 
-/** Рівні думання — рівно ті, що знає OpenClaw (agents.defaults.thinkingDefault). */
-type EffortKey = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'adaptive' | 'max' | 'ultra';
-const EFFORT_KEYS = new Set<string>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'adaptive', 'max', 'ultra']);
-const thinkingLabel = (level: string): string =>
-  EFFORT_KEYS.has(level) ? t(`effort.${level as EffortKey}`) : level;
-
 /*
- * Особливості моделі — значками, не текстом.
+ * Model traits as icons, not text.
  *
- * Каталог OpenClaw називає їх прямо в назві: «GLM-5.3 Flash (бачить
- * картинки, ~2.5 с)». У рядку композера такий підпис обрізався саме на
- * корисному місці, тому бекенд розбирає хвіст на ознаки (див.
- * openclaw_models._normalize), а тут вони стають двома значками.
+ * The OpenClaw catalog names them in the label itself: "GLM-5.3 Flash (sees
+ * images, ~2.5 s)". In the composer row that label was cut off right at the
+ * useful part, so the backend splits the tail into traits (see
+ * openclaw_models._normalize) and here they become two icons.
  *
- * Поруч із назвою — лише ті дві, що впливають на вибір просто зараз: чи
- * побачить вкладену картинку і чи відповість швидко. Хто типовий, а хто
- * запасний, видно лише в розгорнутому списку: у рядку це шум.
+ * Beside the name only the two that matter for choosing right now: will it
+ * see an attached picture, and will it answer quickly. Which one is default
+ * and which is the fallback shows only in the open list: in the row it is
+ * noise.
  */
 const TRAITS = [
   { key: 'vision', Icon: Eye, title: () => t('trait.vision') },
@@ -52,7 +62,7 @@ const TRAITS = [
   },
 ] as const;
 
-/** Значки другого ряду: роль моделі в ланцюжку OpenClaw. */
+/** Second-row icons: the model's role in the OpenClaw chain. */
 const ROLES = [
   { key: 'is_default', Icon: Brain, title: t('role.default') },
   { key: 'fallback', Icon: LifeBuoy, title: t('role.fallback') },
@@ -65,6 +75,8 @@ export function Composer({
   onSend,
   onStop,
   onCompacted,
+  lean = false,
+  onOpenPanels,
 }: {
   busy: boolean;
   usedTokens: number;
@@ -72,13 +84,20 @@ export function Composer({
   onSend: (text: string, attachments?: unknown[]) => void;
   onStop: () => void;
   onCompacted: () => void;
+  /** Phone/tablet layout — see the header. */
+  lean?: boolean;
+  /** Opens the pinned panels; on narrow screens the sheet is the way in. */
+  onOpenPanels?: () => void;
 }) {
-  const brain = useBrainModels();
-  const selectModel = useSelectBrainModel();
-  const setThinking = useSetThinking();
+  const brain = useBrainChoice();
   const dictation = useDictation();
   const toast = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
+  const bar = useRef<PromptBarControl | null>(null);
+  const plus = useRef<HTMLButtonElement>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
 
   const uploadFiles = async (files: FileList | File[]): Promise<unknown[]> => {
     const uploaded = [];
@@ -101,19 +120,12 @@ export function Composer({
   const ink = useCssVar('--c-text', '#231e19');
   const accent = useCssVar('--c-accent', '#b95f3d');
 
-  const models = brain.data?.models ?? [];
-  // Порожній `selected` означає «лишаємо типову модель агента» — показуємо
-  // саме її, бо відповідатиме вона.
-  const current = brain.data?.selected || brain.data?.default || '';
-  const currentModel = models.find((model) => model.id === current);
-  const contextSize = currentModel?.context ?? 0;
-
   const modelList = useMemo(
     () =>
-      models.map((model) => ({
+      brain.models.map((model) => ({
         key: model.id,
-        // Назва вузлом, а не рядком: PromptBar малює її і в згорнутому
-        // рядку, і в списку — значки мусять бути в обох місцях.
+        // The name as a node, not a string: PromptBar draws it both in the
+        // collapsed row and in the list, and the icons belong in both.
         name: (
           <span className="inline-flex items-center gap-1.5">
             {model.label}
@@ -134,63 +146,86 @@ export function Composer({
           </>
         ),
       })),
-    [models],
+    [brain.models],
   );
 
-  const pickerModels = models.length > 0 ? modelList : [{
+  const pickerModels = brain.models.length > 0 ? modelList : [{
     key: '__openclaw-loading__',
     name: <span className="text-ink-3">OpenClaw</span>,
     tag: <span className="text-[10px] text-ink-3">{t('composer.loading')}</span>,
   }];
 
   /*
-   * Рівні беремо з відповіді бекенда, а не зі свого уявлення: у HTTP-шлюзі
-   * OpenClaw поля під reasoning немає взагалі, і єдиний живий важіль — його
-   * конфіг, який знає рівно цей перелік.
+   * Levels come from the backend, not from our own idea of them: OpenClaw's
+   * HTTP gateway has no reasoning field at all, and the only live lever is
+   * its config, which knows exactly this list.
    *
-   * Перший пункт — «як у OpenClaw»: рівень може бути НЕ ЗАДАНИЙ, і тоді діє
-   * вбудоване значення, якого CLI не називає. Показати замість нього «off»
-   * означало б назвати невідоме конкретним — а це різні стани, і повернутись
-   * із «off» у «не задано» інакше було б неможливо.
+   * The first stop is "as in OpenClaw": the level may be UNSET, and then a
+   * built-in default applies that the CLI does not name. Showing "off" there
+   * would name an unknown as a known — they are different states, and there
+   * would be no way back from "off" to "unset".
    */
   const AS_CONFIGURED = t('composer.asConfigured');
-  const levels = brain.data?.thinking_levels ?? [];
   const efforts = useMemo(
-    () => [AS_CONFIGURED, ...levels.map((level) => thinkingLabel(level))],
-    [levels],
+    () => [AS_CONFIGURED, ...brain.levels.map((level) => thinkingLabel(level))],
+    [AS_CONFIGURED, brain.levels],
   );
   const effortByLabel = useMemo<Record<string, string>>(
     () => ({
       [AS_CONFIGURED]: '',
-      ...Object.fromEntries(levels.map((level) => [thinkingLabel(level), level])),
+      ...Object.fromEntries(brain.levels.map((level) => [thinkingLabel(level), level])),
     }),
-    [levels],
+    [AS_CONFIGURED, brain.levels],
   );
-  const currentThinking = brain.data?.thinking || '';
+
+  const context = {
+    sessionId,
+    contextSize: brain.contextSize,
+    usedTokens,
+    onCompacted,
+  };
 
   /*
-   * Модельний каталог може запускати CLI OpenClaw і відповідати кілька секунд.
-   * Поле вводу не можна ховати через це: показуємо стабільний fallback, а
-   * picker заміниться реальним списком після відповіді каталогу.
+   * The model catalog may run the OpenClaw CLI and take a few seconds to
+   * answer. The input must not hide because of that: show a stable fallback
+   * and let the picker switch to the real list once the catalog answers.
    *
-   * PromptBar читає `defaultModel` ЛИШЕ при монтуванні. Якщо змонтувати його
-   * до відповіді бекенда, всередині осяде порожній ключ, і в рядку назавжди
-   * стоятиме перша модель списку — тобто знову не та, що відповідає.
-   * Каталог кешується на дві хвилини, тож ця заглушка видима один раз.
+   * PromptBar reads `defaultModel` ONLY on mount. Mounted before the backend
+   * answers, it would settle on an empty key and show the first model of the
+   * list forever — again not the one answering. The catalog is cached for two
+   * minutes, so this placeholder is visible once.
    */
   return (
     <div className="chat-composer u-safe-b shrink-0 px-4 pb-3 pt-2 sm:px-6">
       <div className="mx-auto flex w-full max-w-[760px] flex-col items-stretch gap-1.5">
+        {lean ? (
+          <AttachSheet
+            open={sheetOpen}
+            onClose={closeSheet}
+            anchor={plus}
+            onFiles={(files) => void uploadFiles(files).then((uploaded) => bar.current?.addAttachments(uploaded))}
+            onTools={() => {
+              setSheetOpen(false);
+              setToolsOpen(true);
+            }}
+            onPanels={() => {
+              setSheetOpen(false);
+              onOpenPanels?.();
+            }}
+            context={context}
+          />
+        ) : null}
+
         {/*
-          Сяйво накладене ПОВЕРХ поля, а не обгортає його.
-          
-          voice-glow ставить своїй обгортці `overflow: hidden` — щоб обрізати
-          сяйво по заокругленню поля. Коли поле лежало всередині, під той самий
-          ніж потрапляли і його меню: список моделей, рівень думання, радіальне
-          «+» — усе, що розкривається вгору, зрізало рівно по краю рядка, і
-          здавалося, що попапи «застрягли». Тепер обгортка накладається зверху
-          порожньою рамкою того самого розміру: сяйво те саме, а меню їй більше
-          не діти.
+          The glow is laid OVER the field, not wrapped around it.
+
+          voice-glow gives its wrapper `overflow: hidden` to clip the glow to
+          the field's rounding. While the field sat inside it, its menus fell
+          under the same knife: the model list, the thinking level, the "+" —
+          everything that opens upwards was cut exactly at the row's edge and
+          the popups seemed stuck. Now the wrapper sits on top as an empty
+          frame of the same size: same glow, and the menus are no longer its
+          children.
         */}
         <div className="relative">
           <PromptBar
@@ -221,40 +256,41 @@ export function Composer({
             color={ink}
             menuBackground={surface3}
             sparkColor={accent}
-            models={pickerModels}
+            controlRef={bar}
+            // Empty lists hide the pickers: in the lean layout they live in
+            // the chat header instead.
+            models={lean ? [] : pickerModels}
+            efforts={lean ? [] : efforts}
+            plusSlot={lean ? (
+              <button
+                ref={plus}
+                type="button"
+                className="prompt-bar__tool"
+                aria-label={t('composer.add')}
+                aria-expanded={sheetOpen}
+                data-on={sheetOpen ? '' : undefined}
+                onClick={() => setSheetOpen((value) => !value)}
+              >
+                <Plus
+                  className="size-4 transition-transform duration-200 motion-reduce:transition-none"
+                  style={{ transform: sheetOpen ? 'rotate(45deg)' : undefined }}
+                />
+              </button>
+            ) : undefined}
             sources={[
               { key: 'files', name: t('composer.srcFiles'), description: t('composer.srcFilesDesc'), icon: Paperclip, attach: true },
               { key: 'web', name: t('composer.srcWeb'), description: t('composer.srcWebDesc'), icon: Globe },
               { key: 'memory', name: t('composer.srcMemory'), description: t('composer.srcMemoryDesc'), icon: FileText },
             ]}
-            defaultModel={current || '__openclaw-loading__'}
-            efforts={efforts}
-            defaultEffort={currentThinking ? thinkingLabel(currentThinking) : AS_CONFIGURED}
-            /*
-             * Рівень думання — це НАЛАШТУВАННЯ OpenClaw, а не властивість
-             * однієї репліки: поля під reasoning у його HTTP-ендпоінта немає,
-             * тож рівень ставиться в конфіг і діє далі на всі розмови.
-             * Тому й повідомляємо про це вголос.
-             */
+            defaultModel={brain.current || '__openclaw-loading__'}
+            defaultEffort={brain.thinking ? thinkingLabel(brain.thinking) : AS_CONFIGURED}
             onEffortChange={(label) => {
               const level = effortByLabel[label];
-              if (level === undefined || level === currentThinking) return;
-              setThinking.mutate(level, {
-                onSuccess: () =>
-                  toast.toast(`Рівень думання: ${label}`, {
-                    description: level
-                      ? t('composer.effortSaved')
-                      : t('composer.effortCleared'),
-                  }),
-                onError: (error) => toast.error(t('composer.effortFailed'), (error as Error).message),
-              });
+              if (level !== undefined) brain.pickThinking(level);
             }}
-            onModelChange={(key) =>
-              key === '__openclaw-loading__' ? undefined :
-              selectModel.mutate(key, {
-                onError: (error) => toast.error(t('composer.modelFailed'), (error as Error).message),
-              })
-            }
+            onModelChange={(key) => {
+              if (key !== '__openclaw-loading__') brain.pickModel(key);
+            }}
             onAttach={() => new Promise((resolve) => {
               const input = fileInput.current;
               if (!input) return resolve([]);
@@ -269,16 +305,19 @@ export function Composer({
               { key: 'files', name: t('composer.cmdFiles'), description: t('composer.cmdFilesDesc') },
               { key: 'status', name: t('composer.cmdStatus'), description: t('composer.cmdStatusDesc') },
             ]}
-            onSend={(text, meta) => onSend(text, meta.attachments)}
+            onSend={(text, meta) => {
+              setSheetOpen(false);
+              onSend(text, meta.attachments);
+            }}
             onStop={onStop}
             /*
-             * Диктування зупиняється саме — по тиші: PromptBar не дає «стоп»,
-             * а лише скасовує очікування, і текст, розпізнаний після повторного
-             * натиску, просто зникав би (див. useDictation).
+             * Dictation stops on its own, on silence: PromptBar has no "stop",
+             * only a cancel of the wait, and text recognised after a second
+             * press would simply vanish (see useDictation). A second press of
+             * the mic now closes the phrase and sends it for recognition right
+             * away instead of waiting for silence; the mic is released too —
+             * there is nothing to keep it open for after "I'm done".
              */
-            /* Натиснули мікрофон удруге — закриваємо фразу й одразу віддаємо
-               її на розпізнавання, а не чекаємо на тишу. Мікрофон при цьому
-               глушиться: тримати його відкритим після «договорив» нема за що. */
             onDictateStop={dictation.finish}
             onDictate={async () => {
               const text = await dictation.listen();
@@ -303,15 +342,16 @@ export function Composer({
               type="default"
               colorVariant="sunset"
               /*
-               * Поки мікрофон не слухає, сяйва НЕМАЄ зовсім: `active` гасить
-               * ефект, `idle=0` прибирає «дихання» в тиші. Типове дихання
-               * світилось би під полем постійно й перетворило б показник
-               * запису на просту прикрасу.
+               * While the mic is not listening there is NO glow at all:
+               * `active` switches the effect off and `idle=0` removes the
+               * breathing in silence. The default breathing would glow under
+               * the field all the time and turn a recording indicator into a
+               * decoration.
                */
               active={Boolean(dictation.stream)}
               idle={0}
-              /* Радіус беремо з поля: дитина тут порожня, і компоненту
-                 нема з чого його вивести самому. */
+              // The radius comes from the field: the child here is empty and
+              // the component has nothing to derive it from.
               borderRadius={16}
             >
               <div className="size-full" />
@@ -320,10 +360,10 @@ export function Composer({
         </div>
 
         {/*
-          Чорновик, поки фраза ще триває. Без нього диктування виглядає як
-          порожнє очікування: мікрофон горить, а на екрані нічого — і
-          незрозуміло, чи тебе взагалі чують. Остаточний текст усе одно
-          порахує повна модель і вставить його в поле.
+          The draft while the phrase is still going. Without it dictation
+          looks like an empty wait: the mic is lit and nothing is on screen,
+          and it is unclear whether you are heard at all. The full model will
+          still produce the final text and put it in the field.
         */}
         {dictation.recognizing ? (
           <p className="self-center text-[12px] italic text-ink-3">{t('composer.recognizing')}</p>
@@ -331,17 +371,23 @@ export function Composer({
           <p className="self-center text-[12px] italic text-ink-3">{t('composer.hearing', { text: dictation.partial })}</p>
         ) : null}
 
-        {/* Запас контексту. PromptBar про нього не знає, а знати треба: саме
-            він пояснює, чому довга розмова починає «забувати». */}
-        <div className="self-center">
-          <ContextMeter
-            sessionId={sessionId}
-            contextSize={contextSize}
-            usedTokens={usedTokens}
-            onCompacted={onCompacted}
-          />
-        </div>
+        {/* Context headroom. PromptBar does not know about it, but you need
+            to: it is what explains why a long conversation starts to
+            "forget". In the lean layout it lives in the sheet. */}
+        {!lean ? (
+          <div className="self-center">
+            <ContextMeter {...context} />
+          </div>
+        ) : null}
       </div>
+
+      {lean ? (
+        <Dialog open={toolsOpen} onOpenChange={setToolsOpen}>
+          <DialogContent title={appT('tools.title')} side="bottom" className="h-[min(80dvh,720px)]">
+            <ToolsSection />
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

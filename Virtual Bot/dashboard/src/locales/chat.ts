@@ -61,6 +61,15 @@ const uk = {
   'composer.cmdFilesDesc': 'Покажи робочу теку',
   'composer.cmdStatus': '/стан',
   'composer.cmdStatusDesc': 'Що зараз працює',
+  'composer.effortToast': 'Рівень думання: {level}',
+  'composer.effortHintShort': 'Налаштування OpenClaw — діє на всі розмови.',
+
+  // Аркуш «+» на телефоні
+  'sheet.camera': 'камера',
+  'sheet.photos': 'фото',
+  'sheet.files': 'файли',
+  'sheet.tools': 'Інструменти',
+  'sheet.panels': 'Панелі',
 
   // Рівні думання
   'effort.off': 'Без думання',
@@ -110,6 +119,10 @@ const uk = {
   'context.unknown': 'розмір вікна моделі не вказано',
   'context.compacting': 'Переказую…',
   'context.compact': 'Стиснути',
+  'context.row': 'Контекст',
+  'context.compacted': 'Стиснуто {count} реплік у переказ',
+  'context.dropped': 'Ще {count} реплік лишились за вікном у {limit} — бот їх уже не бачить.',
+  'context.share': '{percent}% вікна моделі',
 
   // Картинки
   'image.fallback': 'картинка',
@@ -222,6 +235,14 @@ const en: Record<keyof typeof uk, string> = {
   'composer.cmdFilesDesc': 'Show the working folder',
   'composer.cmdStatus': '/status',
   'composer.cmdStatusDesc': 'What is running right now',
+  'composer.effortToast': 'Thinking level: {level}',
+  'composer.effortHintShort': 'An OpenClaw setting — applies to all conversations.',
+
+  'sheet.camera': 'camera',
+  'sheet.photos': 'photos',
+  'sheet.files': 'files',
+  'sheet.tools': 'Tools',
+  'sheet.panels': 'Panels',
 
   'effort.off': 'No thinking',
   'effort.minimal': 'Minimal',
@@ -267,6 +288,10 @@ const en: Record<keyof typeof uk, string> = {
   'context.unknown': 'model window size is unknown',
   'context.compacting': 'Summarizing…',
   'context.compact': 'Compact',
+  'context.row': 'Context',
+  'context.compacted': 'Compacted {count} messages into a summary',
+  'context.dropped': '{count} more messages are outside the {limit}-message window — the bot no longer sees them.',
+  'context.share': '{percent}% of the model window',
 
   'image.fallback': 'image',
   'image.fallbackCap': 'Image',

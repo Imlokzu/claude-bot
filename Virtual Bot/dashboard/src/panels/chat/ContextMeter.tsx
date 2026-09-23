@@ -67,17 +67,42 @@ function Arc({ fill, size = 20, danger }: { fill: number; size?: number; danger:
   );
 }
 
+/** A full ring for the sheet row, where there is room for a whole circle. */
+function Ring({ fill, danger }: { fill: number; danger: boolean }) {
+  const r = 9;
+  const len = 2 * Math.PI * r;
+  return (
+    <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true" className="shrink-0 -rotate-90">
+      <circle cx="12" cy="12" r={r} fill="none" stroke="var(--c-border)" strokeWidth="3" />
+      <circle
+        cx="12"
+        cy="12"
+        r={r}
+        fill="none"
+        stroke={danger ? 'var(--c-err)' : 'var(--c-accent)'}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={`${(len * Math.min(100, Math.max(fill, 0))) / 100} ${len}`}
+        style={{ transition: 'stroke-dasharray 320ms var(--e-out)' }}
+      />
+    </svg>
+  );
+}
+
 export function ContextMeter({
   sessionId,
   contextSize,
   usedTokens,
   onCompacted,
+  variant = 'inline',
 }: {
   sessionId: string;
   /** Вікно моделі в токенах; 0 — у config.yaml не вказано. */
   contextSize: number;
   usedTokens: number;
   onCompacted: () => void;
+  /** `inline` sits under the prompt bar; `row` is a full-width row in the phone sheet. */
+  variant?: 'inline' | 'row';
 }) {
   const [open, setOpen] = useState(false);
   const client = useQueryClient();
@@ -99,7 +124,7 @@ export function ContextMeter({
   const compact = useMutation({
     mutationFn: () => post<{ summary: string; before: number }>(`/api/sessions/${encodeURIComponent(sessionId)}/compact`),
     onSuccess: (result) => {
-      toast.toast(`Стиснуто ${result.before} реплік у переказ`);
+      toast.toast(t('context.compacted', { count: result.before }));
       void client.invalidateQueries({ queryKey: ['chat-context'] });
       void client.invalidateQueries({ queryKey: ['sessions'] });
       setOpen(false);
@@ -115,17 +140,32 @@ export function ContextMeter({
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors hover:bg-surface-2"
-          aria-label={t('context.aria')}
-        >
-          {contextSize > 0 ? <Arc fill={fill} danger={danger} /> : null}
-          <span className={cn('u-data text-[10.5px]', danger ? 'text-err' : 'text-ink-3')}>
-            ≈{shortNumber(usedTokens)}
-            {contextSize > 0 ? ` / ${shortNumber(contextSize)}` : t('context.tokens')}
-          </span>
-        </button>
+        {variant === 'row' ? (
+          <button
+            type="button"
+            className="flex min-h-14 w-full items-center gap-3 rounded-lg bg-surface-2 px-4 text-left transition-colors hover:bg-surface-3"
+            aria-label={t('context.aria')}
+          >
+            <Ring fill={fill} danger={danger} />
+            <span className="font-mono text-[15px] text-ink">{t('context.row')}</span>
+            <span className={cn('u-data ml-auto text-[14px]', danger ? 'text-err' : 'text-ink-2')}>
+              {shortNumber(usedTokens)}
+              {contextSize > 0 ? `/${shortNumber(contextSize)}` : t('context.tokens')}
+            </span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors hover:bg-surface-2"
+            aria-label={t('context.aria')}
+          >
+            {contextSize > 0 ? <Arc fill={fill} danger={danger} /> : null}
+            <span className={cn('u-data text-[10.5px]', danger ? 'text-err' : 'text-ink-3')}>
+              ≈{shortNumber(usedTokens)}
+              {contextSize > 0 ? ` / ${shortNumber(contextSize)}` : t('context.tokens')}
+            </span>
+          </button>
+        )}
       </Popover.Trigger>
 
       <Popover.Portal>
@@ -176,8 +216,7 @@ export function ContextMeter({
 
           {breakdown.data && breakdown.data.dropped > 0 ? (
             <p className="mt-2.5 text-[12px] leading-snug text-ink-3">
-              Ще {breakdown.data.dropped} реплік лишились за вікном у {breakdown.data.history_limit} —
-              бот їх уже не бачить.
+              {t('context.dropped', { count: breakdown.data.dropped, limit: breakdown.data.history_limit })}
             </p>
           ) : null}
 
@@ -188,7 +227,7 @@ export function ContextMeter({
                 // Тому все, що менше відсотка, називаємо «менше 1%».
                 ? fill < 1
                   ? t('context.belowOne')
-                  : `${Math.round(fill)}% вікна моделі`
+                  : t('context.share', { percent: Math.round(fill) })
                 : t('context.unknown')}
             </span>
             <Button
