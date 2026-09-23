@@ -140,6 +140,29 @@ const uk = {
   'context.replies': 'реплік',
   'thinking.connecting': 'підключення',
 
+  // Дії над відповіддю
+  'reply.copy': 'Копіювати відповідь',
+  'reply.copied': 'Скопійовано',
+  'reply.copyFailed': 'Не вийшло скопіювати',
+  'reply.speak': 'Прочитати вголос',
+  'reply.speakStop': 'Припинити читання',
+  'reply.speakFailed': 'Не вдалося озвучити',
+  'reply.retry': 'Перепитати',
+
+  // Джерела відповіді
+  'sources.label': 'джерела · {count}',
+
+  // Дії над виділеним
+  'select.aria': 'Що зробити з виділеним',
+  'select.explain': 'Пояснити',
+  'select.explainPrompt': 'Поясни простіше:\n\n«{text}»',
+  'select.shorten': 'Коротше',
+  'select.shortenPrompt': 'Перекажи стисло, лишивши суть:\n\n«{text}»',
+  'select.translate': 'Англійською',
+  'select.translatePrompt': 'Переклади англійською:\n\n«{text}»',
+  'select.remember': 'Запамʼятати',
+  'select.rememberPrompt': 'Запамʼятай це — збережи в памʼять:\n\n«{text}»',
+
   // Репліки
   'replies.one': 'репліка',
   'replies.few': 'репліки',
@@ -271,6 +294,26 @@ const en: Record<keyof typeof uk, string> = {
   'context.counting': 'counting…',
   'context.replies': 'replies',
   'thinking.connecting': 'connecting',
+  'reply.copy': 'Copy reply',
+  'reply.copied': 'Copied',
+  'reply.copyFailed': 'Could not copy',
+  'reply.speak': 'Read aloud',
+  'reply.speakStop': 'Stop reading',
+  'reply.speakFailed': 'Could not speak it',
+  'reply.retry': 'Ask again',
+
+  'sources.label': 'sources · {count}',
+
+  'select.aria': 'What to do with the selection',
+  'select.explain': 'Explain',
+  'select.explainPrompt': 'Explain this in simpler terms:\n\n“{text}”',
+  'select.shorten': 'Shorter',
+  'select.shortenPrompt': 'Restate this briefly, keeping the point:\n\n“{text}”',
+  'select.translate': 'Ukrainian',
+  'select.translatePrompt': 'Translate this into Ukrainian:\n\n“{text}”',
+  'select.remember': 'Remember',
+  'select.rememberPrompt': 'Remember this — save it to memory:\n\n“{text}”',
+
   'replies.one': 'reply',
   'replies.few': 'replies',
   'replies.many': 'replies',

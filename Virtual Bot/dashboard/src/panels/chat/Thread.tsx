@@ -1,9 +1,13 @@
+import { createContext, useContext, useMemo } from 'react';
 import { MessagePrimitive, ThreadPrimitive, useAuiState } from '@assistant-ui/react';
 import { ArrowDown } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { GalleryScope } from './Gallery';
 import { TextType } from '@/vendor/reactbits';
 import { Thinking } from './Thinking';
+import { SourceStrip } from './SourceStrip';
+import { MessageActions } from './MessageActions';
+import { REPLY_ATTRIBUTE } from './SelectionActions';
 import { Button } from '@/components/ui/Button';
 import { BotIcon } from '@/components/ui/BotIcon';
 import { glue } from '@/lib/glue';
@@ -21,6 +25,14 @@ import type { AgentStatus } from '@/lib/chatStream';
 
 const SUGGESTIONS = ['thread.suggestion1', 'thread.suggestion2', 'thread.suggestion3'] as const;
 
+/*
+ * Retry belongs to the conversation, not to a message: it re-sends the last
+ * question. So the thread is told which reply is the last settled one, and
+ * only that reply offers the action — on an older one the button would
+ * silently replace something else.
+ */
+const RetryContext = createContext<{ id: string; run: () => void } | null>(null);
+
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="mb-5 flex justify-end">
@@ -35,17 +47,42 @@ function AssistantMessage() {
   const activity = useAuiState((state) => state.message.metadata.custom) as {
     steps?: ToolStep[]; running?: boolean; agentStatus?: AgentStatus; model?: string;
   };
+  const id = useAuiState((state) => state.message.id);
+  const parts = useAuiState((state) => state.message.content);
+  const retry = useContext(RetryContext);
+
+  // Plain text of the reply, for copying and for reading aloud. Taken from the
+  // message itself rather than from the rendered DOM, so code blocks, tables
+  // and image captions come out as the model wrote them.
+  const text = useMemo(
+    () => parts.filter((part) => part.type === 'text').map((part) => part.text).join(''),
+    [parts],
+  );
+
+  const settled = !activity.running;
+  const steps = activity.steps ?? [];
+
   return (
-    <MessagePrimitive.Root className="mb-6 flex gap-3">
+    <MessagePrimitive.Root className="group/reply mb-6 flex gap-3">
       {/* Use the same static character as the header, aligned to the first line. */}
       <BotIcon className="mt-1" />
       {/* Область картинок — на всю репліку: тоді «наступна» в переглядачі
           доходить і до тих, що лежали в іншому абзаці відповіді. */}
       <GalleryScope>
         <div className="u-measure min-w-0 flex-1">
-          {activity.running || activity.steps?.length ? <Thinking steps={activity.steps ?? []}
+          {activity.running || steps.length ? <Thinking steps={steps}
             running={Boolean(activity.running)} status={activity.agentStatus} model={activity.model} /> : null}
-          <MessagePrimitive.Parts components={{ Text: Markdown }} />
+          {/* The selection toolbar only fires inside this mark, so it stays
+              off the user's own messages and off the activity trace. */}
+          <div {...{ [REPLY_ATTRIBUTE]: '' }}>
+            <MessagePrimitive.Parts components={{ Text: Markdown }} />
+          </div>
+          {/* While the answer is still streaming its sources are half-found
+              and its text is half-written — neither is worth acting on yet. */}
+          {settled ? <SourceStrip steps={steps} /> : null}
+          {settled && text ? (
+            <MessageActions text={text} onRetry={retry?.id === id ? retry.run : undefined} />
+          ) : null}
         </div>
       </GalleryScope>
     </MessagePrimitive.Root>
@@ -55,13 +92,23 @@ function AssistantMessage() {
 export function Thread({
   compactedFrom,
   composer,
+  retryId,
+  onRetry,
 }: {
   /** Скільки реплік сховано за переказом; 0 — розмову не стискали. */
   compactedFrom: number;
   /* Поле вводу приходить готовим: воно знає про моделі й контекст, а стрічка — ні. */
   composer: React.ReactNode;
+  /** Id of the reply that may be retried, or '' while none may be. */
+  retryId: string;
+  onRetry: () => void;
 }) {
+  const retry = useMemo(
+    () => (retryId ? { id: retryId, run: onRetry } : null),
+    [retryId, onRetry],
+  );
   return (
+    <RetryContext value={retry}>
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport className="relative flex min-h-0 flex-1 touch-pan-y flex-col overflow-y-auto overscroll-contain px-4 pt-5 sm:px-6">
         <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col">
@@ -132,5 +179,6 @@ export function Thread({
 
       {composer}
     </ThreadPrimitive.Root>
+    </RetryContext>
   );
 }

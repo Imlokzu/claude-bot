@@ -7,6 +7,7 @@ import { Composer } from './Composer';
 import { SessionList } from './SessionList';
 import { Face } from './Face';
 import { PinnedPanels } from './PinnedPanels';
+import { SelectionActions } from './SelectionActions';
 import { useChatRuntime } from './useChatRuntime';
 import { useIsDesk, useIsPhone } from '@/hooks/useMediaQuery';
 import { useDrawer } from '@/hooks/useDrawer';
@@ -83,6 +84,14 @@ export default function ChatPanel() {
     () => (project ? chat.sessions.filter((item) => item.project === project) : chat.sessions),
     [chat.sessions, project],
   );
+
+  /*
+   * Which reply may be asked again: the last one, and only once it is
+   * finished. Retrying mid-stream would race the answer still arriving, and
+   * retrying an older reply would quietly replace a different question.
+   */
+  const last = chat.messages[chat.messages.length - 1];
+  const retryId = !chat.running && last?.role === 'assistant' ? last.id : '';
 
 
 
@@ -196,6 +205,8 @@ export default function ChatPanel() {
 
           <Thread
             compactedFrom={chat.compactedFrom}
+            retryId={retryId}
+            onRetry={chat.retry}
             composer={
               <Composer
                 busy={chat.running}
@@ -215,6 +226,9 @@ export default function ChatPanel() {
         {isDesk ? (
           <PinnedPanels messages={chat.messages} />
         ) : null}
+
+        {/* Selecting text in a reply turns it into the next question. */}
+        <SelectionActions onAsk={(text) => void chat.send(text)} />
       </div>
     </AssistantRuntimeProvider>
   );

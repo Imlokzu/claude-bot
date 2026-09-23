@@ -208,6 +208,26 @@ export function useChatRuntime() {
     [client, sessionId, toast],
   );
 
+  /**
+   * Ask the last question again.
+   *
+   * The failed or unwanted reply is dropped along with the question that
+   * produced it, and the question is sent afresh — otherwise the model would
+   * see its own rejected answer in the context and tend to repeat it. The
+   * attachments go back with it: a retry without the picture is a different
+   * question.
+   */
+  const retry = useCallback(() => {
+    if (abortRef.current) return;
+    const lastUser = messages.map((item) => item.role).lastIndexOf('user');
+    if (lastUser === -1) return;
+    const question = messages[lastUser];
+    setMessages(messages.slice(0, lastUser));
+    setSteps([]);
+    stepsRef.current = [];
+    void send(question.content, question.attachments ?? []);
+  }, [messages, send]);
+
   const cancel = useCallback(async () => {
     generation.current += 1;
     abortRef.current?.abort();
@@ -272,5 +292,6 @@ export function useChatRuntime() {
     // назовні напряму, повз композер assistant-ui.
     send,
     cancel,
+    retry,
   };
 }
