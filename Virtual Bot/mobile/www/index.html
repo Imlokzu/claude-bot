@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Клод Бот</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #12100e; --surface: #1b1815; --line: #2f2a25;
+    --ink: #efe9df; --ink-2: #a89c8e; --ink-3: #7d7166; --accent: #d2765a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100dvh;
+    padding: max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; justify-content: center;
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+  }
+  main { width: 100%; max-width: 420px; margin: 0 auto; }
+  h1 { margin: 0 0 6px; font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  p { margin: 0 0 20px; color: var(--ink-2); font-size: 13.5px; }
+  label { display: block; margin-bottom: 7px; font-size: 12px; color: var(--ink-3); }
+  input {
+    width: 100%; padding: 13px 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+    font-size: 16px; /* 16px or Android zooms the page on focus */
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    width: 100%; margin-top: 12px; padding: 13px; border: 0; border-radius: 10px;
+    background: var(--accent); color: #17120f; font-size: 15px; font-weight: 600;
+  }
+  button:disabled { opacity: 0.55; }
+  .note { margin-top: 16px; min-height: 20px; font-size: 13px; color: var(--ink-3); }
+  .note[data-kind="err"] { color: #e08a72; }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="t-title"></h1>
+  <p id="t-lead"></p>
+  <label for="addr" id="t-label"></label>
+  <input id="addr" type="text" inputmode="url" autocapitalize="off"
+         autocorrect="off" spellcheck="false" placeholder="192.168.1.10:8100">
+  <button id="go"></button>
+  <p class="note" id="note"></p>
+</main>
+<script>
+/*
+ * Bootstrap screen: find the bot, then hand the WebView over to the real
+ * panel. Everything after this point is served by the bot itself.
+ *
+ * Strings stay in one table rather than in the markup, the same shape as
+ * static/screen/i18n.js, so this page does not become a third place where
+ * Ukrainian is baked into HTML.
+ */
+const T = {
+  uk: {
+    title: 'Підключення до бота',
+    lead: 'Бот працює на комп’ютері. Вкажи його адресу в домашній мережі — запам’ятаю й далі відкриватиму одразу.',
+    label: 'АДРЕСА: 192.168.1.10:8100 АБО https://…',
+    go: 'Підключитися',
+    checking: 'Перевіряю…',
+    failed: 'За цією адресою бот не відповідає. Перевір, чи він запущений і чи телефон у тій самій мережі.',
+    bad: 'Схоже на неповну адресу — потрібні адреса й порт, напр. 192.168.1.10:8100',
+  },
+  en: {
+    title: 'Connect to the bot',
+    lead: 'The bot runs on your computer. Enter its address on the home network — it is remembered and opened directly next time.',
+    label: 'ADDRESS: 192.168.1.10:8100 OR https://…',
+    go: 'Connect',
+    checking: 'Checking…',
+    failed: 'Nothing answered at that address. Check that the bot is running and the phone is on the same network.',
+    bad: 'That looks incomplete — an address and a port are needed, e.g. 192.168.1.10:8100',
+  },
+};
+const L = (navigator.language || 'uk').startsWith('en') ? T.en : T.uk;
+const t = (key) => L[key];
+
+const KEY = 'klodbot.host';
+const addr = document.getElementById('addr');
+const go = document.getElementById('go');
+const note = document.getElementById('note');
+
+document.getElementById('t-title').textContent = t('title');
+document.getElementById('t-lead').textContent = t('lead');
+document.getElementById('t-label').textContent = t('label');
+go.textContent = t('go');
+
+/* A LAN address speaks plain HTTP; a tunnel always speaks HTTPS and carries
+   its own scheme. Keep whichever the address states, and assume HTTP only
+   when none is given, since that is the home-network case. */
+function panelUrl(host) {
+  const raw = host.trim().replace(/\/+$/, '');
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : 'http://' + raw;
+  return withScheme.replace(/\/dash$/, '') + '/dash/';
+}
+
+function say(message, kind) {
+  note.textContent = message;
+  if (kind) note.dataset.kind = kind; else delete note.dataset.kind;
+}
+
+/* A HEAD request confirms something is actually there before we navigate:
+   handing the WebView a dead address leaves it on a browser error page with
+   no way back to this form. */
+async function alive(host) {
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), 4000);
+  try {
+    await fetch(panelUrl(host), { method: 'HEAD', signal: stop.signal, cache: 'no-store' });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function connect(host, remember) {
+  if (!/^[\w.-]+(:\d+)?(\/.*)?$/.test(host.replace(/^https?:\/\//i, ''))) {
+    say(t('bad'), 'err');
+    return false;
+  }
+  go.disabled = true;
+  say(t('checking'));
+  const ok = await alive(host);
+  go.disabled = false;
+  if (!ok) {
+    say(t('failed'), 'err');
+    return false;
+  }
+  if (remember) {
+    try { localStorage.setItem(KEY, host); } catch {}
+  }
+  location.replace(panelUrl(host));
+  return true;
+}
+
+go.addEventListener('click', () => {
+  const host = addr.value.trim();
+  if (host) void connect(host, true);
+});
+addr.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') go.click();
+});
+
+/* A remembered address reconnects without asking; if it has gone stale the
+   form stays put with the old value prefilled, ready to be corrected. */
+(async () => {
+  let saved = '';
+  try { saved = localStorage.getItem(KEY) || ''; } catch {}
+  if (!saved) return;
+  addr.value = saved;
+  say(t('checking'));
+  if (await alive(saved)) location.replace(panelUrl(saved));
+  else say(t('failed'), 'err');
+})();
+</script>
+</body>
+</html>

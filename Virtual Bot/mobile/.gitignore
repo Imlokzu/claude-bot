@@ -1,0 +1,13 @@
+# Installed by the package manager, restored with `pnpm install`.
+node_modules/
+
+# Gradle build output and machine-local SDK paths: large, regenerated on
+# every build, and local.properties hardcodes this machine's SDK location.
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/captures/
+android/.idea/
+*.apk
+*.aab
