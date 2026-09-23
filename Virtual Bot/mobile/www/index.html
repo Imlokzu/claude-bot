@@ -60,8 +60,8 @@
 const T = {
   uk: {
     title: 'Підключення до бота',
-    lead: 'Бот працює на комп’ютері. Вкажи його адресу в домашній мережі — запам’ятаю й далі відкриватиму одразу.',
-    label: 'АДРЕСА: 192.168.1.10:8100 АБО https://…',
+    lead: 'Встав посилання на бота або його адресу в домашній мережі — запам’ятаю й далі відкриватиму одразу.',
+    label: 'АДРЕСА АБО ПОВНЕ ПОСИЛАННЯ',
     go: 'Підключитися',
     checking: 'Перевіряю…',
     failed: 'За цією адресою бот не відповідає. Перевір, чи він запущений і чи телефон у тій самій мережі.',
@@ -69,8 +69,8 @@ const T = {
   },
   en: {
     title: 'Connect to the bot',
-    lead: 'The bot runs on your computer. Enter its address on the home network — it is remembered and opened directly next time.',
-    label: 'ADDRESS: 192.168.1.10:8100 OR https://…',
+    lead: 'Paste a link to the bot, or its address on the home network — it is remembered and opened directly next time.',
+    label: 'ADDRESS OR FULL LINK',
     go: 'Connect',
     checking: 'Checking…',
     failed: 'Nothing answered at that address. Check that the bot is running and the phone is on the same network.',
@@ -90,13 +90,23 @@ document.getElementById('t-lead').textContent = t('lead');
 document.getElementById('t-label').textContent = t('label');
 go.textContent = t('go');
 
-/* A LAN address speaks plain HTTP; a tunnel always speaks HTTPS and carries
-   its own scheme. Keep whichever the address states, and assume HTTP only
-   when none is given, since that is the home-network case. */
-function panelUrl(host) {
-  const raw = host.trim().replace(/\/+$/, '');
-  const withScheme = /^https?:\/\//i.test(raw) ? raw : 'http://' + raw;
-  return withScheme.replace(/\/dash$/, '') + '/dash/';
+/* Accepts either shape a person actually has to hand:
+     192.168.1.10:8100          a bare host on the home network
+     https://x.trycloudflare.com/dash/?key=…   a full unlock link
+
+   A LAN address speaks plain HTTP and needs /dash/ appended; a tunnel link
+   already carries its scheme, its path and the key that unlocks it, so it is
+   passed through untouched — rebuilding it would drop the key and lock the
+   app out of the very address it was given. */
+function panelUrl(raw) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return null;
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : 'http://' + trimmed;
+  let url;
+  try { url = new URL(withScheme); } catch { return null; }
+  if (!url.hostname) return null;
+  if (url.pathname && url.pathname !== '/') return url.toString();
+  return url.origin + '/dash/' + (url.search || '');
 }
 
 function say(message, kind) {
@@ -104,14 +114,24 @@ function say(message, kind) {
   if (kind) note.dataset.kind = kind; else delete note.dataset.kind;
 }
 
-/* A HEAD request confirms something is actually there before we navigate:
-   handing the WebView a dead address leaves it on a browser error page with
-   no way back to this form. */
+/* Confirms something actually answers before we navigate: handing the
+   WebView a dead address leaves it on a browser error page with no way back
+   to this form.
+
+   The probe runs no-cors on purpose. This page is served from the app's own
+   local origin, so reading a reply from the bot would need CORS headers that
+   the guard's 401 and redirect do not carry — the request would be blocked
+   and every address would look dead. An opaque reply cannot be inspected,
+   but it does separate the case that matters here, "nothing at this address",
+   from "something answered". Unlocking happens on the navigation that
+   follows, which is top-level and not subject to CORS at all. */
 async function alive(host) {
+  const target = panelUrl(host);
+  if (!target) return false;
   const stop = new AbortController();
-  const timer = setTimeout(() => stop.abort(), 4000);
+  const timer = setTimeout(() => stop.abort(), 5000);
   try {
-    await fetch(panelUrl(host), { method: 'HEAD', signal: stop.signal, cache: 'no-store' });
+    await fetch(target, { method: 'GET', mode: 'no-cors', signal: stop.signal, cache: 'no-store' });
     return true;
   } catch {
     return false;
@@ -121,7 +141,7 @@ async function alive(host) {
 }
 
 async function connect(host, remember) {
-  if (!/^[\w.-]+(:\d+)?(\/.*)?$/.test(host.replace(/^https?:\/\//i, ''))) {
+  if (!panelUrl(host)) {
     say(t('bad'), 'err');
     return false;
   }
