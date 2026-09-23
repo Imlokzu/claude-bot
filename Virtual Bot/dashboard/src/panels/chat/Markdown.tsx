@@ -12,6 +12,7 @@ import { DataTable, FileDiff, parseUnifiedDiff } from '@/vendor/aicss';
 import { ChatGallery, ChatImage } from './Gallery';
 import { remarkImageGroups } from './remarkImageGroups';
 import { cn } from '@/lib/cn';
+import { copyText } from '@/lib/clipboard';
 
 /*
  * Розмітка відповіді.
@@ -90,8 +91,10 @@ function pictures(children: ReactNode): { src: string; alt: string }[] | null {
 function CodeHeader({ language, code }: CodeHeaderProps) {
   const [copied, setCopied] = useState(false);
 
+  // Same fallback as the reply actions: over plain HTTP there is no
+  // `navigator.clipboard` at all, and this button was silently dead there.
   const copy = () => {
-    void navigator.clipboard.writeText(code).then(() => {
+    void copyText(code).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     });
