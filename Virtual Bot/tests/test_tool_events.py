@@ -83,6 +83,18 @@ class ToolCallEventTests(unittest.TestCase):
         calls = self._call({"error": "DuckDuckGo не відповів"})
         self.assertEqual(calls[-1], ("weather", "Київ", "fail"))
 
+    def test_loopback_search_does_not_need_a_clerk_session(self) -> None:
+        """OpenClaw's tool bridge is local and has no browser token. Search
+        from that process must run; the same call from another host must not."""
+        with patch.object(main.auth_clerk, "is_auth_disabled", return_value=False), \
+             patch.object(main.tools, "execute_tool", AsyncMock(return_value={"results": []})):
+            local = TestClient(main.app, client=("127.0.0.1", 50000))
+            ok = local.post("/api/tools/call", json={"name": "web_search", "args": {"query": "b2c"}})
+            self.assertEqual(ok.status_code, 200)
+            remote = TestClient(main.app, client=("203.0.113.5", 50000))
+            denied = remote.post("/api/tools/call", json={"name": "web_search", "args": {"query": "b2c"}})
+            self.assertEqual(denied.status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

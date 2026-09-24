@@ -352,6 +352,33 @@ async def _require_user(request: Request) -> str:
     return auth_clerk.user_id_from_payload(payload)
 
 
+def _is_loopback(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
+async def _tool_caller(request: Request) -> str:
+    """Who is calling a tool.
+
+    OpenClaw's search bridge is a local process. It has no browser session,
+    so a missing token from loopback is the bridge, not a stranger. A call
+    from anywhere else still needs Clerk. A token that was sent is always
+    checked, even on loopback.
+    """
+    if auth_clerk.is_auth_disabled():
+        return ""
+    auth = request.headers.get("authorization") or request.headers.get("Authorization") or ""
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    if not token:
+        token = (request.headers.get("x-clerk-token") or request.query_params.get("token") or "").strip()
+    if token:
+        payload = auth_clerk.verify_clerk_token(token)
+        return auth_clerk.user_id_from_payload(payload)
+    if _is_loopback(request):
+        return ""
+    raise HTTPException(status_code=401, detail="Потрібен вхід (Clerk)")
+
+
 # Вибір моделі кодинг-агента живе в окремому роутері (coding_api.py):
 # у main.py уже 1900+ рядків, і кожна нова ручка робить перегляд змін важчим.
 app.include_router(coding_api.router)
@@ -2512,7 +2539,7 @@ async def api_tools_call(request: Request, req: ToolCallRequest) -> dict:
     мозок (OpenClaw → tools_mcp/workspace_mcp), тому шлемо SSE-події: інакше
     в панелі не було б видно, що бот саме зараз щось шукає чи пише у файл.
     """
-    clerk_uid = await _require_user(request)
+    clerk_uid = await _tool_caller(request)
     detail = _tool_detail(req.args)
     # ask_question/todo_list/show_choice малюють себе самі карткою (подія
     # "ui" — публікує сам тул), тому дублювати їх згорнутим рядком не треба.
