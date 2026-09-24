@@ -55,6 +55,7 @@ import brains
 import chat_bubbles
 import chat_store
 import openclaw_models
+import openclaw_settings
 from tool_activity import ActivityLog, detail_for, result_failed
 import coding
 import coding_api
@@ -714,6 +715,34 @@ async def api_brain_thinking(req: BrainThinkingRequest, request: Request) -> dic
     if not await openclaw_models.set_thinking(level):
         raise HTTPException(status_code=502, detail="OpenClaw не прийняв рівень думання")
     return {"ok": True, "thinking": await openclaw_models.get_thinking()}
+
+
+class OpenClawSettingRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=120)
+    # None clears the path so OpenClaw's own default applies again.
+    value: Union[str, int, float, bool, None] = None
+
+
+@app.get("/api/openclaw/settings")
+async def api_openclaw_settings(request: Request) -> dict:
+    """Allowlisted OpenClaw settings. The rest of the gateway config stays on disk."""
+    await _require_user(request)
+    return openclaw_settings.snapshot()
+
+
+@app.post("/api/openclaw/settings")
+async def api_openclaw_setting_set(req: OpenClawSettingRequest, request: Request) -> dict:
+    """Write one allowlisted path through the OpenClaw CLI, which validates first."""
+    await _require_user(request)
+    if openclaw_settings.spec_for(req.path) is None:
+        raise HTTPException(status_code=400, detail="Це налаштування панель не змінює")
+    try:
+        ok = await openclaw_settings.apply(req.path, req.value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Неприйнятне значення") from None
+    if not ok:
+        raise HTTPException(status_code=502, detail="OpenClaw не прийняв налаштування")
+    return {"ok": True}
 
 
 @app.post("/api/model")

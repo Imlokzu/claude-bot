@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Brain, Palette, Puzzle, Sparkles, User, Wrench } from 'lucide-react';
+import { AudioLines, Brain, Cpu, Palette, Puzzle, Search, Sparkles, User, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Panel, PanelHead } from '@/components/ui/Panel';
 import { Button } from '@/components/ui/Button';
-import { Field, Input, Select, Textarea } from '@/components/ui/Field';
-import { SwitchRow } from '@/components/ui/Switch';
+import { Input, Select, Textarea } from '@/components/ui/Field';
+import { Switch } from '@/components/ui/Switch';
 import { Segmented } from '@/components/ui/Segmented';
 import { SkeletonList } from '@/components/ui/Feedback';
 import { useToast } from '@/components/ui/Toaster';
 import { get, post } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { glue } from '@/lib/glue';
-import { t } from '@/lib/i18n';
+import { t as lookT } from '@/lib/i18n';
+import { settingsMatch, t } from '@/locales/settings';
 import { ACCENTS, THEMES, useTheme } from '@/hooks/useTheme';
 import { useLanguage } from '@/hooks/useLanguage';
 import { JellyRadio } from '@/vendor/reactbits';
@@ -21,7 +21,8 @@ import { StoreSection } from './StoreSection';
 import { ToolsSection } from './ToolsSection';
 import { FirstRun } from './FirstRun';
 import { VoiceSection } from './VoiceSection';
-import { SectionHeader } from '@/components/shell/SectionHeader';
+import { OpenClawSection } from './OpenClawSection';
+import { SettingGroup, SettingRow } from './SettingRow';
 import type { SetupData } from './types';
 
 /*
@@ -32,20 +33,24 @@ import type { SetupData } from './types';
  * повз усе інше. Порядок від «хто це» до «чим воно живиться».
  */
 
-const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
-  { id: 'profile', label: 'Особистість', icon: User },
-  { id: 'style', label: 'Стиль спілкування', icon: Sparkles },
-  { id: 'look', label: 'Вигляд', icon: Palette },
-  { id: 'voice', label: 'Голос', icon: AudioLines },
-  { id: 'brain', label: 'Мозок і ключі', icon: Brain },
-  { id: 'skills', label: 'Уміння', icon: Puzzle },
-  { id: 'tools', label: 'Інструменти', icon: Wrench },
+const SECTIONS: { id: string; label: 'settings.section.profile' | 'settings.section.style' | 'settings.section.look' | 'settings.section.voice' | 'settings.section.brain' | 'settings.section.openclaw' | 'settings.section.skills' | 'settings.section.tools'; icon: LucideIcon }[] = [
+  { id: 'profile', label: 'settings.section.profile', icon: User },
+  { id: 'style', label: 'settings.section.style', icon: Sparkles },
+  { id: 'look', label: 'settings.section.look', icon: Palette },
+  { id: 'voice', label: 'settings.section.voice', icon: AudioLines },
+  { id: 'brain', label: 'settings.section.brain', icon: Brain },
+  { id: 'openclaw', label: 'settings.section.openclaw', icon: Cpu },
+  { id: 'skills', label: 'settings.section.skills', icon: Puzzle },
+  { id: 'tools', label: 'settings.section.tools', icon: Wrench },
 ];
+
+const fieldControl = 'h-8 w-[200px] text-[13px]';
 
 export default function SettingsPanel() {
   const toast = useToast();
   const client = useQueryClient();
   const [section, setSection] = useState('profile');
+  const [query, setQuery] = useState('');
   // Майстер показуємо, доки профіль не позначено налаштованим; після
   // завершення він більше не зʼявляється, але його можна пройти знову,
   // якщо бекенд скине прапорець.
@@ -84,57 +89,84 @@ export default function SettingsPanel() {
     );
   }
 
+  const needle = query.trim().toLowerCase();
+  const visible = SECTIONS.filter((item) => {
+    if (!needle) return true;
+    if (t(item.label).toLowerCase().includes(needle)) return true;
+    return item.id === 'openclaw' && settingsMatch(needle);
+  });
+  const current = visible.find((item) => item.id === section) ?? visible[0];
+
   const nav = (
-    <nav className="flex shrink-0 gap-1 overflow-x-auto p-2 lg:w-[210px] lg:flex-col lg:overflow-visible lg:border-r lg:border-line">
-      {SECTIONS.map((item) => {
-        const active = item.id === section;
-        const Icon = item.icon;
-        return (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => setSection(item.id)}
-            className={cn(
-              'flex h-9 shrink-0 items-center gap-2.5 rounded-md px-3 text-[13px] transition-colors',
-              active ? 'bg-accent-soft text-ink' : 'text-ink-2 hover:bg-surface-2',
-            )}
-          >
-            <Icon className="size-4" strokeWidth={1.75} style={active ? { color: 'var(--c-accent)' } : undefined} />
-            <span className="whitespace-nowrap">{item.label}</span>
-          </button>
-        );
-      })}
-    </nav>
+    <div className="flex shrink-0 flex-col border-b border-line lg:w-[232px] lg:border-b-0 lg:border-r">
+      <div className="p-3">
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-ink-3" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t('settings.search')}
+            aria-label={t('settings.search')}
+            className="h-8 w-full rounded-md border border-line bg-surface-2 pl-8 pr-2 text-[13px] text-ink placeholder:text-ink-3 focus:border-accent focus:outline-none"
+          />
+        </div>
+      </div>
+      <nav className="flex gap-1 overflow-x-auto px-2 pb-2 lg:flex-col lg:overflow-visible lg:px-2 lg:pb-3">
+        {visible.map((item) => {
+          const active = item.id === current?.id;
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSection(item.id)}
+              className={cn(
+                'flex h-8 shrink-0 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors',
+                active ? 'bg-surface-2 text-ink' : 'text-ink-2 hover:bg-surface-2',
+              )}
+            >
+              <Icon className="size-4" strokeWidth={1.75} />
+              <span className="whitespace-nowrap">{t(item.label)}</span>
+            </button>
+          );
+        })}
+        {visible.length === 0 ? (
+          <p className="px-2.5 py-2 text-[12px] text-ink-3">{t('settings.empty')}</p>
+        ) : null}
+      </nav>
+    </div>
   );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       {nav}
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-        <div className="mx-auto w-full max-w-[640px] space-y-4">
-          <SectionHeader className="mb-6" label="НАЛАШТУВАННЯ" title="Який бот і чим живиться" />
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
+        <div className="mx-auto w-full max-w-[720px]">
+          {current ? (
+            <h1 className="mb-5 text-[22px] font-medium tracking-[-0.02em] text-ink">{t(current.label)}</h1>
+          ) : null}
           {setup.isPending || !form ? (
-            <Panel>
-              <SkeletonList rows={6} />
-            </Panel>
+            <SettingGroup>
+              <div className="p-4"><SkeletonList rows={6} /></div>
+            </SettingGroup>
           ) : (
             <>
-              {section === 'profile' ? (
-                <Panel className="space-y-4">
-                  <PanelHead label="особистість" hint={glue('Хто це і якою мовою говорить')} />
-                  <Field label="Імʼя" htmlFor="bot-name">
+              {current?.id === 'profile' ? (
+                <SettingGroup>
+                  <SettingRow label="Імʼя" htmlFor="bot-name">
                     <Input
                       id="bot-name"
+                      className={fieldControl}
                       value={form.name}
                       maxLength={60}
                       onChange={(event) => patch('name', event.target.value)}
                     />
-                  </Field>
-
-                  <Field label="Мова" htmlFor="bot-lang">
+                  </SettingRow>
+                  <SettingRow label="Мова" htmlFor="bot-lang">
                     <Select
                       id="bot-lang"
+                      className={fieldControl}
                       value={form.language}
                       onChange={(event) => patch('language', event.target.value)}
                     >
@@ -142,10 +174,13 @@ export default function SettingsPanel() {
                         <option key={item.id} value={item.id}>{item.label}</option>
                       ))}
                     </Select>
-                  </Field>
-
-                  <Field label="Характер" hint={glue('Готовий пресет або свій опис нижче — свій має пріоритет.')}>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  </SettingRow>
+                  <div className="border-b border-line px-4 py-3">
+                    <p className="text-[13px] text-ink">Характер</p>
+                    <p className="mt-0.5 text-[12px] leading-snug text-ink-3">
+                      {glue('Готовий пресет або свій опис нижче — свій має пріоритет.')}
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {setup.data?.personas.map((item) => {
                         const active = item.id === form.persona;
                         return (
@@ -168,26 +203,23 @@ export default function SettingsPanel() {
                         );
                       })}
                     </div>
-                  </Field>
-
-                  <Field label="Свій опис характеру" hint="напр. дотепний, трохи саркастичний, любить котів">
+                  </div>
+                  <SettingRow label="Свій опис" hint="напр. дотепний, трохи саркастичний, любить котів">
                     <Textarea
                       rows={2}
+                      className="w-[240px] text-[13px]"
                       maxLength={400}
                       value={form.persona_custom}
                       onChange={(event) => patch('persona_custom', event.target.value)}
                     />
-                  </Field>
-
+                  </SettingRow>
                   <SaveBar saving={saving} onSave={saveProfile} />
-                </Panel>
+                </SettingGroup>
               ) : null}
 
-              {section === 'style' ? (
-                <Panel className="space-y-4">
-                  <PanelHead label="стиль спілкування" hint={glue('Як бот відповідає')} />
-
-                  <Field label="Довжина відповіді">
+              {current?.id === 'style' ? (
+                <SettingGroup>
+                  <SettingRow label="Довжина відповіді">
                     <Segmented
                       ariaLabel="Довжина відповіді"
                       value={form.reply_length}
@@ -197,39 +229,32 @@ export default function SettingsPanel() {
                         label: item.label,
                       }))}
                     />
-                  </Field>
-
-                  <div className="-mx-1">
-                    <SwitchRow
-                      label="Емодзі у відповідях"
-                      checked={form.use_emoji}
-                      onChange={(next) => patch('use_emoji', next)}
-                    />
-                    <SwitchRow
-                      label="Спонтанні емоції"
-                      hint={glue('Краб оживає сам, коли з ним довго не говорять')}
-                      checked={form.spontaneous}
-                      onChange={(next) => patch('spontaneous', next)}
-                    />
-                  </div>
-
-                  <Field label="Привітання" hint="Порожньо — бот привітається сам">
+                  </SettingRow>
+                  <SettingRow label="Емодзі у відповідях">
+                    <Switch checked={form.use_emoji} onChange={(next) => patch('use_emoji', next)} label="Емодзі у відповідях" />
+                  </SettingRow>
+                  <SettingRow label="Спонтанні емоції" hint={glue('Краб оживає сам, коли з ним довго не говорять')}>
+                    <Switch checked={form.spontaneous} onChange={(next) => patch('spontaneous', next)} label="Спонтанні емоції" />
+                  </SettingRow>
+                  <SettingRow label="Привітання" hint="Порожньо — бот привітається сам" htmlFor="bot-greeting">
                     <Input
+                      id="bot-greeting"
+                      className={fieldControl}
                       value={form.greeting}
                       maxLength={300}
                       onChange={(event) => patch('greeting', event.target.value)}
                     />
-                  </Field>
-
+                  </SettingRow>
                   <SaveBar saving={saving} onSave={saveProfile} />
-                </Panel>
+                </SettingGroup>
               ) : null}
 
-              {section === 'look' ? <LookSection /> : null}
-              {section === 'voice' ? <VoiceSection /> : null}
-              {section === 'brain' ? <BrainSection setup={setup.data!} /> : null}
-              {section === 'skills' ? <StoreSection /> : null}
-              {section === 'tools' ? <ToolsSection /> : null}
+              {current?.id === 'look' ? <LookSection /> : null}
+              {current?.id === 'voice' ? <VoiceSection /> : null}
+              {current?.id === 'brain' ? <BrainSection setup={setup.data!} /> : null}
+              {current?.id === 'openclaw' ? <OpenClawSection query={needle} /> : null}
+              {current?.id === 'skills' ? <StoreSection /> : null}
+              {current?.id === 'tools' ? <ToolsSection /> : null}
             </>
           )}
         </div>
@@ -240,7 +265,7 @@ export default function SettingsPanel() {
 
 function SaveBar({ saving, onSave }: { saving: boolean; onSave: () => void }) {
   return (
-    <div className="flex justify-end border-t border-line pt-4">
+    <div className="flex justify-end px-4 py-3">
       <Button variant="solid" disabled={saving} onClick={onSave}>
         {saving ? 'Зберігаю…' : 'Зберегти'}
       </Button>
@@ -262,10 +287,9 @@ function LookSection() {
   const ink = useCssVar('--c-text', '#231e19');
 
   return (
-    <Panel className="space-y-4">
-      <PanelHead label="вигляд" hint={glue('Зберігається в цьому браузері')} />
-
-      <Field label="Тема">
+    <div className="space-y-6">
+      <SettingGroup>
+      <SettingRow label="Тема" hint={glue('Зберігається в цьому браузері')}>
         <JellyRadio
           ariaLabel="Тема"
           value={theme}
@@ -277,16 +301,16 @@ function LookSection() {
           textColor={ink}
           activeTextColor={accentInk}
         />
-      </Field>
+      </SettingRow>
 
-      <Field label={t('look.popups')}>
+      <SettingRow label={lookT('look.popups')}>
         <JellyRadio
-          ariaLabel={t('look.popupsAria')}
+          ariaLabel={lookT('look.popupsAria')}
           value={popup}
           onChange={(next) => setPopup(next as typeof popup)}
           items={[
-            { value: 'solid', label: t('look.popupStandard') },
-            { value: 'glass', label: t('look.popupGlass') },
+            { value: 'solid', label: lookT('look.popupStandard') },
+            { value: 'glass', label: lookT('look.popupGlass') },
           ]}
           radius={999}
           chipColor={surface2}
@@ -294,9 +318,9 @@ function LookSection() {
           textColor={ink}
           activeTextColor={accentInk}
         />
-      </Field>
+      </SettingRow>
 
-      <Field label="Мова">
+      <SettingRow label="Мова">
         <JellyRadio
           ariaLabel="Мова"
           value={lang}
@@ -311,9 +335,9 @@ function LookSection() {
           textColor={ink}
           activeTextColor={accentInk}
         />
-      </Field>
+      </SettingRow>
 
-      <Field label="Акцент">
+      <SettingRow label="Акцент">
         <div className="flex gap-2">
           {ACCENTS.map((item) => {
             const active = item.id === accent;
@@ -334,8 +358,9 @@ function LookSection() {
             );
           })}
         </div>
-      </Field>
-    </Panel>
+      </SettingRow>
+      </SettingGroup>
+    </div>
   );
 }
 
@@ -377,48 +402,49 @@ function BrainSection({ setup }: { setup: SetupData }) {
   };
 
   return (
-    <Panel className="space-y-4">
-      <PanelHead label="мозок і ключі" hint={glue('Значення ключів назад не показуються')} />
-
-      <Field label="Модель">
-        <Select value={model} onChange={(event) => void saveModel(event.target.value)}>
+    <SettingGroup>
+      <SettingRow label="Модель" hint={glue('Картинки й прямий виклик. Чат відповідає моделлю OpenClaw.')}>
+        <Select className={fieldControl} value={model} onChange={(event) => void saveModel(event.target.value)}>
           {setup.models.map((item) => (
             <option key={item.id} value={item.id}>{item.label || item.id}</option>
           ))}
         </Select>
-      </Field>
-
-      <Field
+      </SettingRow>
+      <SettingRow
         label="Omni API-ключ"
         hint={setup.keys_set.omni ? 'Уже заданий — залиш порожнім, щоб не міняти' : 'Не заданий'}
+        htmlFor="omni-key"
       >
         <Input
+          id="omni-key"
+          className={fieldControl}
           type="password"
           autoComplete="off"
           value={omni}
           onChange={(event) => setOmni(event.target.value)}
           placeholder={setup.keys_set.omni ? '••••••••' : 'вставити ключ'}
         />
-      </Field>
-
-      <Field
+      </SettingRow>
+      <SettingRow
         label="OpenClaw токен"
         hint={setup.keys_set.openclaw ? 'Уже заданий — залиш порожнім, щоб не міняти' : 'Не заданий'}
+        htmlFor="openclaw-token"
       >
         <Input
+          id="openclaw-token"
+          className={fieldControl}
           type="password"
           autoComplete="off"
           value={openclaw}
           onChange={(event) => setOpenclaw(event.target.value)}
           placeholder={setup.keys_set.openclaw ? '••••••••' : 'вставити токен'}
         />
-      </Field>
-
-      <div className="flex justify-end border-t border-line pt-4">
+      </SettingRow>
+      <div className="flex justify-end px-4 py-3">
         <Button variant="solid" disabled={busy || (!omni && !openclaw)} onClick={saveKeys}>
           {busy ? 'Зберігаю…' : 'Зберегти ключі'}
         </Button>
       </div>
-    </Panel>
+    </SettingGroup>
   );
 }
