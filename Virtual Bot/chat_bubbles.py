@@ -24,6 +24,11 @@ SPLIT_MARKER = "[[msg]]"
 # Tolerant on purpose: models add spaces and change case inside tags.
 _SPLIT_RE = re.compile(r"\[\[\s*msg\s*\]\]", re.IGNORECASE)
 _REACT_RE = re.compile(r"\[\s*react\s*[:：]\s*([^\]\s]{1,16})\s*\]", re.IGNORECASE)
+# The emotion tag is metadata for the face, not part of a bubble. A reply
+# that is only "[емоція:happy] 😊" is still just an emoji.
+_EMOTION_TAG_RE = re.compile(
+    r"\[\s*(?:емоція|emotion)\s*[:：]\s*[^\]\s]+\s*\]", re.IGNORECASE,
+)
 
 # Longest tail the stream may hold back while it waits to see whether an open
 # "[" becomes a tag. Anything longer is plain text and must not stall.
@@ -79,7 +84,17 @@ def split(text: str) -> list[str]:
 def shape(text: str) -> tuple[list[str], str | None]:
     """Raw reply → (bubbles, reaction). An empty list means "reaction only"."""
     clean, reaction = extract_reaction(text)
-    return split(clean), reaction
+    bubbles = split(clean)
+    if reaction is not None:
+        return bubbles, reaction
+    # A reply that is nothing but an emoji was meant for the person's
+    # message. A bubble that only contains "😊" does not stick to it.
+    stripped = [b for b in (_EMOTION_TAG_RE.sub("", b).strip() for b in bubbles) if b]
+    lone = [b for b in stripped if is_emoji(b)]
+    words = [b for b in stripped if not is_emoji(b)]
+    if len(lone) == 1:
+        return words, lone[0]
+    return bubbles, None
 
 
 def plain(text: str) -> str:

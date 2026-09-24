@@ -41,7 +41,13 @@ class ShapeTests(unittest.TestCase):
         self.assertEqual(shape("a [[ MSG ]] b")[0], ["a", "b"])
         self.assertEqual(shape("hi [React: 👍]")[1], "👍")
 
-    def test_reaction_only_reply_has_no_text_bubble(self) -> None:
+    def test_a_bare_emoji_lands_on_the_persons_message(self) -> None:
+        # The model sometimes sends "😊" as its whole reply instead of [react:].
+        # That is still a reaction, not a bubble of one character.
+        self.assertEqual(shape("😊"), ([], "😊"))
+        self.assertEqual(shape("[емоція:happy] 😊"), ([], "😊"))
+        self.assertEqual(shape("Так![[msg]]👍"), (["Так!"], "👍"))
+        self.assertEqual(shape("Glad you think so! 😊")[0], ["Glad you think so! 😊"])
         # "thanks" deserves a thumbs up, not an empty grey bubble.
         self.assertEqual(shape("[react:👍]"), ([], "👍"))
         self.assertEqual(plain("[react:👍]"), "")

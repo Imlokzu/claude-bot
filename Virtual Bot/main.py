@@ -1827,36 +1827,40 @@ async def api_chat(request: Request, req: ChatRequest):
                 for frame in late_reaction:
                     yield frame
 
-                # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом)
-                tail = tag_filter.flush()
-                if tail:
-                    streamed["text"] += tail
-                    for frame in frames(shaper.feed(tail)):
-                        yield frame
+                # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом).
+                # A reaction-only reply (a bare emoji included) must not be
+                # typed out as its own bubble first — done puts it on the
+                # person's message instead.
+                if bubbles:
+                    tail = tag_filter.flush()
+                    if tail:
+                        streamed["text"] += tail
+                        for frame in frames(shaper.feed(tail)):
+                            yield frame
 
-                # Якщо мозок віддав токени справжнім стрімом — текст уже на екрані.
-                # Досилаємо лише те, чого бракує (напр. після вирізання тега емоції).
-                already = streamed["text"]
-                if already and raw_reply.startswith(already):
-                    rest = raw_reply[len(already):]
-                    if rest:
-                        for frame in frames(shaper.feed(rest)):
-                            yield frame
-                elif already:
-                    # Текст розішовся (напр. вирізано тег емоції всередині) —
-                    # просимо фронтенд замінити текст ціліком (done нижче все одно це зробить).
-                    log.debug("Стрімовий текст відрізняється від фінального — заміню на done")
-                else:
-                    # Мозок не стрімить (демо, тулзи, Anthropic) — імітуємо пословно,
-                    # щоб усе одно було видно появу тексту, а не стіну відразу.
-                    words = raw_reply.split(" ")
-                    for i, word in enumerate(words):
-                        chunk = word + (" " if i < len(words) - 1 else "")
-                        for frame in frames(shaper.feed(chunk)):
-                            yield frame
-                        await asyncio.sleep(0.02)
-                for frame in frames(shaper.flush()):
-                    yield frame
+                    # Якщо мозок віддав токени справжнім стрімом — текст уже на екрані.
+                    # Досилаємо лише те, чого бракує (напр. після вирізання тега емоції).
+                    already = streamed["text"]
+                    if already and raw_reply.startswith(already):
+                        rest = raw_reply[len(already):]
+                        if rest:
+                            for frame in frames(shaper.feed(rest)):
+                                yield frame
+                    elif already:
+                        # Текст розішовся (напр. вирізано тег емоції всередині) —
+                        # просимо фронтенд замінити текст ціліком (done нижче все одно це зробить).
+                        log.debug("Стрімовий текст відрізняється від фінального — заміню на done")
+                    else:
+                        # Мозок не стрімить (демо, тулзи, Anthropic) — імітуємо пословно,
+                        # щоб усе одно було видно появу тексту, а не стіну відразу.
+                        words = raw_reply.split(" ")
+                        for i, word in enumerate(words):
+                            chunk = word + (" " if i < len(words) - 1 else "")
+                            for frame in frames(shaper.feed(chunk)):
+                                yield frame
+                            await asyncio.sleep(0.02)
+                    for frame in frames(shaper.flush()):
+                        yield frame
 
                 yield f"event: emotion\ndata: {json.dumps({'emotion': final_emotion})}\n\n"
                 done = {
