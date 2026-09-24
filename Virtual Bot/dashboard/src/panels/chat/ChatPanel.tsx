@@ -216,6 +216,7 @@ export default function ChatPanel() {
             compactedFrom={chat.compactedFrom}
             retryId={retryId}
             onRetry={chat.retry}
+            onReact={chat.react}
             composer={
               <Composer
                 lean={!isDesk}

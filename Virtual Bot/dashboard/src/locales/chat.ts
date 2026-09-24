@@ -174,6 +174,18 @@ const uk = {
   'reply.speakFailed': 'Не вдалося озвучити',
   'reply.retry': 'Перепитати',
 
+  // Reactions and the bot's working line
+  'reaction.add': 'Реакція',
+  'reaction.pick': 'Обрати реакцію',
+  'reaction.remove': 'Прибрати реакцію {emoji}',
+  'reaction.failed': 'Реакція не збереглась',
+  'reaction.bot': 'Бот відреагував {emoji}',
+  'reaction.yours': 'Твоя реакція {emoji}',
+  'steps.done': 'Готово: {what}',
+  'steps.failed': 'Не вдалося: {what}',
+  'steps.more': '+{count}',
+  'typing.aria': 'Бот пише…',
+
   // Джерела відповіді
   'sources.label': 'джерела · {count}',
 
@@ -349,6 +361,17 @@ const en: Record<keyof typeof uk, string> = {
   'reply.speakStop': 'Stop reading',
   'reply.speakFailed': 'Could not speak it',
   'reply.retry': 'Ask again',
+
+  'reaction.add': 'React',
+  'reaction.pick': 'Pick a reaction',
+  'reaction.remove': 'Remove reaction {emoji}',
+  'reaction.failed': 'Reaction was not saved',
+  'reaction.bot': 'The bot reacted {emoji}',
+  'reaction.yours': 'Your reaction {emoji}',
+  'steps.done': 'Done: {what}',
+  'steps.failed': 'Failed: {what}',
+  'steps.more': '+{count}',
+  'typing.aria': 'The bot is typing…',
 
   'sources.label': 'sources · {count}',
 

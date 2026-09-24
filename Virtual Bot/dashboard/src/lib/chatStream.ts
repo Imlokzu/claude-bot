@@ -1,6 +1,6 @@
 import { authHeaders } from './auth';
 import { t } from './i18n';
-import type { ToolStep } from '../panels/chat/types';
+import type { ReplyPart, ToolStep } from '../panels/chat/types';
 
 /*
  * Стрім відповіді бота.
@@ -8,12 +8,15 @@ import type { ToolStep } from '../panels/chat/types';
  * /api/chat відповідає text/event-stream, але запит — POST, тому EventSource
  * тут не годиться: він уміє лише GET. Читаємо тіло вручну.
  *
- * Іменовані події з бекенда (main.py, stream_response):
- *   delta         — шматок тексту
- *   emotion       — емоція обличчя (прилітає рано, ще до кінця відповіді)
- *   tool_start / tool_progress / tool_done / tool_result — хід тулзів
- *   done          — фінальна відповідь + режим, модель, результати тулзів
- *   error         — збій
+ * Named events from the backend (main.py, stream_response):
+ *   delta         — text for the current answer bubble
+ *   break         — the next delta starts a new bubble
+ *   note          — what the bot says while working, as a full snapshot
+ *   reaction      — the bot's emoji on the user's message
+ *   emotion       — the face's emotion (arrives early, before the reply ends)
+ *   tool_start / tool_progress / tool_done / tool_result — tool activity
+ *   done          — final reply, its parts, mode, model, tool results
+ *   error         — failure
  */
 
 export interface ToolEvent {
@@ -36,6 +39,11 @@ export interface ChatDone {
   model: string;
   tool_results: unknown[];
   steps?: ToolStep[];
+  bubbles?: string[];
+  parts?: ReplyPart[];
+  reaction?: string | null;
+  user_message_id?: string;
+  assistant_message_id?: string;
 }
 
 export interface ChatAttachment {
@@ -49,6 +57,9 @@ export type AgentStatus = 'connecting' | 'running' | 'unavailable' | 'disconnect
 
 export interface ChatHandlers {
   onDelta?: (chunk: string) => void;
+  onBreak?: () => void;
+  onNote?: (id: string, bubbles: string[]) => void;
+  onReaction?: (emoji: string) => void;
   onEmotion?: (emotion: string) => void;
   onTool?: (event: ToolEvent) => void;
   onStatus?: (status: AgentStatus) => void;
@@ -158,6 +169,17 @@ function dispatch(frame: string, handlers: ChatHandlers): boolean {
       break;
     case 'delta':
       handlers.onDelta?.(String(data.chunk ?? ''));
+      break;
+    case 'break':
+      handlers.onBreak?.();
+      break;
+    case 'note':
+      if (typeof data.id === 'string' && Array.isArray(data.bubbles)) {
+        handlers.onNote?.(data.id, data.bubbles.map(String));
+      }
+      break;
+    case 'reaction':
+      if (typeof data.emoji === 'string' && data.emoji) handlers.onReaction?.(data.emoji);
       break;
     case 'emotion':
       handlers.onEmotion?.(String(data.emotion ?? 'idle'));

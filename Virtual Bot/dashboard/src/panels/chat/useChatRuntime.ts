@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useExternalStoreRuntime, type AppendMessage, type ThreadMessageLike } from '@assistant-ui/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { get } from '@/lib/api';
+import { get, post } from '@/lib/api';
 import { cleanEmotionTag, streamChat, type AgentStatus, type ChatAttachment } from '@/lib/chatStream';
 import { t } from '@/lib/i18n';
+import { t as chatT } from '@/locales/chat';
 import { updateActivity, finishActivity, restoreActivity } from './activity';
+import {
+  answerText, applyBreak, applyDelta, applyNote, applyStep, restoreParts, toParts, type LiveEntry,
+} from './replyParts';
 import { useToast } from '@/components/ui/Toaster';
 import { estimateTokens } from './tokens';
 import type { ChatMessage, SessionDetail, SessionSummary, ToolStep } from './types';
@@ -32,6 +36,9 @@ export function useChatRuntime() {
   const [draft, setDraft] = useState<string | null>(null);
   const [steps, setSteps] = useState<ToolStep[]>([]);
   const stepsRef = useRef<ToolStep[]>([]);
+  // The reply being written, in order: narration, tools, answer bubbles.
+  const [timeline, setTimeline] = useState<LiveEntry[]>([]);
+  const timelineRef = useRef<LiveEntry[]>([]);
   const draftRef = useRef('');
   const generation = useRef(0);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('connecting');
@@ -62,6 +69,8 @@ export function useChatRuntime() {
       setDraft(null);
       setSteps([]);
       stepsRef.current = [];
+      setTimeline([]);
+      timelineRef.current = [];
       draftRef.current = '';
       setCompactedFrom(0);
       if (!id) {
@@ -75,14 +84,23 @@ export function useChatRuntime() {
         // chat_store.compact.
         setCompactedFrom(Number(data.messages?.[0]?.compacted_from ?? 0));
         setMessages(
-          (data.messages ?? []).map((message, index) => ({
-            id: `${id}-${index}`,
-            role: message.role === 'assistant' ? 'assistant' : 'user',
-            content: message.role === 'assistant' ? cleanEmotionTag(message.content ?? '') : message.content ?? '',
-            ts: message.ts,
-            attachments: message.attachments,
-            steps: restoreActivity(message.steps),
-          })),
+          (data.messages ?? []).map((message, index) => {
+            const assistant = message.role === 'assistant';
+            const content = assistant ? cleanEmotionTag(message.content ?? '') : message.content ?? '';
+            const steps = restoreActivity(message.steps);
+            return {
+              id: `${id}-${index}`,
+              // Saved before ids existed: the server resolves `idx:N`.
+              serverId: message.id || `idx:${index}`,
+              role: assistant ? 'assistant' : 'user',
+              content,
+              ts: message.ts,
+              attachments: message.attachments,
+              steps,
+              ...(assistant ? { parts: restoreParts(message.parts, content, steps), reactions: message.reactions } : {}),
+              ...(!assistant && message.reaction ? { reaction: message.reaction } : {}),
+            };
+          }),
         );
       } catch (error) {
         if (version === generation.current) toast.error(t('chat.openError'), (error as Error).message);
@@ -100,6 +118,8 @@ export function useChatRuntime() {
     setDraft(null);
     setSteps([]);
     stepsRef.current = [];
+    setTimeline([]);
+    timelineRef.current = [];
     draftRef.current = '';
     setCompactedFrom(0);
   }, []);
@@ -117,24 +137,38 @@ export function useChatRuntime() {
       const safeAttachments = attachments.filter(
         (item): item is ChatAttachment => Boolean(item && typeof item === 'object' && 'url' in item),
       );
+      const userId = nextId();
       setMessages((current) => [...current, {
-        id: nextId(), role: 'user', content: trimmed, attachments: safeAttachments,
+        id: userId, role: 'user', content: trimmed, attachments: safeAttachments,
       }]);
       setDraft('');
       setSteps([]);
       stepsRef.current = [];
+      setTimeline([]);
+      timelineRef.current = [];
       draftRef.current = '';
       setAgentStatus('connecting');
       setStreamModel('');
 
-      let accumulated = '';
       let terminal = false;
+      const updateTimeline = (next: LiveEntry[]) => {
+        timelineRef.current = next;
+        setTimeline(next);
+        draftRef.current = answerText(next);
+        setDraft(draftRef.current);
+      };
+      const setUserMessage = (patch: Partial<ChatMessage>) => {
+        setMessages((current) => current.map((item) => (item.id === userId ? { ...item, ...patch } : item)));
+      };
       const preserveInterrupted = () => {
         if (!isCurrent() || terminal) return;
         terminal = true;
         const finished = finishActivity(stepsRef.current);
-        if (accumulated || finished.length) {
-          setMessages((current) => [...current, { id: nextId(), role: 'assistant', content: accumulated, steps: finished }]);
+        const parts = toParts(timelineRef.current);
+        if (parts.length || finished.length) {
+          setMessages((current) => [...current, {
+            id: nextId(), role: 'assistant', content: draftRef.current, steps: finished, parts,
+          }]);
         }
         setDraft(null);
         setSteps(finished);
@@ -154,14 +188,26 @@ export function useChatRuntime() {
         {
           onDelta: (chunk) => {
             if (!isCurrent() || terminal) return;
-            accumulated += chunk;
-            draftRef.current = accumulated;
-            setDraft(accumulated);
+            updateTimeline(applyDelta(timelineRef.current, chunk));
+          },
+          onBreak: () => {
+            if (!isCurrent() || terminal) return;
+            updateTimeline(applyBreak(timelineRef.current));
+          },
+          onNote: (id, bubbles) => {
+            if (!isCurrent() || terminal) return;
+            updateTimeline(applyNote(timelineRef.current, id, bubbles));
+          },
+          onReaction: (emoji) => {
+            if (!isCurrent() || terminal) return;
+            setUserMessage({ reaction: emoji });
           },
           onTool: (event) => {
             if (!isCurrent() || terminal) return;
             stepsRef.current = updateActivity(stepsRef.current, event);
             setSteps(stepsRef.current);
+            const id = event.step?.id ?? event.call_id;
+            if (id) updateTimeline(applyStep(timelineRef.current, id));
           },
           onStatus: (status) => {
             if (isCurrent() && !terminal) setAgentStatus(status);
@@ -176,10 +222,16 @@ export function useChatRuntime() {
             if (!isCurrent() || terminal) return;
             terminal = true;
             const finished = result.steps ?? finishActivity(stepsRef.current);
+            const parts = restoreParts(result.parts, result.reply, finished);
             setMessages((current) => [
-              ...current,
-            { id: nextId(), role: 'assistant', content: result.reply, steps: finished,
-              model: result.model || streamModel },
+              ...current.map((item) => (item.id === userId ? {
+                ...item,
+                serverId: result.user_message_id || item.serverId,
+                reaction: result.reaction || item.reaction,
+              } : item)),
+              { id: nextId(), role: 'assistant', content: result.reply, steps: finished, parts,
+                serverId: result.assistant_message_id || undefined,
+                model: result.model || streamModel },
             ]);
             setDraft(null);
             setSteps(finished);
@@ -234,12 +286,42 @@ export function useChatRuntime() {
     abortRef.current = null;
     const finished = finishActivity(stepsRef.current);
     const content = draftRef.current;
-    if (content || finished.length) {
-      setMessages((list) => [...list, { id: nextId(), role: 'assistant', content, steps: finished }]);
+    const parts = toParts(timelineRef.current);
+    if (parts.length || finished.length) {
+      setMessages((list) => [...list, { id: nextId(), role: 'assistant', content, steps: finished, parts }]);
     }
     setDraft(null);
     setSteps(finished);
   }, []);
+
+  /**
+   * React to one bubble of a bot reply (null removes the reaction).
+   *
+   * Optimistic: a reaction that waits for a round trip feels broken. A reply
+   * still being written has no server id yet, so it cannot be reacted to.
+   */
+  const react = useCallback(
+    async (messageId: string, bubble: number, emoji: string | null) => {
+      const target = messages.find((item) => item.id === messageId);
+      if (!target?.serverId || !sessionId) return;
+      const before = target.reactions ?? {};
+      const next = { ...before };
+      if (emoji) next[String(bubble)] = emoji;
+      else delete next[String(bubble)];
+      const apply = (reactions: Record<string, string>) =>
+        setMessages((list) => list.map((item) => (item.id === messageId ? { ...item, reactions } : item)));
+      apply(next);
+      try {
+        await post(`/api/sessions/${encodeURIComponent(sessionId)}/reactions`, {
+          message_id: target.serverId, bubble, emoji,
+        });
+      } catch (error) {
+        apply(before);
+        toast.error(chatT('reaction.failed'), (error as Error).message);
+      }
+    },
+    [messages, sessionId, toast],
+  );
 
   // Скільки контексту зʼїла розмова. Рахуємо по видимій історії плюс те,
   // що зараз друкується, — саме це поїде наступним запитом.
@@ -249,8 +331,10 @@ export function useChatRuntime() {
   );
 
   const visible = useMemo<ChatMessage[]>(
-    () => (draft !== null ? [...messages, { id: 'draft', role: 'assistant', content: draft, steps }] : messages),
-    [messages, draft, steps],
+    () => (draft !== null
+      ? [...messages, { id: 'draft', role: 'assistant', content: draft, steps, parts: toParts(timeline) }]
+      : messages),
+    [messages, draft, steps, timeline],
   );
 
   const runtime = useExternalStoreRuntime<ChatMessage>({
@@ -263,7 +347,9 @@ export function useChatRuntime() {
       content: [{ type: 'text', text: message.content }],
       metadata: { custom: { steps: message.steps ?? [], running: message.id === 'draft',
         agentStatus: message.id === 'draft' ? agentStatus : undefined,
-        model: message.model || (message.id === 'draft' ? streamModel : undefined) } },
+        model: message.model || (message.id === 'draft' ? streamModel : undefined),
+        parts: message.parts, reaction: message.reaction, reactions: message.reactions,
+        reactable: Boolean(message.serverId && sessionId) } },
     }),
     onNew: async (message: AppendMessage) => {
       const text = message.content
@@ -293,5 +379,6 @@ export function useChatRuntime() {
     send,
     cancel,
     retry,
+    react,
   };
 }
