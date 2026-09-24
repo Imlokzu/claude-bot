@@ -284,7 +284,7 @@ export function Thread({
             components={{ UserMessage, AssistantMessage }}
           />
 
-          <div className="h-4 shrink-0" />
+          <div className="h-8 shrink-0" />
         </div>
       </ThreadPrimitive.Viewport>
 

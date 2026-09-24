@@ -195,7 +195,7 @@ export function TypingBubble({ leaving = false }: { leaving?: boolean }) {
       aria-hidden={leaving || undefined}
       data-typing=""
       className={cn(
-        'chat-bubble-in flex h-9 items-center gap-1.5 rounded-full bg-surface-2 px-4',
+        'chat-bubble-in liquid-glass flex h-9 items-center gap-1.5 rounded-full px-4',
         leaving && 'chat-typing-out',
       )}
     >
@@ -492,7 +492,7 @@ export function BotBubble({ text, note, running, reaction, onReact, fromTyping }
     <div ref={row} className={cn('group/bubble relative flex max-w-full items-center gap-1', reaction && 'mb-3')}>
       <div ref={bubble} {...{ [REPLY_ATTRIBUTE]: '' }}
         className={cn(
-          'chat-bubble-in relative min-w-0 max-w-full rounded-lg bg-surface-2 px-3.5 py-2',
+          'chat-bubble-in liquid-glass relative min-w-0 max-w-full rounded-lg px-3.5 py-2',
           fromTyping && 'chat-bubble-open',
           note && '[&_*]:text-ink-2',
         )}>

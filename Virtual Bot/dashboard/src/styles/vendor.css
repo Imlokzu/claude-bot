@@ -510,3 +510,48 @@
    розмов лишаємо саме підпис. */
 .session-swipe .swipe-row__glyph { grid-auto-flow: column; align-items: center; gap: 6px; }
 .session-swipe .swipe-row__icon { display: none; }
+
+/* Liquid glass. Recipe and the "do not spread yet" rule: LIQUID-GLASS.md.
+   Standard CSS, not Apple's iOS material, so the same plate works on
+   Android, Windows and Linux. backdrop-filter blurs what is behind the
+   element; the text inside stays sharp. */
+.liquid-glass {
+  background: rgba(28, 24, 20, 0.72);
+  background: color-mix(in srgb, var(--c-surface) 62%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--c-text) 12%, transparent);
+}
+.chat-composer {
+  position: relative;
+  z-index: 3;
+  margin-top: -1.15rem;
+}
+.chat-composer .prompt-bar__field {
+  background: rgba(28, 24, 20, 0.62);
+  background: color-mix(in srgb, var(--c-surface) 58%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--c-text) 12%, transparent);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .liquid-glass,
+  .chat-composer .prompt-bar__field {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: color-mix(in srgb, var(--c-surface) 92%, transparent);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .liquid-glass,
+  .chat-composer .prompt-bar__field {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    background: var(--c-surface-2);
+    box-shadow: inset 0 0 0 1px var(--c-border);
+  }
+}
