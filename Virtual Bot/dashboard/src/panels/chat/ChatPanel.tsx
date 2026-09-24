@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AssistantRuntimeProvider } from '@assistant-ui/react';
 import { createPortal } from 'react-dom';
 import { List, Plus, X } from 'lucide-react';
@@ -9,6 +9,7 @@ import { PinnedPanels } from './PinnedPanels';
 import { ModelMenu } from './ModelMenu';
 import { SelectionActions } from './SelectionActions';
 import { useChatRuntime } from './useChatRuntime';
+import { useLiquidGlass } from './useLiquidGlass';
 import { useIsDesk, useIsPhone } from '@/hooks/useMediaQuery';
 import { useDrawer } from '@/hooks/useDrawer';
 import { useRouteParam } from '@/app/useRoute';
@@ -49,6 +50,8 @@ export default function ChatPanel() {
   const isPhone = useIsPhone();
   const isDesk = useIsDesk();
   const chat = useChatRuntime();
+  const glassRoot = useRef<HTMLDivElement>(null);
+  useLiquidGlass(glassRoot);
   const listDrawer = useDrawer();
   const [panelsOpen, setPanelsOpen] = useState(false);
 
@@ -135,7 +138,7 @@ export default function ChatPanel() {
          * список розмов — та сама ліва шухляда, що й на телефоні.
          */}
 
-        <div className="chat-conversation relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <div ref={glassRoot} className="chat-conversation relative flex min-h-0 min-w-0 flex-1 flex-col">
           {/*
            * Narrow header: conversations | model | new conversation.
            *

@@ -1,57 +1,65 @@
 # Liquid glass
 
-A clear lens, in the spirit of Apple's glass: the middle stays see-through,
-what is behind it is only slightly softened and more colourful, and a bright
-rim catches the light. It is not a frosted plate. A heavy blur plus a dark
-fill turns it milky; do not put that back.
+A clear lens. The middle stays see-through and the words stay straight. The
+rim bends whatever is behind it and catches a bright line of light. It is
+not a frosted plate and not a grey card: a white wash on this dark page
+reads as a solid fill, so the plate has no fill of its own.
 
 The sample is on the bot's chat bubbles, the composer field, and the
 jump-to-latest circle. Nothing else uses it yet.
 
 Do not put this on more surfaces until the owner says the sample looks
-right. When they do, apply the class below. Do not invent a second recipe.
+right. When they do, add the class and let the existing watcher pick the
+element up. Do not invent a second recipe.
 
-## Not an iOS material
+## The lens
 
-Apple's liquid glass (`UIVisualEffect`, SwiftUI `glassEffect`) exists only
-on Apple platforms. This panel also runs in Chrome and Firefox on Windows
-and Linux, and in Chrome and WebView on Android. The effect is therefore
-plain CSS, which those engines already implement:
+`src/vendor/hyalite/hyalite.js` is [Hyalite](https://github.com/VII-Cae/hyalite--liquid-glass)
+0.5.0, MIT © 2026 VII-Cae (VII). Keep `LICENSE` next to the file. It is one
+file, no WebGL. For the element's real size and corner radii it builds a
+displacement map, hands it to an SVG filter, and the browser bends the
+backdrop through `backdrop-filter: url(#…)`.
 
-- `backdrop-filter: blur(6px) saturate(1.8)` softens and enriches whatever
-  is painted behind the element. Keep the blur small. Past ~12px it
-  becomes frost.
-- `-webkit-backdrop-filter` is the same declaration for Safari and for
-  older Android WebViews that still need the prefix.
-- The element's own text is not blurred. `filter: blur()` would blur the
-  text too, so it is not part of this recipe.
-- The fill is about 4% white, not a tint of `--c-surface` and not a
-  gradient wash. On a flat dark page anything stronger paints a grey card.
-- `box-shadow` draws the bright top lip, the darker lower lip, and the
-  hairline rim. That rim is the Apple cue. Do not add a second border
-  utility on top of it.
+`useLiquidGlass` watches the conversation column:
+
+- bot bubbles and the typing pill — the shared lens, no colour split
+- the composer field — the same lens plus a small chromatic fringe
+- the jump circle — a full lens, because the bevel is clamped to the radius
+
+The numbers were chosen by looking at the dark chat, not from the library
+defaults. A wide bevel warps the sentence. A dispersion past about half a
+pixel turns the line under the field into a rainbow. Do not put those back.
+
+Chromium (Chrome, Edge, Arc, Brave, Android WebView, Electron) paints the
+refraction. Safari accepts the property and drops the SVG filter. Firefox
+does not implement SVG backdrop filters. Both keep the CSS fallback below,
+so the rim is still there. `Hyalite.supported()` is what decides; do not
+force it on.
 
 ## The class
 
 Defined at the bottom of `src/styles/vendor.css`. Add `liquid-glass` and
 remove any opaque background utility (`bg-surface`, `bg-surface-2`) on the
-same element, or the fill hides the blur.
+same element, or the fill hides the lens. The watcher attaches on its own
+as long as the element sits inside the conversation column.
 
 ```css
 .liquid-glass {
-  background: rgba(255, 255, 255, 0.04);
-  -webkit-backdrop-filter: blur(6px) saturate(1.8);
-  backdrop-filter: blur(6px) saturate(1.8);
-  box-shadow:
+  background: transparent;
+  -webkit-backdrop-filter: var(--hyalite, blur(6px) saturate(1.8));
+  backdrop-filter: var(--hyalite, blur(6px) saturate(1.8));
+  box-shadow: var(--hyalite-edge,
     inset 0 1px 0 rgba(255, 255, 255, 0.55),
     inset 1px 0 0 rgba(255, 255, 255, 0.16),
     inset 0 -1px 0 rgba(255, 255, 255, 0.06),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22));
 }
 ```
 
-On a flat dark page a stronger white fill turns into a grey card. Keep the
-fill near zero and let the rim do the work.
+`--hyalite` and `--hyalite-edge` are written on the element by Hyalite.
+Without them the fallback is a small blur and the bright rim. The element's
+own text is not blurred. `filter: blur()` would blur the text too, so it is
+not part of this recipe.
 
 ## Where it falls back to a solid plate
 
