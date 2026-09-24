@@ -17,8 +17,9 @@ import type { ToolStep } from './types';
  *
  * Two motions carry the messenger feel. The typing dots shrink away inside
  * their own bubble (and a reply that replaces them crossfades out of those
- * dots). When the bot reacts, that text bubble rises, shrinks into a circle
- * with the emoji inside, and glides onto the message. A reaction the person
+ * dots). When the bot reacts, three beats follow: the text bubble rises and
+ * slowly turns from a pill into a circle, the emoji appears, then that
+ * circle travels faster and lands as the reaction. A reaction the person
  * picks flies from the button instead.
  *
  * Reactions are content, not icons, so emoji are allowed here even though
@@ -30,14 +31,18 @@ import type { ToolStep } from './types';
  *  Kept in step with `chat-typing-out` in base.css. */
 export const TYPING_LEAVE_MS = 780;
 
-/** The text bubble rises, becomes a circle, and glides to the message.
- *  Kept in step with the morph fades in base.css. */
-const MORPH_MS = 1500;
+/** Rise and pill-to-circle. Slow, and it finishes before anything travels. */
+const TRANSFORM_MS = 1100;
+/** The emoji shows in the finished circle, then the trip starts. */
+const EMOJI_MS = 240;
+/** The circle's trip to the message. Shorter than the transform on purpose. */
+const TRAVEL_MS = 380;
+/** Kept in step with the morph fades in base.css. */
+const MORPH_MS = TRANSFORM_MS + EMOJI_MS + TRAVEL_MS;
 /** Kept in step with `chat-emoji-flight` in base.css. */
 const FLIGHT_MS = 1100;
-/** Chip stays hidden until the circle is about to land. Matches the
- *  fallback delay on `.chat-reaction-land`. */
-export const LAND_DELAY_MS = 1360;
+/** Chip stays hidden until the circle lands. Matches `.chat-reaction-land`. */
+export const LAND_DELAY_MS = MORPH_MS - 40;
 /** A reaction picked from the button arrives with the shorter flight. */
 export const FLIGHT_LAND_MS = 920;
 
@@ -224,10 +229,10 @@ export function reactionTarget(bubble: DOMRect, align: 'start' | 'end') {
   };
 }
 
-/** Bow the path sideways so the emoji arcs instead of sliding in a straight line.
- *  `lift` is the text bubble that is leaving: it rises, shrinks into a
- *  circle with the emoji inside, and that circle glides to the message.
- *  The bot mark stays where it is. */
+/** Bow the path sideways so a picked emoji arcs instead of sliding straight.
+ *  `lift` is the text bubble that is leaving. It rises and slowly becomes a
+ *  circle, the emoji appears, and only then does the circle travel — faster —
+ *  onto the message. The bot mark stays where it is. */
 export function flyEmoji(
   launch: (spec: FlightSpec) => boolean,
   emoji: string,
@@ -293,11 +298,11 @@ function morphBubble(bubble: Element, emoji: string, to: { x: number; y: number 
   const chip = 22;
   const startCx = rect.left + width / 2;
   const startCy = rect.top + height / 2;
-  const risenCy = startCy - 18;
+  const risenCy = startCy - 26;
   const dx = to.x - startCx;
   const dy = to.y - risenCy;
   const len = Math.hypot(dx, dy) || 1;
-  const bow = Math.min(28, len * 0.18);
+  const bow = Math.min(22, len * 0.14);
   const cpx = startCx + dx * 0.5 + (-dy / len) * bow;
   const cpy = risenCy + dy * 0.5 + (dx / len) * bow;
   const along = (t: number) => {
@@ -320,15 +325,17 @@ function morphBubble(bubble: Element, emoji: string, to: { x: number; y: number 
     const s = size(t);
     return box(p.x, p.y, s, s, '999px');
   };
+  const formed = box(startCx, risenCy, circle, circle, '999px');
+  const transformEnd = TRANSFORM_MS / MORPH_MS;
+  const travelStart = (TRANSFORM_MS + EMOJI_MS) / MORPH_MS;
 
   ghost.animate([
-    { ...box(startCx, startCy, width, height, radius), offset: 0 },
-    { ...box(startCx, risenCy, width, height, radius), offset: 0.22 },
-    { ...at(0.12), offset: 0.42 },
-    { ...at(0.4), offset: 0.62 },
-    { ...at(0.72), offset: 0.82 },
+    { ...box(startCx, startCy, width, height, radius), offset: 0, easing: 'cubic-bezier(0.22, 0.7, 0.2, 1)' },
+    { ...formed, offset: transformEnd, easing: 'linear' },
+    { ...formed, offset: travelStart, easing: 'cubic-bezier(0.45, 0.02, 0.2, 1)' },
+    { ...at(0.55), offset: travelStart + (1 - travelStart) * 0.55 },
     { ...at(1), offset: 1 },
-  ], { duration: MORPH_MS, easing: 'linear', fill: 'forwards' });
+  ], { duration: MORPH_MS, fill: 'forwards' });
   window.setTimeout(() => ghost.remove(), MORPH_MS + 40);
 }
 
