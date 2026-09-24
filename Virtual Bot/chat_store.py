@@ -16,6 +16,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from pathlib import Path
 
 from contextlib import contextmanager
@@ -68,6 +69,10 @@ MAX_MESSAGES = 500
 MAX_SESSIONS = 200
 TITLE_LIMIT = 60
 PARTICIPANT_NAME_LIMIT = 48
+MAX_PARTS = 200
+MAX_PENDING_REACTIONS = 20
+# How much of the reacted bubble the bot is reminded of.
+REACTION_SNIPPET = 120
 # Лапки рамки «Учасник «X» каже:» — в імені їм не місце (див.
 # normalize_participant_name). Переводи рядка сюди не входять: вони мають
 # стати пробілом, а не склеїти сусідні слова.
@@ -256,6 +261,10 @@ def remove_participant(session_id: str, name: str) -> bool:
     return True
 
 
+def _message_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
 def append(
     session_id: str,
     user: str,
@@ -263,19 +272,30 @@ def append(
     steps: list | None = None,
     attachments: list[dict] | None = None,
     participant: str = "",
-) -> None:
+    parts: list | None = None,
+    reaction: str | None = None,
+) -> tuple[str, str] | None:
     """
     Дописує обмін до історії сесії (створює файл за потреби).
 
     `steps` — кроки інструментів цієї відповіді. Без них при поверненні до
     чату зникало все, що бот робив: лишався сам текст, а чим він шукав і що
     писав — ні.
+
+    `parts` is the reply in the order it happened: narration bubbles, tool
+    steps (by id), answer bubbles. `content` stays the plain answer so voice,
+    search and older readers keep working. `reaction` is the bot's emoji on
+    the user's message.
+
+    Returns the (user, assistant) message ids — reactions address messages by
+    id, because trimming to MAX_MESSAGES shifts every index.
     """
     try:
         path = _path(session_id)
     except ValueError:
-        return
+        return None
     now = int(time.time())
+    user_id, assistant_id = _message_id(), _message_id()
     data = load(session_id)
     if not data.get("created"):
         data["created"] = now
@@ -285,17 +305,21 @@ def append(
     data["updated"] = now
     human, _joined = _ensure_participant(data, participant, now)
     data["messages"].append({
+        "id": user_id,
         "role": "user",
         "content": user,
         "ts": now,
         **({"attachments": attachments[:8]} if attachments else {}),
         **({"participant": human["name"]} if human else {}),
+        **({"reaction": reaction} if reaction else {}),
     })
     data["messages"].append({
+        "id": assistant_id,
         "role": "assistant",
         "content": assistant,
         "ts": now,
         **({"steps": steps[:200]} if steps else {}),
+        **({"parts": parts[:MAX_PARTS]} if parts else {}),
     })
     data["messages"] = data["messages"][-MAX_MESSAGES:]
 
@@ -308,8 +332,108 @@ def append(
     except OSError:
         log.exception("Не вдалося зберегти чат %s", session_id)
         tmp.unlink(missing_ok=True)
-        return
+        return None
     _prune()
+    return user_id, assistant_id
+
+
+def _find_message(messages: list[dict], message_id: str) -> dict | None:
+    """By stored id; `idx:N` addresses messages saved before ids existed."""
+    for message in messages:
+        if message.get("id") == message_id:
+            return message
+    if message_id.startswith("idx:") and message_id[4:].isdigit():
+        index = int(message_id[4:])
+        if index < len(messages) and not messages[index].get("id"):
+            return messages[index]
+    return None
+
+
+def _bubble_texts(message: dict) -> list[str]:
+    parts = message.get("parts")
+    if isinstance(parts, list) and parts:
+        return [str(p.get("text") or "") for p in parts if isinstance(p, dict) and p.get("type") == "text"]
+    content = str(message.get("content") or "").strip()
+    return [content] if content else []
+
+
+def set_user_reaction(session_id: str, message_id: str, bubble: int, emoji: str | None) -> dict | None:
+    """
+    The user's emoji on one bubble of a bot reply (None removes it).
+
+    The bot is meant to notice, like a person would: the reaction also joins
+    `pending_reactions`, which the next chat turn hands to the model and
+    clears. Changing your mind before then replaces the pending entry rather
+    than reporting both. Returns the message's reactions, or None when the
+    message does not exist.
+    """
+    try:
+        path = _path(session_id)
+    except ValueError:
+        return None
+    data = load(session_id)
+    message = _find_message(data.get("messages") or [], message_id)
+    if message is None or message.get("role") != "assistant":
+        return None
+    bubbles = _bubble_texts(message)
+    if not 0 <= bubble < max(len(bubbles), 1):
+        return None
+    key = str(bubble)
+    reactions = dict(message.get("reactions") or {})
+    if emoji:
+        reactions[key] = emoji
+    else:
+        reactions.pop(key, None)
+    if reactions:
+        message["reactions"] = reactions
+    else:
+        message.pop("reactions", None)
+
+    pending = [
+        p for p in (data.get("pending_reactions") or [])
+        if not (p.get("message_id") == message_id and p.get("bubble") == bubble)
+    ]
+    if emoji:
+        snippet = " ".join((bubbles[bubble] if bubbles else "").split())
+        pending.append({
+            "message_id": message_id, "bubble": bubble, "emoji": emoji,
+            "text": snippet[:REACTION_SNIPPET] + ("…" if len(snippet) > REACTION_SNIPPET else ""),
+        })
+    data["pending_reactions"] = pending[-MAX_PENDING_REACTIONS:]
+
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        log.exception("Не вдалося зберегти реакцію в чаті %s", session_id)
+        tmp.unlink(missing_ok=True)
+        return None
+    return reactions
+
+
+def take_pending_reactions(session_id: str) -> list[dict]:
+    """Reactions the bot has not seen yet; reading them marks them seen."""
+    try:
+        path = _path(session_id)
+    except ValueError:
+        return []
+    if not path.is_file():
+        return []
+    data = load(session_id)
+    pending = data.get("pending_reactions") or []
+    if not pending:
+        return []
+    data["pending_reactions"] = []
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        log.exception("Не вдалося позначити реакції прочитаними в чаті %s", session_id)
+        tmp.unlink(missing_ok=True)
+        return []
+    return pending
 
 
 def history(session_id: str, limit: int) -> list[dict[str, str]]:
