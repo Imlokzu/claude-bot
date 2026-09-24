@@ -1,11 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { TextMessagePartProvider } from '@assistant-ui/react';
-import { Check, ChevronRight, CircleSlash, SmilePlus, X } from 'lucide-react';
-import { Orb } from '@/vendor/aicss';
-import { toolLook } from '@/lib/toolLabels';
+import { ChevronRight, CloudSun, Coins, FileText, Folder, Image as ImageIcon, ListTodo, MessageCircleQuestion, Music, Play, Search, SmilePlus, type LucideIcon } from 'lucide-react';
 import { t as activityT } from '@/lib/i18n';
-import { t } from '@/locales/chat';
+import { t, type ChatKey } from '@/locales/chat';
 import { cn } from '@/lib/cn';
 import { Markdown } from './Markdown';
 import { REPLY_ATTRIBUTE } from './SelectionActions';
@@ -54,8 +52,66 @@ export function typingLeaveMs(): number {
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🙏', '👏'] as const;
 
 /** OpenClaw prefixes our MCP tools (`tools__web_search`); the labels know the bare name. */
-function lookOf(step: ToolStep) {
-  return toolLook(step.label.replace(/^tools__/, ''));
+function bareTool(label: string): string {
+  return label.replace(/^(?:tools|workspace|emotions)__/, '');
+}
+
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  web_search: Search,
+  image_search: ImageIcon,
+  facts: FileText,
+  weather: CloudSun,
+  currency: Coins,
+  memory_search: Search,
+  workspace_read: FileText,
+  workspace_write: FileText,
+  workspace_list: Folder,
+  workspace_show: FileText,
+  workspace_info: FileText,
+  ask_question: MessageCircleQuestion,
+  todo_list: ListTodo,
+  show_choice: ListTodo,
+  play_music: Music,
+  stop_music: Music,
+  play_video: Play,
+  listen_to_video: Play,
+  video_control: Play,
+};
+
+const TOOL_TITLES: Record<string, ChatKey> = {
+  web_search: 'tool.web_search',
+  image_search: 'tool.image_search',
+  facts: 'tool.facts',
+  weather: 'tool.weather',
+  currency: 'tool.currency',
+  memory_search: 'tool.memory_search',
+  workspace_read: 'tool.workspace_read',
+  workspace_write: 'tool.workspace_write',
+  workspace_list: 'tool.workspace_list',
+  workspace_show: 'tool.workspace_show',
+  ask_question: 'tool.ask_question',
+  todo_list: 'tool.todo_list',
+  show_choice: 'tool.show_choice',
+  play_music: 'tool.play_music',
+  play_video: 'tool.play_video',
+};
+
+function toolTitle(label: string): string {
+  const name = bareTool(label);
+  const key = TOOL_TITLES[name];
+  if (key) return t(key);
+  return name.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function ToolIcon({ label }: { label: string }) {
+  const Icon = TOOL_ICONS[bareTool(label)] ?? Search;
+  return <Icon className="size-3.5" strokeWidth={1.75} />;
+}
+
+/** Clerk and other sign-in failures arrive as a JSON blob. The card says so in words. */
+function needsSignIn(result: unknown): boolean {
+  const text = typeof result === 'string' ? result : JSON.stringify(result ?? '');
+  return /clerk|sign-?in|потрібен вхід|нужен вход|unauthorized/i.test(text);
 }
 
 function Payload({ value }: { value: unknown }) {
@@ -64,81 +120,59 @@ function Payload({ value }: { value: unknown }) {
   }</pre>;
 }
 
-/** One tool call with its full input and result, for whoever wants to check. */
-function ToolActivity({ step }: { step: ToolStep }) {
-  const duration = step.startedAt && step.endedAt
-    ? Math.max(0, (step.endedAt - step.startedAt) / 1000).toFixed(1) : null;
+/**
+ * One tool, the way a person reads it: an icon, a name, what it was asked,
+ * and whether it worked. The raw call stays behind Logs.
+ */
+function ToolCard({ step }: { step: ToolStep }) {
+  const signedOut = step.status === 'failed' && needsSignIn(step.result);
+  const hasLog = step.input !== undefined || step.result !== undefined;
   return (
-    <details className="group min-w-0 border-l border-line pl-3" data-tool-status={step.status}>
-      <summary className="flex cursor-pointer list-none items-start gap-2 rounded-sm py-1.5 text-[12px] text-ink-2 outline-none transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
-        <span className={cn('mt-0.5 shrink-0', step.status === 'failed' ? 'text-err' : step.status === 'done' ? 'text-ok' : 'text-ink-3')}>
-          {step.status === 'active' ? <Orb variant={lookOf(step).orb} size={14} />
-            : step.status === 'done' ? <Check className="size-3.5" />
-              : step.status === 'failed' ? <X className="size-3.5" /> : <CircleSlash className="size-3.5" />}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <span className="break-all font-mono font-medium text-ink">{step.label}</span>
-            <span className={cn('font-sans text-[11px]', step.status === 'failed' && 'text-err')}>{activityT(`activity.${step.status}`)}</span>
-            {duration !== null && <span className="font-mono text-[10px] text-ink-3">{activityT('activity.seconds', { seconds: duration })}</span>}
-          </span>
-          {step.detail && <span className="mt-0.5 block break-words font-sans text-ink-3">{step.detail}</span>}
-        </span>
-        <ChevronRight className="mt-0.5 size-3.5 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" />
-      </summary>
-      <div className="space-y-2 pb-3 pl-5">
-        {step.input !== undefined && <section><p className="mb-1 font-sans text-[11px] text-ink-3">{activityT('activity.input')}</p><Payload value={step.input} /></section>}
-        {step.result !== undefined
-          ? <section><p className="mb-1 font-sans text-[11px] text-ink-3">{activityT(step.status === 'active' ? 'activity.partial' : 'activity.result')}</p><Payload value={step.result} /></section>
-          : <p className="font-sans text-[11px] text-ink-3">{activityT('activity.noResult')}</p>}
+    <div className="flex min-w-0 max-w-full items-start gap-2.5 rounded-lg border border-line bg-surface-2 px-3 py-2" data-tool-status={step.status}>
+      <span className={cn(
+        'grid size-7 shrink-0 place-items-center rounded-md bg-surface',
+        step.status === 'failed' ? 'text-err' : step.status === 'done' ? 'text-ok' : 'text-ink-2',
+      )}>
+        {step.status === 'active' ? <span className="chat-live"><ToolIcon label={step.label} /></span> : <ToolIcon label={step.label} />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] leading-5 text-ink">{toolTitle(step.label)}</p>
+        {step.detail ? <p className="truncate text-[12px] leading-5 text-ink-3">{step.detail}</p> : null}
+        <p className={cn('text-[12px] leading-5', step.status === 'failed' ? 'text-err' : step.status === 'done' ? 'text-ok' : 'text-ink-3')}>
+          {activityT(`activity.${step.status}`)}
+          {signedOut ? ` · ${t('tool.signIn')}` : ''}
+        </p>
+        {hasLog ? (
+          <details className="group/log mt-1">
+            <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-ink-3 outline-none hover:text-ink-2 focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+              <ChevronRight className="size-3 transition-transform group-open/log:rotate-90 motion-reduce:transition-none" />
+              {t('tool.logs')}
+            </summary>
+            <div className="mt-1.5 space-y-2">
+              {step.input !== undefined && <section><p className="mb-1 text-[11px] text-ink-3">{activityT('activity.input')}</p><Payload value={step.input} /></section>}
+              {step.result !== undefined
+                ? <section><p className="mb-1 text-[11px] text-ink-3">{activityT(step.status === 'active' ? 'activity.partial' : 'activity.result')}</p><Payload value={step.result} /></section>
+                : null}
+            </div>
+          </details>
+        ) : null}
       </div>
-    </details>
+    </div>
   );
 }
 
 /**
  * What the bot is doing between two messages.
  *
- * Live, it is one line in the present tense ("шукаю в інтернеті · weather
- * Kyiv") that breathes while the tool runs. Once finished it folds into a
- * quiet "Done: …" row; opening it shows every call with its input and result.
+ * Each tool is its own card — name, the thing it was given, and a status —
+ * rather than the raw call. While one is still running, that card breathes.
  */
 export function ActivityLine({ steps, running }: { steps: ToolStep[]; running: boolean }) {
   if (!steps.length) return null;
-  const active = running ? steps.find((step) => step.status === 'active') : undefined;
-
-  if (active) {
-    const look = lookOf(active);
-    return (
-      <div role="status" className="flex min-w-0 max-w-full items-center gap-2 py-1 pl-1 text-[13px] text-ink-2" data-agent-activity>
-        <span className="shrink-0"><Orb variant={look.orb} size={14} /></span>
-        <span className="chat-live shrink-0">{look.verb}</span>
-        {active.detail ? <span className="min-w-0 truncate text-ink-3">· {active.detail}</span> : null}
-      </div>
-    );
-  }
-
-  const failed = steps.some((step) => step.status === 'failed');
-  const first = steps[0];
-  const what = first.detail || lookOf(first).verb;
-  const started = Math.min(...steps.map((step) => step.startedAt ?? Infinity));
-  const ended = Math.max(...steps.map((step) => step.endedAt ?? -Infinity));
-  const seconds = Number.isFinite(started) && Number.isFinite(ended) && ended >= started
-    ? ((ended - started) / 1000).toFixed(1) : null;
-
   return (
-    <details className="group min-w-0 max-w-full" data-agent-activity>
-      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 rounded-sm py-1 pl-1 text-[12px] text-ink-3 outline-none transition-colors hover:text-ink-2 focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
-        {failed ? <X className="size-3.5 shrink-0 text-err" /> : <Check className="size-3.5 shrink-0 text-ok" />}
-        <span className="min-w-0 truncate">{t(failed ? 'steps.failed' : 'steps.done', { what })}</span>
-        {steps.length > 1 ? <span className="shrink-0 font-mono text-[10px]">{t('steps.more', { count: steps.length - 1 })}</span> : null}
-        {seconds !== null ? <span className="shrink-0 font-mono text-[10px]">{activityT('activity.seconds', { seconds })}</span> : null}
-        <ChevronRight className="size-3.5 shrink-0 transition-transform group-open:rotate-90 motion-reduce:transition-none" />
-      </summary>
-      <div className="mt-1 space-y-1 pl-1">
-        {steps.map((step) => <ToolActivity key={step.id} step={step} />)}
-      </div>
-    </details>
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-1.5" data-agent-activity data-running={running ? '' : undefined}>
+      {steps.map((step) => <ToolCard key={step.id} step={step} />)}
+    </div>
   );
 }
 

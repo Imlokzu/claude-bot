@@ -82,7 +82,7 @@ export interface ChatPayload {
 /** Remove an internal model emotion marker before text reaches the transcript. */
 export function cleanEmotionTag(text: string): string {
   return text
-    .replace(/\[\s*(?:емоція|емоцiя|emotion)\s*[:：]\s*[a-zA-Zа-яіїєґА-ЯІЇЄҐʼ'-]+\s*\]/giu, '')
+    .replace(/\[\s*(?:emotion|емоц[іiи]я|эмоция)\s*[:：]\s*[a-zA-Zа-яіїєґА-ЯІЇЄҐʼ'-]+\s*\]/giu, '')
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }

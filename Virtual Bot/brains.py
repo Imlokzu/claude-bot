@@ -46,7 +46,8 @@ _OFFLINE_REPLY = "Зараз я без мозку — жоден із них н�
 # ------------------------------------------------------------------ промпт
 
 # Фіксовані правила тегів емоцій (мова/імʼя/характер — з профілю, див. нижче)
-_EMOTION_RULES = """- ПОЧИНАЙ КОЖНУ відповідь тегом емоції у форматі [емоція:назва], де назва — рівно одна з: \
+_EMOTION_RULES = """- ПОЧИНАЙ КОЖНУ відповідь тегом [emotion:назва]. Слово emotion пиши латиницею, \
+НІКОЛИ «емоція» і НІКОЛИ «емоция». Назва — рівно одна з: \
 idle, listening, thinking, speaking, happy, sad, confused, surprised, love, sleepy, \
 searching, web, working, writing, asking, greeting, loading, celebrating, cool.
 - Емоції-настрої: happy, sad, surprised, confused, love, sleepy, thinking, listening, speaking, idle, cool.
@@ -59,7 +60,8 @@ searching, web, working, writing, asking, greeting, loading, celebrating, cool.
   * greeting — вітаєшся (привіт/до побачення);
   * celebrating — радієш успіху чи святкуєш;
   * loading — статус: щось завантажується/довго обробляється.
-- Приклади: "[емоція:asking] А як тебе звати?" / "[емоція:web] Пошукаю це в мережі…"
+- Приклади: "[emotion:asking] А як тебе звати?" / "[emotion:web] Пошукаю це в мережі…"
+- Якщо настрій змінюється далі у відповіді, постав новий тег [emotion:…] — обличчя читає кожен, не лише перший.
 - Після тега — звичайний текст без інших тегів."""
 
 
@@ -84,7 +86,7 @@ def _tools_instruction() -> str:
         desc = fn.get("description", "")
         if name:
             lines.append(f"- {name}: {desc}")
-    lines.append("Коли ти викликаєш інструмент, почни відповідь із тега [емоція:web] або [емоція:searching], а після обробки результатів — звичайний тег емоції.")
+    lines.append("Коли ти викликаєш інструмент, почни відповідь із тега [emotion:web] або [emotion:searching], а після обробки результатів — новий тег [emotion:…] за підсумковим настроєм.")
     return "\n".join(lines)
 
 

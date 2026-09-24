@@ -27,7 +27,7 @@ _REACT_RE = re.compile(r"\[\s*react\s*[:：]\s*([^\]\s]{1,16})\s*\]", re.IGNOREC
 # The emotion tag is metadata for the face, not part of a bubble. A reply
 # that is only "[емоція:happy] 😊" is still just an emoji.
 _EMOTION_TAG_RE = re.compile(
-    r"\[\s*(?:емоція|emotion)\s*[:：]\s*[^\]\s]+\s*\]", re.IGNORECASE,
+    r"\[\s*(?:emotion|емоц[іiи]я|эмоция)\s*[:：]\s*[^\]\s]+\s*\]", re.IGNORECASE,
 )
 
 # Longest tail the stream may hold back while it waits to see whether an open

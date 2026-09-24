@@ -36,11 +36,12 @@ def settled_emotion(emotion: str) -> str:
     """Емоція для дисплея після завершення запиту."""
     return "idle" if emotion in TRANSIENT_ACTIVITY_EMOTIONS else emotion
 
-# Тег виду [емоція:happy] або [emotion:happy] на початку відповіді.
-# Назву ловимо і латиницею, і кирилицею (модель інколи пише «[емоція:щасливий]») —
-# такий тег теж треба прибрати з тексту і, за можливості, змапити на дозволену емоцію.
+# The tag the model is taught is the English [emotion:happy]. It also writes
+# the Ukrainian and Russian spellings of that word (і / latin i / и / э).
+# Every spelling has to come out of the text, and a Cyrillic name inside
+# ("щасливий") is mapped onto an allowed emotion when we can.
 _TAG_RE = re.compile(
-    r"\[\s*(?:емоція|емоцiя|emotion)\s*[:：]\s*([a-zA-Zа-яіїєґА-ЯІЇЄҐʼ'-]+)\s*\]",
+    r"\[\s*(?:emotion|емоц[іiи]я|эмоция)\s*[:：]\s*([a-zA-Zа-яіїєґА-ЯІЇЄҐʼ'-]+)\s*\]",
     re.IGNORECASE,
 )
 
@@ -83,19 +84,19 @@ def extract_emotion(reply: str, fallback: str = "speaking") -> tuple[str, str]:
     """
     Повертає (чистий_текст_відповіді, емоція).
 
-    Спершу шукає тег [емоція:...] (де завгодно в тексті — моделі інколи
-    ставлять його не з першого символа), прибирає ВСІ такі теги з тексту.
-    Якщо валідного тега нема — евристика за ключовими словами.
+    Looks for [emotion:...] anywhere (models do not always put it first)
+    and removes every such tag, including the Ukrainian and Russian
+    spellings of the word. The last valid tag wins: a reply that starts
+    searching and ends confused should leave the face confused, not stuck
+    on the first tag. With no valid tag, a keyword guess is used.
     """
     emotion: str | None = None
 
-    # Беремо перший ВАЛІДНИЙ тег (модель могла спершу написати невалідний)
     for match in _TAG_RE.finditer(reply):
         candidate = match.group(1).lower()
         candidate = _UA_EMOTION_MAP.get(candidate, candidate)
         if candidate in ALLOWED_EMOTIONS:
             emotion = candidate
-            break
     # Прибираємо всі теги емоцій із тексту (навіть невалідні)
     clean = _TAG_RE.sub("", reply).strip()
     # Прибираємо можливий подвійний пробіл після вирізання тега
@@ -138,7 +139,9 @@ class StreamTagFilter:
             if not match:
                 break
             candidate = _UA_EMOTION_MAP.get(match.group(1).lower(), match.group(1).lower())
-            if self.emotion is None and candidate in ALLOWED_EMOTIONS:
+            # Every later tag updates the face. Keeping only the first left
+            # the crab on "web" after the reply had already moved on.
+            if candidate in ALLOWED_EMOTIONS and candidate != self.emotion:
                 self.emotion = candidate
                 found = candidate
             head, rest = self._buffer[: match.start()], self._buffer[match.end():]
