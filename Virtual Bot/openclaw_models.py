@@ -43,8 +43,8 @@ THINKING_LEVELS: tuple[str, ...] = (
     "off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max", "ultra",
 )
 
-# The picker offers the model OpenClaw itself treats as the default.
-# Everything else stays out of the menu.
+# The picker lists every OpenAI model, plus Regolo. Other providers
+# stay out: they were in the catalog and did not answer.
 
 _CLI_TIMEOUT_S = 20.0
 # Каталог моделей міняється рідко (правка конфіга або `models refresh`), а
@@ -157,8 +157,10 @@ async def catalog(force: bool = False) -> list[dict]:
 
 
 def _shown(model: dict) -> bool:
-    """Only the catalog default. Other names are not a choice."""
-    return bool(model.get("id")) and bool(model.get("is_default"))
+    """OpenAI in full, and Regolo. A single 'default' row is not a model name."""
+    if not model.get("id"):
+        return False
+    return str(model.get("provider") or "") in {"openai", "regolo"}
 
 
 def default_model(models: list[dict]) -> str:

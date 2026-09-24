@@ -146,7 +146,12 @@ export function OpenClawFields({
               ? (brain.data?.selected || stored || brain.data?.default || '')
               : stored;
             const modelOptions = brain.data?.models ?? [];
-            const modelValue = modelOptions.some((model) => model.id === liveModel) ? liveModel : '';
+            const listed = modelOptions.some((model) => model.id === liveModel);
+            const modelValue = listed
+              ? liveModel
+              : (field.path === 'agents.defaults.model.primary'
+                ? (modelOptions.find((model) => model.is_default)?.id ?? modelOptions[0]?.id ?? '')
+                : '');
             return (
               <SettingRow
                 key={field.path}
@@ -170,7 +175,9 @@ export function OpenClawFields({
                     value={modelValue}
                     onChange={(event) => write(field, event.target.value)}
                   >
-                    <option value="">{t('settings.inherit')}</option>
+                    {field.path === 'agents.defaults.model.primary' ? null : (
+                      <option value="">{t('settings.inherit')}</option>
+                    )}
                     {modelOptions.map((model) => (
                       <option key={model.id} value={model.id}>{model.label}</option>
                     ))}

@@ -51,10 +51,15 @@ class CatalogTests(unittest.TestCase):
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, CATALOG, ""))):
             models = asyncio.run(openclaw_models.catalog(force=True))
 
-        self.assertEqual([m["id"] for m in models], ["regolo/gpt-oss-120b"])
+        self.assertEqual(
+            [m["id"] for m in models],
+            ["regolo/gpt-oss-120b", "openai/gpt-6-luna"],
+        )
         self.assertEqual(openclaw_models.default_model(models), "regolo/gpt-oss-120b")
-        self.assertEqual(models[0]["context"], 200000)
-        self.assertEqual(models[0]["provider"], "regolo")
+        vision = next(m for m in models if m["id"] == "openai/gpt-6-luna")
+        self.assertTrue(vision["vision"])
+        self.assertEqual(vision["context"], 200000)
+        self.assertEqual(vision["provider"], "openai")
 
     def test_hides_providers_other_than_regolo_and_chatgpt(self) -> None:
         raw = json.dumps({"models": [
@@ -67,7 +72,15 @@ class CatalogTests(unittest.TestCase):
         ]})
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, raw, ""))):
             models = asyncio.run(openclaw_models.catalog(force=True))
-        self.assertEqual([m["id"] for m in models], ["openai/gpt-6-luna"])
+        self.assertEqual(
+            [m["id"] for m in models],
+            [
+                "regolo/gpt-oss-120b",
+                "openai/gpt-6-sol",
+                "openai/gpt-6-luna",
+                "openai/gpt-5.6-luna",
+            ],
+        )
 
     def test_broken_cli_keeps_the_previous_catalog(self) -> None:
         """Збій CLI не має спорожняти список: порожній вибір гірший за старий."""
@@ -75,7 +88,7 @@ class CatalogTests(unittest.TestCase):
             asyncio.run(openclaw_models.catalog(force=True))
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(1, "", "boom"))):
             models = asyncio.run(openclaw_models.catalog(force=True))
-        self.assertEqual(len(models), 1)
+        self.assertEqual(len(models), 2)
 
 
 class NameTailTests(unittest.TestCase):
