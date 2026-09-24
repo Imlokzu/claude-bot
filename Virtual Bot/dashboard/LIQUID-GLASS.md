@@ -1,8 +1,12 @@
 # Liquid glass
 
-A frosted plate: the surface is translucent, what sits behind it is blurred,
-and a thin light edge makes it read as glass. The sample is on the bot's
-chat bubbles and on the composer field. Nothing else uses it yet.
+A clear lens, in the spirit of Apple's glass: the middle stays see-through,
+what is behind it is only slightly softened and more colourful, and a bright
+rim catches the light. It is not a frosted plate. A heavy blur plus a dark
+fill turns it milky; do not put that back.
+
+The sample is on the bot's chat bubbles, the composer field, and the
+jump-to-latest circle. Nothing else uses it yet.
 
 Do not put this on more surfaces until the owner says the sample looks
 right. When they do, apply the class below. Do not invent a second recipe.
@@ -14,16 +18,19 @@ on Apple platforms. This panel also runs in Chrome and Firefox on Windows
 and Linux, and in Chrome and WebView on Android. The effect is therefore
 plain CSS, which those engines already implement:
 
-- `backdrop-filter: blur(22px) saturate(1.6)` blurs and slightly enriches
-  whatever is painted behind the element.
+- `backdrop-filter: blur(8px) saturate(1.9)` softens and enriches whatever
+  is painted behind the element. Keep the blur small. Past ~12px it
+  becomes frost.
 - `-webkit-backdrop-filter` is the same declaration for Safari and for
   older Android WebViews that still need the prefix.
 - The element's own text is not blurred. `filter: blur()` would blur the
   text too, so it is not part of this recipe.
-- A solid `color-mix` fill sits under the blur so the plate is still a
-  plate when the backdrop is a flat colour.
-- `box-shadow` draws the hairline rim and the top highlight. Do not add a
-  second border utility on top of it.
+- The fill is a faint white sheen, stronger at the top edge, not a tint of
+  `--c-surface`. A surface-coloured fill is what made the first version
+  look muddy.
+- `box-shadow` draws the bright top lip, the darker lower lip, and the
+  hairline rim. That rim is the Apple cue. Do not add a second border
+  utility on top of it.
 
 ## The class
 
@@ -33,19 +40,21 @@ same element, or the fill hides the blur.
 
 ```css
 .liquid-glass {
-  background: rgba(28, 24, 20, 0.38);
-  background: color-mix(in srgb, var(--c-surface) 34%, transparent);
-  -webkit-backdrop-filter: blur(22px) saturate(1.6);
-  backdrop-filter: blur(22px) saturate(1.6);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.22),
+    rgba(255, 255, 255, 0.05) 38%,
+    rgba(255, 255, 255, 0.02)
+  );
+  -webkit-backdrop-filter: blur(8px) saturate(1.9);
+  backdrop-filter: blur(8px) saturate(1.9);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 38%, transparent),
-    inset 0 0 0 1px color-mix(in srgb, var(--c-text) 12%, transparent);
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.32),
+    0 10px 24px rgba(0, 0, 0, 0.12);
 }
 ```
-
-The first `background` is the fallback for an engine that does not
-understand `color-mix`. The second line replaces it where `color-mix`
-works (current Chrome, Edge, Firefox, Safari).
 
 ## Where it falls back to a solid plate
 
