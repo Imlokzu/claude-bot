@@ -34,6 +34,16 @@ interface OcSettings {
 const control = 'h-8 w-[180px] text-[13px]';
 const modelControl = 'h-8 w-[220px] text-[13px]';
 
+/** Shown only until the catalog arrives, so the closed control is never blank. */
+function fallbackLabel(id: string): string {
+  const tail = id.split('/').pop() || id;
+  return tail
+    .split('-')
+    .map((part) => (/^\d/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1)))
+    .join(' ')
+    .replace(/Gpt/g, 'GPT');
+}
+
 export function useOpenClawSettings() {
   return useQuery({
     queryKey: ['openclaw-settings'],
@@ -145,13 +155,18 @@ export function OpenClawFields({
             const liveModel = field.path === 'agents.defaults.model.primary'
               ? (brain.data?.selected || stored || brain.data?.default || '')
               : stored;
-            const modelOptions = brain.data?.models ?? [];
-            const listed = modelOptions.some((model) => model.id === liveModel);
+            const catalogModels = brain.data?.models ?? [];
+            const listed = catalogModels.some((model) => model.id === liveModel);
             const modelValue = listed
               ? liveModel
               : (field.path === 'agents.defaults.model.primary'
-                ? (modelOptions.find((model) => model.is_default)?.id ?? modelOptions[0]?.id ?? '')
+                ? (catalogModels.find((model) => model.is_default)?.id ?? catalogModels[0]?.id ?? liveModel)
                 : '');
+            // The catalog call can come back empty. The configured id is
+            // still a name, and the closed control has to show it.
+            const modelOptions = !listed && liveModel && field.path === 'agents.defaults.model.primary'
+              ? [{ id: liveModel, label: fallbackLabel(liveModel) }, ...catalogModels]
+              : catalogModels;
             return (
               <SettingRow
                 key={field.path}

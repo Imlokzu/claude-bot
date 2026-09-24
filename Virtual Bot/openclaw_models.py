@@ -31,6 +31,7 @@ import logging
 import re
 import shutil
 import time
+from pathlib import Path
 
 import app_config as cfg
 
@@ -47,12 +48,21 @@ THINKING_LEVELS: tuple[str, ...] = (
 # stay out: they were in the catalog and did not answer.
 
 _CLI_TIMEOUT_S = 20.0
+# `models list` starts a Node process and asks the gateway. On a busy
+# machine that takes well over the short timeout, and a timed-out call used
+# to hand the picker an empty list — the closed control then showed nothing.
+_CATALOG_TIMEOUT_S = 75.0
 # Каталог моделей міняється рідко (правка конфіга або `models refresh`), а
 # кожен виклик CLI — це запуск node на ~1 с. Тому тримаємо кеш.
 _CATALOG_TTL_S = 120.0
+# Last list that actually came back. A restart, or a CLI that does not
+# answer in time, still has names to show instead of a blank select.
+_DISK_CACHE: Path | None = Path.home() / ".openclaw" / "virtual-bot-brain-models.json"
+_CONFIG_PATH = Path.home() / ".openclaw" / "openclaw.json"
 
 _catalog: list[dict] | None = None
 _catalog_at: float = 0.0
+_refreshing = False
 _selected: str = ""
 _lock = asyncio.Lock()
 
@@ -62,7 +72,7 @@ def cli_path() -> str | None:
     return shutil.which("openclaw")
 
 
-async def _run_cli(*args: str) -> tuple[int, str, str]:
+async def _run_cli(*args: str, timeout: float | None = None) -> tuple[int, str, str]:
     """Викликає openclaw CLI. Повертає (код, stdout, stderr)."""
     exe = cli_path()
     if not exe:
@@ -73,7 +83,7 @@ async def _run_cli(*args: str) -> tuple[int, str, str]:
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=_CLI_TIMEOUT_S)
+        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout or _CLI_TIMEOUT_S)
     except asyncio.TimeoutError:
         proc.kill()
         return 124, "", "openclaw CLI не відповів"
@@ -134,26 +144,109 @@ def _normalize(raw: dict) -> dict:
     return entry
 
 
+def _read_disk_catalog() -> list[dict]:
+    path = _DISK_CACHE
+    if path is None:
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    raw = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(raw, list):
+        return []
+    return [m for m in raw if isinstance(m, dict) and _shown(m)]
+
+
+def _write_disk_catalog(models: list[dict]) -> None:
+    path = _DISK_CACHE
+    if path is None or not models:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"models": models}), encoding="utf-8")
+    except OSError:
+        log.warning("could not store the brain model catalog")
+
+
+def _disk_fresh() -> bool:
+    path = _DISK_CACHE
+    if path is None or not path.is_file():
+        return False
+    try:
+        return (time.time() - path.stat().st_mtime) < _CATALOG_TTL_S
+    except OSError:
+        return False
+
+
+async def _load_from_cli() -> list[dict] | None:
+    """The filtered catalog, or None when the CLI did not answer."""
+    code, out, err = await _run_cli("models", "list", "--json", timeout=_CATALOG_TIMEOUT_S)
+    if code != 0:
+        log.warning("openclaw models list: код %d (%s)", code, err.strip()[:120])
+        return None
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        log.warning("openclaw models list віддав не-JSON")
+        return None
+    raw = data.get("models", [])
+    if not isinstance(raw, list):
+        return None
+    models = [_normalize(m) for m in raw if isinstance(m, dict) and m.get("key")]
+    return [m for m in models if _shown(m)]
+
+
+def _store_catalog(models: list[dict]) -> None:
+    global _catalog, _catalog_at
+    _catalog = models
+    _catalog_at = time.monotonic()
+    _write_disk_catalog(models)
+
+
+async def _refresh_catalog() -> None:
+    """Replace a stale on-disk list without making the picker wait."""
+    global _refreshing
+    try:
+        loaded = await _load_from_cli()
+        if loaded:
+            async with _lock:
+                _store_catalog(loaded)
+    except Exception:
+        log.exception("brain model catalog refresh failed")
+    finally:
+        _refreshing = False
+
+
 async def catalog(force: bool = False) -> list[dict]:
     """Список моделей OpenClaw (кешований)."""
-    global _catalog, _catalog_at
+    global _catalog, _catalog_at, _refreshing
     async with _lock:
         fresh = _catalog is not None and (time.monotonic() - _catalog_at) < _CATALOG_TTL_S
         if fresh and not force:
             return list(_catalog or [])
-        code, out, err = await _run_cli("models", "list", "--json")
-        if code != 0:
-            log.warning("openclaw models list: код %d (%s)", code, err.strip()[:120])
-            return list(_catalog or [])
-        try:
-            data = json.loads(out)
-        except json.JSONDecodeError:
-            log.warning("openclaw models list віддав не-JSON")
-            return list(_catalog or [])
-        models = [_normalize(m) for m in data.get("models", []) if m.get("key")]
-        _catalog = [m for m in models if _shown(m)]
-        _catalog_at = time.monotonic()
-        return list(_catalog)
+        # A cold process must not block on a 30s+ CLI when the last good
+        # list is already on disk. The select stays named either way.
+        if _catalog is None and not force:
+            disk = _read_disk_catalog()
+            if disk:
+                # Freshness is the file's age. Writing it back here would
+                # make a stale list look new and skip the refresh.
+                stale = not _disk_fresh()
+                _catalog = disk
+                _catalog_at = time.monotonic()
+                if stale and not _refreshing:
+                    _refreshing = True
+                    asyncio.create_task(_refresh_catalog())
+                return list(_catalog or [])
+        loaded = await _load_from_cli()
+        if loaded:
+            _store_catalog(loaded)
+        elif _catalog is None:
+            disk = _read_disk_catalog()
+            if disk:
+                _store_catalog(disk)
+        return list(_catalog or [])
 
 
 def _shown(model: dict) -> bool:
@@ -192,17 +285,30 @@ def chat_headers() -> dict[str, str]:
     return {"x-openclaw-model": _selected} if _selected else {}
 
 
+def _thinking_from_config() -> str:
+    """Read the level from the config file. The CLI is a second process and
+    was holding the model list hostage while it started."""
+    try:
+        data = json.loads(_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    current: object = data
+    for part in ("agents", "defaults", "thinkingDefault"):
+        if not isinstance(current, dict) or part not in current:
+            return ""
+        current = current[part]
+    if not isinstance(current, str):
+        return ""
+    value = current.strip().strip('"').casefold()
+    return value if value in THINKING_LEVELS else ""
+
+
 async def get_thinking() -> str:
     """
     Поточний рівень думання. Порожній рядок — значення не задане, діє
     вбудоване типове OpenClaw (його CLI не називає, тому й ми не вигадуємо).
     """
-    code, out, _err = await _run_cli("config", "get", "agents.defaults.thinkingDefault")
-    value = out.strip()
-    if code != 0 or not value or value.startswith("Config path is valid but unset"):
-        return ""
-    # Значення може прийти в лапках (--json) або голим рядком.
-    return value.strip('"').strip()
+    return _thinking_from_config()
 
 
 async def set_thinking(level: str) -> bool:

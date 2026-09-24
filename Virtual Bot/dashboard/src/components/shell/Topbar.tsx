@@ -17,7 +17,7 @@ import { SECTIONS } from '@/app/sections';
 import { useRoute } from '@/app/useRoute';
 import { cn } from '@/lib/cn';
 import { t } from '@/lib/i18n';
-import { useModels, useStatus } from '@/lib/queries';
+import { useBrainModels, useModels, useStatus } from '@/lib/queries';
 
 /*
  * Шапка тримає СТАН бота й нічого більше: налаштування вигляду живуть у
@@ -30,6 +30,7 @@ export function Topbar() {
   const drawer = useDrawer();
   const status = useStatus();
   const models = useModels();
+  const brain = useBrainModels();
   const eventsLive = useEventsConnected();
   const [side] = useDockSide();
   const [activity, setActivity] = useState<string | null>(null);
@@ -53,7 +54,9 @@ export function Topbar() {
   }, [activity]);
 
   const backendOk = status.isSuccess;
-  const activeModel = models.data?.active || models.data?.selected || '';
+  const brainId = brain.data?.selected || brain.data?.default || '';
+  const brainModel = brain.data?.models.find((model) => model.id === brainId);
+  const activeModel = brainModel?.label || brainId || models.data?.active || '';
 
   return (
     <header className="u-safe-t flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-3 sm:px-4"
@@ -186,7 +189,7 @@ export function Topbar() {
       </div>
 
       {activeModel && !isPhone ? (
-        <Tip content="Модель, якою бот відповів останній раз" side="bottom">
+        <Tip content={t('topbar.model')} side="bottom">
           <span className="hidden max-w-[180px] truncate font-mono text-[11px] text-ink-3 sm:block">
             <Morph mono>{activeModel}</Morph>
           </span>

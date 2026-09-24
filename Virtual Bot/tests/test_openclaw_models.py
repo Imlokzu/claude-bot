@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -37,15 +39,20 @@ CATALOG = json.dumps({
 def _reset_cache() -> None:
     openclaw_models._catalog = None
     openclaw_models._catalog_at = 0.0
+    openclaw_models._refreshing = False
     openclaw_models.set_selected("")
 
 
 class CatalogTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._disk = openclaw_models._DISK_CACHE
         _reset_cache()
+        # The developer's last catalog must not leak into a unit test.
+        openclaw_models._DISK_CACHE = None
 
     def tearDown(self) -> None:
         _reset_cache()
+        openclaw_models._DISK_CACHE = self._disk
 
     def test_normalizes_keys_context_and_tags(self) -> None:
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, CATALOG, ""))):
@@ -89,6 +96,21 @@ class CatalogTests(unittest.TestCase):
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(1, "", "boom"))):
             models = asyncio.run(openclaw_models.catalog(force=True))
         self.assertEqual(len(models), 2)
+
+    def test_disk_cache_answers_without_waiting_on_the_cli(self) -> None:
+        """A slow `models list` used to time out and leave the picker blank."""
+        with tempfile.TemporaryDirectory() as directory:
+            openclaw_models._DISK_CACHE = Path(directory) / "models.json"
+            with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, CATALOG, ""))):
+                asyncio.run(openclaw_models.catalog(force=True))
+            openclaw_models._catalog = None
+            openclaw_models._catalog_at = 0.0
+            with patch.object(openclaw_models, "_run_cli", AsyncMock(side_effect=AssertionError("cli"))):
+                models = asyncio.run(openclaw_models.catalog())
+        self.assertEqual(
+            [m["id"] for m in models],
+            ["regolo/gpt-oss-120b", "openai/gpt-6-luna"],
+        )
 
 
 class NameTailTests(unittest.TestCase):
@@ -164,9 +186,21 @@ class ChatHeaderTests(unittest.TestCase):
 
 class ThinkingTests(unittest.TestCase):
     def test_unset_value_reads_as_empty(self) -> None:
-        unset = "Config path is valid but unset: agents.defaults.thinkingDefault."
-        with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, unset, ""))):
-            self.assertEqual(asyncio.run(openclaw_models.get_thinking()), "")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "openclaw.json"
+            path.write_text('{"agents": {"defaults": {}}}', encoding="utf-8")
+            with patch.object(openclaw_models, "_CONFIG_PATH", path):
+                self.assertEqual(asyncio.run(openclaw_models.get_thinking()), "")
+
+    def test_reads_the_configured_level_from_the_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "openclaw.json"
+            path.write_text(
+                '{"agents": {"defaults": {"thinkingDefault": "low"}}}',
+                encoding="utf-8",
+            )
+            with patch.object(openclaw_models, "_CONFIG_PATH", path):
+                self.assertEqual(asyncio.run(openclaw_models.get_thinking()), "low")
 
     def test_rejects_a_level_openclaw_does_not_know(self) -> None:
         with patch.object(openclaw_models, "_run_cli", AsyncMock()) as run:
@@ -181,16 +215,20 @@ class ThinkingTests(unittest.TestCase):
 
 class BrainEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._disk = openclaw_models._DISK_CACHE
         _reset_cache()
+        openclaw_models._DISK_CACHE = None
         self.client = TestClient(main.app)
 
     def tearDown(self) -> None:
         _reset_cache()
+        openclaw_models._DISK_CACHE = self._disk
 
     def test_lists_models_with_selection_and_levels(self) -> None:
         with (
             patch.object(openclaw_models, "reachable", return_value=True),
-            patch.object(openclaw_models, "_run_cli", AsyncMock(side_effect=[(0, CATALOG, ""), (0, "low", "")])),
+            patch.object(openclaw_models, "_thinking_from_config", return_value="low"),
+            patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, CATALOG, ""))),
         ):
             body = self.client.get("/api/brain/models").json()
 
