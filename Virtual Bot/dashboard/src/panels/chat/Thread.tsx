@@ -120,7 +120,7 @@ function UserMessage() {
     setFlying(flyEmoji(launch, emoji, from, reactionTarget(box, 'end'), lift) ? emoji : null);
   }, [meta.reaction, launch]);
   return (
-    <MessagePrimitive.Root className={cn('mb-4 flex justify-end', meta.reaction && 'mb-7')}>
+    <MessagePrimitive.Root className={cn('mb-7 flex justify-end', meta.reaction && 'mb-10')}>
       <div ref={bubble} className="chat-bubble-in u-measure relative rounded-lg bg-ink px-3.5 py-2 text-[15px] leading-[1.55] text-bg">
         <MessagePrimitive.Parts />
         {meta.reaction ? (
@@ -167,13 +167,13 @@ function AssistantMessage() {
 
   let bubble = -1;
   return (
-    <MessagePrimitive.Root className="group/reply mb-6 flex gap-3">
+    <MessagePrimitive.Root className="group/reply mb-10 flex gap-3">
       {/* Use the same static character as the header, aligned to the first line. */}
       <BotIcon className="mt-1.5" />
       {/* Область картинок — на всю репліку: тоді «наступна» в переглядачі
           доходить і до тих, що лежали в іншому абзаці відповіді. */}
       <GalleryScope>
-        <div className="u-measure flex min-w-0 flex-1 flex-col items-start gap-1.5">
+        <div className="u-measure flex min-w-0 flex-1 flex-col items-start gap-4">
           {parts.map((part, index) => {
             if (part.type === 'steps') {
               return <ActivityLine key={`steps-${part.ids[0] ?? index}`} steps={stepsFor(part.ids, steps)} running={running} />;
@@ -295,7 +295,7 @@ export function Thread({
           aria-label={t('thread.toLatestAria')}
           // At the bottom of the thread the primitive disables the button.
           // Hide it: a circle with nothing to do only distracts.
-          className="chat-scroll-latest liquid-glass absolute bottom-[118px] left-1/2 z-10 size-9 -translate-x-1/2 rounded-full p-0 shadow-raise transition-opacity disabled:pointer-events-none disabled:opacity-0 max-[759px]:size-11"
+          className="chat-scroll-latest liquid-glass absolute bottom-[152px] left-1/2 z-10 size-9 -translate-x-1/2 rounded-full p-0 shadow-raise transition-opacity disabled:pointer-events-none disabled:opacity-0 max-[759px]:size-11"
         >
           <ArrowDown />
         </Button>

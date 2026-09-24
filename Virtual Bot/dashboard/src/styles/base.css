@@ -236,8 +236,8 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
     /* На телефоні нижнього дока нема (навігація в шапці), тож запас під
        нього — просто порожня смуга під композером. */
     .chat-conversation { padding-bottom: 0; }
-    .chat-scroll-latest { bottom: 96px; }
-    [data-kb] .chat-scroll-latest { bottom: 96px; }
+    .chat-scroll-latest { bottom: 128px; }
+    [data-kb] .chat-scroll-latest { bottom: 128px; }
     .chat-composer {
       padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
       padding-right: max(0.75rem, env(safe-area-inset-right, 0px));

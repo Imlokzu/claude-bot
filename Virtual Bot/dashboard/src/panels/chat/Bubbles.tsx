@@ -181,7 +181,7 @@ function ToolCard({ step }: { step: ToolStep }) {
 export function ActivityLine({ steps, running }: { steps: ToolStep[]; running: boolean }) {
   if (!steps.length) return null;
   return (
-    <div className="flex w-full min-w-0 max-w-full flex-col gap-1.5" data-agent-activity data-running={running ? '' : undefined}>
+    <div className="flex w-full min-w-0 max-w-full flex-col gap-3" data-agent-activity data-running={running ? '' : undefined}>
       {steps.map((step) => <ToolCard key={step.id} step={step} />)}
     </div>
   );
