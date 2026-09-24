@@ -18,16 +18,15 @@ on Apple platforms. This panel also runs in Chrome and Firefox on Windows
 and Linux, and in Chrome and WebView on Android. The effect is therefore
 plain CSS, which those engines already implement:
 
-- `backdrop-filter: blur(8px) saturate(1.9)` softens and enriches whatever
+- `backdrop-filter: blur(6px) saturate(1.8)` softens and enriches whatever
   is painted behind the element. Keep the blur small. Past ~12px it
   becomes frost.
 - `-webkit-backdrop-filter` is the same declaration for Safari and for
   older Android WebViews that still need the prefix.
 - The element's own text is not blurred. `filter: blur()` would blur the
   text too, so it is not part of this recipe.
-- The fill is a faint white sheen, stronger at the top edge, not a tint of
-  `--c-surface`. A surface-coloured fill is what made the first version
-  look muddy.
+- The fill is about 4% white, not a tint of `--c-surface` and not a
+  gradient wash. On a flat dark page anything stronger paints a grey card.
 - `box-shadow` draws the bright top lip, the darker lower lip, and the
   hairline rim. That rim is the Apple cue. Do not add a second border
   utility on top of it.
@@ -40,21 +39,19 @@ same element, or the fill hides the blur.
 
 ```css
 .liquid-glass {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.22),
-    rgba(255, 255, 255, 0.05) 38%,
-    rgba(255, 255, 255, 0.02)
-  );
-  -webkit-backdrop-filter: blur(8px) saturate(1.9);
-  backdrop-filter: blur(8px) saturate(1.9);
+  background: rgba(255, 255, 255, 0.04);
+  -webkit-backdrop-filter: blur(6px) saturate(1.8);
+  backdrop-filter: blur(6px) saturate(1.8);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.18),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.32),
-    0 10px 24px rgba(0, 0, 0, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 1px 0 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22);
 }
 ```
+
+On a flat dark page a stronger white fill turns into a grey card. Keep the
+fill near zero and let the rim do the work.
 
 ## Where it falls back to a solid plate
 
