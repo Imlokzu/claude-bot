@@ -363,30 +363,51 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 .chat-typing-out .chat-dot { animation: chat-dot-collapse 520ms var(--e-out) both; }
 .chat-typing-out .chat-dot:nth-child(1) { animation-name: chat-dot-collapse-l; }
 .chat-typing-out .chat-dot:nth-child(3) { animation-name: chat-dot-collapse-r; animation-delay: 80ms; }
-/* Before a reaction leaves, the text bubble rises, takes one slow circle,
-   and blurs. The emoji appears out of that blur and only then flies.
-   Duration matches SENDOFF_MS; the flight starts at FLY_DELAY_MS. */
+/* Before a reaction leaves, the text bubble and the small bot mark rise
+   into one circle and blur. Linear, and sampled evenly around the circle,
+   so the motion does not brake at each step. The emoji leaves at the
+   blurriest point (FLY_DELAY_MS) while the circle keeps turning.
+   Duration matches SENDOFF_MS. */
 .chat-bubble-sendoff,
 .chat-bubble-in.chat-bubble-sendoff,
 .chat-typing-out.chat-bubble-sendoff {
-  animation: chat-bubble-sendoff 1600ms cubic-bezier(0.45, 0.02, 0.25, 1) both;
+  animation: chat-bubble-sendoff 1600ms linear both;
   transform-origin: center center;
   overflow: visible;
   pointer-events: none;
 }
+[data-bot-icon].chat-icon-sendoff {
+  animation: chat-icon-sendoff 1600ms linear both;
+  transform-origin: center center;
+  transform-box: fill-box;
+  pointer-events: none;
+}
 @keyframes chat-bubble-sendoff {
-  0%   { transform: none; filter: blur(0); }
-  20%  { transform: translateY(-28px); filter: blur(0); }
-  36%  { transform: translate(22px, -28px); filter: blur(2px); }
-  52%  { transform: translate(0, -6px); filter: blur(5px); }
-  68%  { transform: translate(-22px, -28px); filter: blur(8px); }
-  82%  { transform: translateY(-46px); filter: blur(3px); }
-  100% { transform: none; filter: blur(0); }
+  0%     { transform: none; filter: blur(0); }
+  12.5%  { transform: translate(16px, -6px); filter: blur(0); }
+  25%    { transform: translate(22px, -22px); filter: blur(1px); }
+  37.5%  { transform: translate(16px, -38px); filter: blur(3px); }
+  50%    { transform: translate(0, -44px); filter: blur(6px); }
+  62.5%  { transform: translate(-16px, -38px); filter: blur(8px); }
+  75%    { transform: translate(-22px, -22px); filter: blur(4px); }
+  87.5%  { transform: translate(-16px, -6px); filter: blur(1px); }
+  100%   { transform: none; filter: blur(0); }
+}
+@keyframes chat-icon-sendoff {
+  0%     { transform: none; filter: blur(0); }
+  12.5%  { transform: translate(16px, -6px) scale(1.05); filter: blur(0); }
+  25%    { transform: translate(22px, -22px) scale(1.15); filter: blur(1px); }
+  37.5%  { transform: translate(16px, -38px) scale(1.3); filter: blur(3px); }
+  50%    { transform: translate(0, -44px) scale(1.45); filter: blur(6px); }
+  62.5%  { transform: translate(-16px, -38px) scale(1.6); filter: blur(8px); }
+  75%    { transform: translate(-22px, -22px) scale(1.25); filter: blur(4px); }
+  87.5%  { transform: translate(-16px, -6px) scale(1.05); filter: blur(1px); }
+  100%   { transform: none; filter: blur(0); }
 }
 .chat-reaction-in { animation: chat-reaction-pop 260ms var(--e-spring) both; }
 /* Held back until the flying emoji arrives, then the same pop.
    The inline delay matches LAND_DELAY_MS. */
-.chat-reaction-land { animation: chat-reaction-pop 280ms var(--e-spring) 1820ms both; }
+.chat-reaction-land { animation: chat-reaction-pop 280ms var(--e-spring) 1860ms both; }
 @keyframes chat-reaction-pop {
   from { opacity: 0; transform: scale(0.4); }
   to   { opacity: 1; transform: none; }
@@ -399,26 +420,30 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   font-size: 34px;
   line-height: 1;
   pointer-events: none;
-  animation: chat-emoji-flight 1100ms var(--e-out) both;
+  animation: chat-emoji-flight 1100ms linear both;
 }
 @keyframes chat-emoji-flight {
   0% {
     filter: blur(8px);
-    opacity: 0.65;
-    transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px)) translate(-50%, -50%) scale(0.35);
+    opacity: 0.7;
+    transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px)) translate(-50%, -50%) scale(0.4);
   }
-  18% {
-    filter: blur(0);
+  20% {
+    filter: blur(1px);
     opacity: 1;
-    transform: translate(calc(var(--x) * 1px), calc((var(--y) - 18) * 1px)) translate(-50%, -50%) scale(1.7);
+    transform: translate(calc((var(--x) + var(--mx) * 0.32 + var(--dx) * 0.04) * 1px), calc((var(--y) + var(--my) * 0.32 + var(--dy) * 0.04) * 1px)) translate(-50%, -50%) scale(1.45);
   }
-  46% {
+  40% {
     filter: blur(0);
-    transform: translate(calc((var(--x) + var(--mx)) * 1px), calc((var(--y) + var(--my)) * 1px)) translate(-50%, -50%) scale(1.45);
+    transform: translate(calc((var(--x) + var(--mx) * 0.48 + var(--dx) * 0.16) * 1px), calc((var(--y) + var(--my) * 0.48 + var(--dy) * 0.16) * 1px)) translate(-50%, -50%) scale(1.35);
   }
-  76% {
+  60% {
     filter: blur(0);
-    transform: translate(calc((var(--x) + var(--mx) * 0.22 + var(--dx) * 0.78) * 1px), calc((var(--y) + var(--my) * 0.22 + var(--dy) * 0.78) * 1px)) translate(-50%, -50%) scale(0.95);
+    transform: translate(calc((var(--x) + var(--mx) * 0.48 + var(--dx) * 0.36) * 1px), calc((var(--y) + var(--my) * 0.48 + var(--dy) * 0.36) * 1px)) translate(-50%, -50%) scale(1.1);
+  }
+  80% {
+    filter: blur(0);
+    transform: translate(calc((var(--x) + var(--mx) * 0.32 + var(--dx) * 0.64) * 1px), calc((var(--y) + var(--my) * 0.32 + var(--dy) * 0.64) * 1px)) translate(-50%, -50%) scale(0.8);
   }
   100% {
     filter: blur(0);
@@ -470,7 +495,8 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .chat-reaction-in,
   .chat-reaction-land,
   .chat-emoji-flight,
-  .chat-bubble-sendoff {
+  .chat-bubble-sendoff,
+  .chat-icon-sendoff {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
   }

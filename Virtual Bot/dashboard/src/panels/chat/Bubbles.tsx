@@ -29,14 +29,16 @@ import type { ToolStep } from './types';
  *  Kept in step with `chat-typing-out` in base.css. */
 export const TYPING_LEAVE_MS = 780;
 
-/** The text bubble rises, circles and blurs before the emoji leaves.
- *  Kept in step with `chat-bubble-sendoff` in base.css. */
+/** The text bubble and the small bot mark rise, take one circle and blur
+ *  before the emoji leaves. Kept in step with the sendoff rules in base.css. */
 const SENDOFF_MS = 1600;
-/** When, during the sendoff, the emoji appears and starts flying. */
-const FLY_DELAY_MS = 960;
+/** Blur is deepest here, partway around the circle, and the emoji leaves
+ *  without the circle pausing. */
+const FLY_DELAY_MS = 1000;
 /** Kept in step with `chat-emoji-flight` in base.css. */
 const FLIGHT_MS = 1100;
-/** Chip stays hidden until the emoji is about to land. */
+/** Chip stays hidden until the emoji is about to land. Matches the
+ *  fallback delay on `.chat-reaction-land`. */
 export const LAND_DELAY_MS = FLY_DELAY_MS + 860;
 
 export function typingLeaveMs(): number {
@@ -223,9 +225,9 @@ export function reactionTarget(bubble: DOMRect, align: 'start' | 'end') {
 }
 
 /** Bow the path sideways so the emoji arcs instead of sliding in a straight line.
- *  `lift` is the text bubble: it rises, circles and blurs, and only then
- *  does the emoji appear and fly. The flight is measured again at that
- *  moment so it leaves from where the bubble actually is. */
+ *  `lift` is the text bubble. It and the small bot mark beside the reply
+ *  rise, circle and blur together; the emoji leaves from the bubble at the
+ *  blurriest point, and the circle keeps turning instead of stopping. */
 export function flyEmoji(
   launch: (spec: FlightSpec) => boolean,
   emoji: string,
@@ -253,8 +255,13 @@ export function flyEmoji(
     });
   };
   if (!lift) return send(from);
+  const icon = lift.closest('.group\\/reply')?.querySelector('[data-bot-icon]');
   lift.classList.add('chat-bubble-sendoff');
-  window.setTimeout(() => lift.classList.remove('chat-bubble-sendoff'), SENDOFF_MS);
+  icon?.classList.add('chat-icon-sendoff');
+  window.setTimeout(() => {
+    lift.classList.remove('chat-bubble-sendoff');
+    icon?.classList.remove('chat-icon-sendoff');
+  }, SENDOFF_MS);
   window.setTimeout(() => {
     const origin = lift.isConnected ? lift.getBoundingClientRect() : from;
     send(origin);
