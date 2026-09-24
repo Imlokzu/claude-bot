@@ -470,23 +470,33 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.55; }
 }
-/* Logs under a tool card. A grid row can ease to zero, so the panel
-   folds both ways; the text fades and rises those few pixels with it. */
+/* Logs under a tool card. Opening is a short spring: the messages below
+   step down as the panel grows. Closing is slower and linear so those
+   messages glide back up instead of jumping. */
 .chat-log {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 260ms var(--e-spring);
+  transition: grid-template-rows 520ms cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-.chat-log[data-open] { grid-template-rows: 1fr; }
+.chat-log[data-open] {
+  grid-template-rows: 1fr;
+  transition-duration: 280ms;
+  transition-timing-function: var(--e-spring);
+}
 .chat-log-clip { min-height: 0; overflow: hidden; }
 .chat-log-panel {
   opacity: 0;
-  transform: translateY(-6px);
-  transition: opacity 180ms var(--e-out), transform 260ms var(--e-spring);
+  transform: none;
+  transition: opacity 460ms linear;
 }
 .chat-log[data-open] .chat-log-panel {
   opacity: 1;
   transform: none;
+  animation: chat-log-in 280ms var(--e-spring) both;
+}
+@keyframes chat-log-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* Рух — прикраса, а не зміст: кому він заважає, той бачить усе одразу. */
@@ -504,7 +514,8 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .chat-reaction-land,
   .chat-emoji-flight,
   .chat-morph > :not(.chat-morph-emoji),
-  .chat-morph-emoji {
+  .chat-morph-emoji,
+  .chat-log[data-open] .chat-log-panel {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
   }
