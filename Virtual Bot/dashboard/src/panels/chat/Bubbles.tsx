@@ -17,8 +17,9 @@ import type { ToolStep } from './types';
  *
  * Two motions carry the messenger feel. The typing dots shrink away inside
  * their own bubble (and a reply that replaces them crossfades out of those
- * dots). A reaction emoji travels from where it was chosen — the picker, or
- * the typing bubble when the bot reacts — and lands on the message.
+ * dots). When the bot reacts, that text bubble rises, shrinks into a circle
+ * with the emoji inside, and glides onto the message. A reaction the person
+ * picks flies from the button instead.
  *
  * Reactions are content, not icons, so emoji are allowed here even though
  * DESIGN.md bans them as interface icons.
@@ -29,17 +30,16 @@ import type { ToolStep } from './types';
  *  Kept in step with `chat-typing-out` in base.css. */
 export const TYPING_LEAVE_MS = 780;
 
-/** The text bubble and the small bot mark rise, take one circle and blur
- *  before the emoji leaves. Kept in step with the sendoff rules in base.css. */
-const SENDOFF_MS = 1600;
-/** Blur is deepest here, partway around the circle, and the emoji leaves
- *  without the circle pausing. */
-const FLY_DELAY_MS = 1000;
+/** The text bubble rises, becomes a circle, and glides to the message.
+ *  Kept in step with the morph fades in base.css. */
+const MORPH_MS = 1500;
 /** Kept in step with `chat-emoji-flight` in base.css. */
 const FLIGHT_MS = 1100;
-/** Chip stays hidden until the emoji is about to land. Matches the
+/** Chip stays hidden until the circle is about to land. Matches the
  *  fallback delay on `.chat-reaction-land`. */
-export const LAND_DELAY_MS = FLY_DELAY_MS + 860;
+export const LAND_DELAY_MS = 1360;
+/** A reaction picked from the button arrives with the shorter flight. */
+export const FLIGHT_LAND_MS = 920;
 
 export function typingLeaveMs(): number {
   if (typeof window === 'undefined') return TYPING_LEAVE_MS;
@@ -225,9 +225,9 @@ export function reactionTarget(bubble: DOMRect, align: 'start' | 'end') {
 }
 
 /** Bow the path sideways so the emoji arcs instead of sliding in a straight line.
- *  `lift` is the text bubble. It and the small bot mark beside the reply
- *  rise, circle and blur together; the emoji leaves from the bubble at the
- *  blurriest point, and the circle keeps turning instead of stopping. */
+ *  `lift` is the text bubble that is leaving: it rises, shrinks into a
+ *  circle with the emoji inside, and that circle glides to the message.
+ *  The bot mark stays where it is. */
 export function flyEmoji(
   launch: (spec: FlightSpec) => boolean,
   emoji: string,
@@ -254,36 +254,101 @@ export function flyEmoji(
       my: dy * 0.5 + (dx / len) * bow,
     });
   };
-  if (!lift) return send(from);
-  const icon = lift.closest('.group\\/reply')?.querySelector('[data-bot-icon]');
-  lift.classList.add('chat-bubble-sendoff');
-  icon?.classList.add('chat-icon-sendoff');
-  window.setTimeout(() => {
-    lift.classList.remove('chat-bubble-sendoff');
-    icon?.classList.remove('chat-icon-sendoff');
-  }, SENDOFF_MS);
-  window.setTimeout(() => {
-    const origin = lift.isConnected ? lift.getBoundingClientRect() : from;
-    send(origin);
-  }, FLY_DELAY_MS);
+  if (!lift || !lift.isConnected) return send(from);
+  morphBubble(lift, emoji, to);
   return true;
 }
 
+/** A fixed copy of the text bubble, so the real message (and the bot mark)
+ *  stay put while the copy becomes the reaction. */
+function morphBubble(bubble: Element, emoji: string, to: { x: number; y: number }) {
+  const rect = bubble.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return;
+  const ghost = bubble.cloneNode(true) as HTMLElement;
+  ghost.classList.remove('chat-bubble-in', 'chat-bubble-open', 'chat-typing-out');
+  ghost.classList.add('chat-morph');
+  ghost.removeAttribute('data-typing');
+  ghost.setAttribute('aria-hidden', 'true');
+  const badge = document.createElement('span');
+  badge.className = 'chat-morph-emoji';
+  badge.textContent = emoji;
+  ghost.appendChild(badge);
+  const radius = getComputedStyle(bubble).borderRadius || '12px';
+  ghost.style.animation = 'none';
+  ghost.style.position = 'fixed';
+  ghost.style.margin = '0';
+  ghost.style.zIndex = '40';
+  ghost.style.pointerEvents = 'none';
+  ghost.style.overflow = 'hidden';
+  ghost.style.padding = '0';
+  document.body.appendChild(ghost);
+  // The typing pill is on its way out; the copy is the thing that travels.
+  if (bubble instanceof HTMLElement && bubble.hasAttribute('data-typing')) {
+    bubble.style.visibility = 'hidden';
+  }
+
+  const width = rect.width;
+  const height = rect.height;
+  const circle = Math.round(Math.max(32, Math.min(height, 40)));
+  const chip = 22;
+  const startCx = rect.left + width / 2;
+  const startCy = rect.top + height / 2;
+  const risenCy = startCy - 18;
+  const dx = to.x - startCx;
+  const dy = to.y - risenCy;
+  const len = Math.hypot(dx, dy) || 1;
+  const bow = Math.min(28, len * 0.18);
+  const cpx = startCx + dx * 0.5 + (-dy / len) * bow;
+  const cpy = risenCy + dy * 0.5 + (dx / len) * bow;
+  const along = (t: number) => {
+    const u = 1 - t;
+    return {
+      x: u * u * startCx + 2 * u * t * cpx + t * t * to.x,
+      y: u * u * risenCy + 2 * u * t * cpy + t * t * to.y,
+    };
+  };
+  const box = (cx: number, cy: number, w: number, h: number, round: string) => ({
+    left: `${cx - w / 2}px`,
+    top: `${cy - h / 2}px`,
+    width: `${w}px`,
+    height: `${h}px`,
+    borderRadius: round,
+  });
+  const size = (t: number) => circle + (chip - circle) * t;
+  const at = (t: number) => {
+    const p = along(t);
+    const s = size(t);
+    return box(p.x, p.y, s, s, '999px');
+  };
+
+  ghost.animate([
+    { ...box(startCx, startCy, width, height, radius), offset: 0 },
+    { ...box(startCx, risenCy, width, height, radius), offset: 0.22 },
+    { ...at(0.12), offset: 0.42 },
+    { ...at(0.4), offset: 0.62 },
+    { ...at(0.72), offset: 0.82 },
+    { ...at(1), offset: 1 },
+  ], { duration: MORPH_MS, easing: 'linear', fill: 'forwards' });
+  window.setTimeout(() => ghost.remove(), MORPH_MS + 40);
+}
+
 /** The small emoji badge hanging off a bubble's lower edge. */
-export function ReactionChip({ emoji, label, onClick, align, landing }: {
+export function ReactionChip({ emoji, label, onClick, align, landing, delayMs = LAND_DELAY_MS }: {
   emoji: string; label: string; onClick?: () => void; align: 'start' | 'end';
   /** True while an emoji is still in flight towards this chip. */
   landing?: boolean;
+  /** When that flight arrives. The text-bubble morph is the default. */
+  delayMs?: number;
 }) {
   const className = cn(
     'absolute -bottom-3 z-10 grid h-6 min-w-6 place-items-center rounded-full border border-line bg-surface px-1 text-[13px] leading-none shadow-raise',
     landing ? 'chat-reaction-land' : 'chat-reaction-in',
     align === 'start' ? 'left-2.5' : 'right-2.5',
   );
-  if (!onClick) return <span role="img" aria-label={label} className={className} style={landing ? { animationDelay: `${LAND_DELAY_MS}ms` } : undefined}>{emoji}</span>;
+  if (!onClick) return <span role="img" aria-label={label} className={className} style={landing ? { animationDelay: `${delayMs}ms` } : undefined}>{emoji}</span>;
   return (
     <button type="button" aria-label={label} onClick={onClick}
-      style={landing ? { animationDelay: `${LAND_DELAY_MS}ms` } : undefined}
+      style={landing ? { animationDelay: `${delayMs}ms` } : undefined}
       className={cn(className, 'transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent')}>
       {emoji}
     </button>
@@ -364,7 +429,7 @@ export function BotBubble({ text, note, running, reaction, onReact, fromTyping }
   }, [fromTyping]);
   const pick = (emoji: string | null, source?: HTMLElement) => {
     if (emoji && source && bubble.current
-      && flyEmoji(launch, emoji, source.getBoundingClientRect(), reactionTarget(bubble.current.getBoundingClientRect(), 'start'), bubble.current)) {
+      && flyEmoji(launch, emoji, source.getBoundingClientRect(), reactionTarget(bubble.current.getBoundingClientRect(), 'start'))) {
       setFlying(emoji);
     } else {
       setFlying(null);
@@ -392,7 +457,7 @@ export function BotBubble({ text, note, running, reaction, onReact, fromTyping }
           </TextMessagePartProvider>
         </div>
         {reaction ? (
-          <ReactionChip key={reaction} emoji={reaction} align="start" landing={flying === reaction}
+          <ReactionChip key={reaction} emoji={reaction} align="start" landing={flying === reaction} delayMs={FLIGHT_LAND_MS}
             label={t('reaction.yours', { emoji: reaction })}
             onClick={onReact ? () => onReact(null) : undefined} />
         ) : null}

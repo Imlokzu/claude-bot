@@ -363,51 +363,41 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 .chat-typing-out .chat-dot { animation: chat-dot-collapse 520ms var(--e-out) both; }
 .chat-typing-out .chat-dot:nth-child(1) { animation-name: chat-dot-collapse-l; }
 .chat-typing-out .chat-dot:nth-child(3) { animation-name: chat-dot-collapse-r; animation-delay: 80ms; }
-/* Before a reaction leaves, the text bubble and the small bot mark rise
-   into one circle and blur. Linear, and sampled evenly around the circle,
-   so the motion does not brake at each step. The emoji leaves at the
-   blurriest point (FLY_DELAY_MS) while the circle keeps turning.
-   Duration matches SENDOFF_MS. */
-.chat-bubble-sendoff,
-.chat-bubble-in.chat-bubble-sendoff,
-.chat-typing-out.chat-bubble-sendoff {
-  animation: chat-bubble-sendoff 1600ms linear both;
-  transform-origin: center center;
-  overflow: visible;
-  pointer-events: none;
+/* The text bubble rises, shrinks into a circle with the emoji inside, then
+   that circle glides to the message. Geometry is a WAAPI timeline in
+   morphBubble (MORPH_MS); these fades match that duration. */
+.chat-morph {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-[data-bot-icon].chat-icon-sendoff {
-  animation: chat-icon-sendoff 1600ms linear both;
-  transform-origin: center center;
-  transform-box: fill-box;
-  pointer-events: none;
+.chat-morph > :not(.chat-morph-emoji) {
+  animation: chat-morph-text 1500ms linear both;
 }
-@keyframes chat-bubble-sendoff {
-  0%     { transform: none; filter: blur(0); }
-  12.5%  { transform: translate(16px, -6px); filter: blur(0); }
-  25%    { transform: translate(22px, -22px); filter: blur(1px); }
-  37.5%  { transform: translate(16px, -38px); filter: blur(3px); }
-  50%    { transform: translate(0, -44px); filter: blur(6px); }
-  62.5%  { transform: translate(-16px, -38px); filter: blur(8px); }
-  75%    { transform: translate(-22px, -22px); filter: blur(4px); }
-  87.5%  { transform: translate(-16px, -6px); filter: blur(1px); }
-  100%   { transform: none; filter: blur(0); }
+.chat-morph-emoji {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  line-height: 1;
+  animation: chat-morph-emoji 1500ms linear both;
 }
-@keyframes chat-icon-sendoff {
-  0%     { transform: none; filter: blur(0); }
-  12.5%  { transform: translate(16px, -6px) scale(1.05); filter: blur(0); }
-  25%    { transform: translate(22px, -22px) scale(1.15); filter: blur(1px); }
-  37.5%  { transform: translate(16px, -38px) scale(1.3); filter: blur(3px); }
-  50%    { transform: translate(0, -44px) scale(1.45); filter: blur(6px); }
-  62.5%  { transform: translate(-16px, -38px) scale(1.6); filter: blur(8px); }
-  75%    { transform: translate(-22px, -22px) scale(1.25); filter: blur(4px); }
-  87.5%  { transform: translate(-16px, -6px) scale(1.05); filter: blur(1px); }
-  100%   { transform: none; filter: blur(0); }
+@keyframes chat-morph-text {
+  0%, 18% { opacity: 1; }
+  40%     { opacity: 0; }
+  100%    { opacity: 0; }
+}
+@keyframes chat-morph-emoji {
+  0%, 24% { opacity: 0; transform: scale(0.6); }
+  42%     { opacity: 1; transform: scale(1); }
+  100%    { opacity: 1; transform: scale(0.92); }
 }
 .chat-reaction-in { animation: chat-reaction-pop 260ms var(--e-spring) both; }
 /* Held back until the flying emoji arrives, then the same pop.
    The inline delay matches LAND_DELAY_MS. */
-.chat-reaction-land { animation: chat-reaction-pop 280ms var(--e-spring) 1860ms both; }
+.chat-reaction-land { animation: chat-reaction-pop 280ms var(--e-spring) 1360ms both; }
 @keyframes chat-reaction-pop {
   from { opacity: 0; transform: scale(0.4); }
   to   { opacity: 1; transform: none; }
@@ -495,8 +485,8 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .chat-reaction-in,
   .chat-reaction-land,
   .chat-emoji-flight,
-  .chat-bubble-sendoff,
-  .chat-icon-sendoff {
+  .chat-morph > :not(.chat-morph-emoji),
+  .chat-morph-emoji {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
   }
