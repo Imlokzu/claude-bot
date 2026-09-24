@@ -1,12 +1,19 @@
-import { MessagePrimitive, ThreadPrimitive } from '@assistant-ui/react';
+import { createContext, useContext, useMemo } from 'react';
+import { MessagePrimitive, ThreadPrimitive, useAuiState } from '@assistant-ui/react';
 import { ArrowDown } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { GalleryScope } from './Gallery';
 import { TextType } from '@/vendor/reactbits';
 import { Thinking } from './Thinking';
+import { SourceStrip } from './SourceStrip';
+import { MessageActions } from './MessageActions';
+import { REPLY_ATTRIBUTE } from './SelectionActions';
 import { Button } from '@/components/ui/Button';
+import { BotIcon } from '@/components/ui/BotIcon';
 import { glue } from '@/lib/glue';
+import { t } from '@/locales/chat';
 import type { ToolStep } from './types';
+import type { AgentStatus } from '@/lib/chatStream';
 
 /*
  * Стрічка розмови.
@@ -16,11 +23,15 @@ import type { ToolStep } from './types';
  * абзацу заважає (DESIGN.md, правило 5).
  */
 
-const SUGGESTIONS = [
-  'Що ти зараз умієш?',
-  'Покажи, що в тебе в памʼяті',
-  'Зроби нотатку про сьогодні',
-];
+const SUGGESTIONS = ['thread.suggestion1', 'thread.suggestion2', 'thread.suggestion3'] as const;
+
+/*
+ * Retry belongs to the conversation, not to a message: it re-sends the last
+ * question. So the thread is told which reply is the last settled one, and
+ * only that reply offers the action — on an older one the button would
+ * silently replace something else.
+ */
+const RetryContext = createContext<{ id: string; run: () => void } | null>(null);
 
 function UserMessage() {
   return (
@@ -33,18 +44,45 @@ function UserMessage() {
 }
 
 function AssistantMessage() {
+  const activity = useAuiState((state) => state.message.metadata.custom) as {
+    steps?: ToolStep[]; running?: boolean; agentStatus?: AgentStatus; model?: string;
+  };
+  const id = useAuiState((state) => state.message.id);
+  const parts = useAuiState((state) => state.message.content);
+  const retry = useContext(RetryContext);
+
+  // Plain text of the reply, for copying and for reading aloud. Taken from the
+  // message itself rather than from the rendered DOM, so code blocks, tables
+  // and image captions come out as the model wrote them.
+  const text = useMemo(
+    () => parts.filter((part) => part.type === 'text').map((part) => part.text).join(''),
+    [parts],
+  );
+
+  const settled = !activity.running;
+  const steps = activity.steps ?? [];
+
   return (
-    <MessagePrimitive.Root className="mb-6 flex gap-3">
-      {/* Мітка автора замість аватарки: у розмові двоє, портрет не потрібен,
-          а моноширинний знак тримає той самий «приладовий» ритм. */}
-      <span aria-hidden="true" className="mt-1 shrink-0 font-mono text-[11px] text-accent">
-        ▞▚
-      </span>
+    <MessagePrimitive.Root className="group/reply mb-6 flex gap-3">
+      {/* Use the same static character as the header, aligned to the first line. */}
+      <BotIcon className="mt-1" />
       {/* Область картинок — на всю репліку: тоді «наступна» в переглядачі
           доходить і до тих, що лежали в іншому абзаці відповіді. */}
       <GalleryScope>
         <div className="u-measure min-w-0 flex-1">
-          <MessagePrimitive.Parts components={{ Text: Markdown }} />
+          {activity.running || steps.length ? <Thinking steps={steps}
+            running={Boolean(activity.running)} status={activity.agentStatus} model={activity.model} /> : null}
+          {/* The selection toolbar only fires inside this mark, so it stays
+              off the user's own messages and off the activity trace. */}
+          <div {...{ [REPLY_ATTRIBUTE]: '' }}>
+            <MessagePrimitive.Parts components={{ Text: Markdown }} />
+          </div>
+          {/* While the answer is still streaming its sources are half-found
+              and its text is half-written — neither is worth acting on yet. */}
+          {settled ? <SourceStrip steps={steps} /> : null}
+          {settled && text ? (
+            <MessageActions text={text} onRetry={retry?.id === id ? retry.run : undefined} />
+          ) : null}
         </div>
       </GalleryScope>
     </MessagePrimitive.Root>
@@ -52,34 +90,37 @@ function AssistantMessage() {
 }
 
 export function Thread({
-  steps,
-  running,
-  answered,
   compactedFrom,
   composer,
+  retryId,
+  onRetry,
 }: {
-  steps: ToolStep[];
-  running: boolean;
-  /** Відповідь у цій розмові вже була — блок «Думав N с» лишається. */
-  answered: boolean;
   /** Скільки реплік сховано за переказом; 0 — розмову не стискали. */
   compactedFrom: number;
   /* Поле вводу приходить готовим: воно знає про моделі й контекст, а стрічка — ні. */
   composer: React.ReactNode;
+  /** Id of the reply that may be retried, or '' while none may be. */
+  retryId: string;
+  onRetry: () => void;
 }) {
+  const retry = useMemo(
+    () => (retryId ? { id: retryId, run: onRetry } : null),
+    [retryId, onRetry],
+  );
   return (
+    <RetryContext value={retry}>
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
-      <ThreadPrimitive.Viewport className="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-5 sm:px-6">
+      <ThreadPrimitive.Viewport className="relative flex min-h-0 flex-1 touch-pan-y flex-col overflow-y-auto overscroll-contain px-4 pt-5 sm:px-6">
         <div className="mx-auto flex w-full max-w-[760px] flex-1 flex-col">
           <ThreadPrimitive.Empty>
             <div className="flex flex-1 flex-col items-center justify-center gap-7 py-16 text-center">
               <div>
-                <p className="u-label mb-2">нова розмова</p>
+                <p className="u-label mb-2">{t('thread.new')}</p>
                 {/* Питання друкується саме — порожній екран чату інакше
                     виглядає як екран, що не завантажився. */}
                 <TextType
                   as="h2"
-                  text={['Про що поговоримо?', 'Що зробити?', 'Чим зайнятись?']}
+                  text={[t('thread.prompt1'), t('thread.prompt2'), t('thread.prompt3')]}
                   typingSpeed={55}
                   deletingSpeed={28}
                   pauseDuration={3200}
@@ -89,13 +130,13 @@ export function Thread({
                 />
               </div>
               <div className="flex flex-wrap justify-center gap-2">
-                {SUGGESTIONS.map((text) => (
-                  <ThreadPrimitive.Suggestion key={text} prompt={text} method="replace" autoSend asChild>
+                {SUGGESTIONS.map((key) => (
+                  <ThreadPrimitive.Suggestion key={key} prompt={t(key)} method="replace" autoSend asChild>
                     <button
                       type="button"
                       className="rounded-full border border-line px-3.5 py-1.5 text-[13px] text-ink-2 transition-colors hover:border-accent hover:text-ink"
                     >
-                      {glue(text)}
+                      {glue(t(key))}
                     </button>
                   </ThreadPrimitive.Suggestion>
                 ))}
@@ -109,7 +150,7 @@ export function Thread({
           {compactedFrom > 0 ? (
             <p className="u-label mb-4 flex items-center gap-2 text-ink-3">
               <span className="h-px flex-1 bg-line" />
-              нижче переказ {compactedFrom} реплік
+              {t('thread.compacted', { count: compactedFrom })}
               <span className="h-px flex-1 bg-line" />
             </p>
           ) : null}
@@ -118,13 +159,6 @@ export function Thread({
             components={{ UserMessage, AssistantMessage }}
           />
 
-          {/* Хід відповіді — ПІД стрічкою, а не всередині репліки: він
-              стосується всієї відповіді. Після відповіді блок не зникає, а
-              згортається в «Думав N с»: питання «а що він там робив?»
-              виникає САМЕ після відповіді, коли бігти очима вже нема за чим.
-              Розбирається він на наступному надсиланні. */}
-          {running || answered ? <Thinking steps={steps} running={running} /> : null}
-
           <div className="h-4 shrink-0" />
         </div>
       </ThreadPrimitive.Viewport>
@@ -132,17 +166,19 @@ export function Thread({
       <ThreadPrimitive.ScrollToBottom asChild>
         <Button
           variant="quiet"
-          size="icon-sm"
-          aria-label="Донизу"
+          size="sm"
+          aria-label={t('thread.toLatestAria')}
           // Внизу стрічки примітив вимикає кнопку — ховаємо її, а не лишаємо
           // блідою: кружечок без діла посеред розмови тільки відволікає.
-          className="absolute bottom-24 left-1/2 -translate-x-1/2 rounded-full border border-line shadow-raise transition-opacity disabled:pointer-events-none disabled:opacity-0"
+          className="chat-scroll-latest absolute bottom-[118px] left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-surface/95 shadow-raise backdrop-blur transition-opacity disabled:pointer-events-none disabled:opacity-0"
         >
           <ArrowDown />
+          <span>{t('thread.toLatest')}</span>
         </Button>
       </ThreadPrimitive.ScrollToBottom>
 
       {composer}
     </ThreadPrimitive.Root>
+    </RetryContext>
   );
 }

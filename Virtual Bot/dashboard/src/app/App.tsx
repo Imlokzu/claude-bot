@@ -6,8 +6,14 @@ import { CommandPalette } from '@/components/shell/CommandPalette';
 import { PanelBoundary } from '@/components/shell/PanelBoundary';
 import { Loader } from '@/components/ui/Status';
 import { useAccentColor } from '@/hooks/useAccentRgb';
-import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useMediaQuery, useIsPhone } from '@/hooks/useMediaQuery';
+import { useKeyboardOffset } from '@/hooks/useKeyboardOffset';
+import { useEdgeDrawer } from '@/hooks/useEdgeDrawer';
 import { useRoute } from './useRoute';
+import { WorkspacePreviewDock } from '@/components/shell/WorkspacePreviewDock';
+import { BotUiOverlay } from '@/components/shell/BotUiOverlay';
+import { SECTION_IDS } from './sections';
+import { useSwipeNavigation } from '@/hooks/useSwipeNavigation';
 
 /*
  * Розділи вантажаться ліниво. Це не мікрооптимізація: чат тягне за собою
@@ -28,21 +34,35 @@ const PANELS: Record<string, React.LazyExoticComponent<() => React.ReactElement>
 
 export function App() {
   const [section, navigate] = useRoute();
+  const isPhone = useIsPhone();
+  useKeyboardOffset();
+  useEdgeDrawer(
+    () => window.dispatchEvent(new Event('vbot:open-drawer')),
+    () => window.dispatchEvent(new Event('vbot:close-drawer')),
+  );
   const accent = useAccentColor();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const swipeHandlers = useSwipeNavigation({
+    current: section,
+    onNavigate: navigate,
+    sectionIds: SECTION_IDS,
+  });
 
   const Panel = PANELS[section] ?? PANELS.overview;
 
   const tree = (
-    <div className="flex h-dvh flex-col overflow-hidden">
+    <div className="app-shell flex h-dvh flex-col overflow-hidden">
+      <WorkspacePreviewDock />
+      <BotUiOverlay />
       <Topbar />
 
-      {/* Док плаває над вмістом, тож нижній відступ лишаємо тут, один раз,
-          а не в кожному розділі окремо. */}
-      {/* Місце під док лишає CSS за атрибутом data-dock на <html> — саме
-          тому, що док переносний: інакше довелось би протягувати його бік
-          через усі розділи. */}
-      <main className="u-under-dock flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      {/* Dock offsets follow data-dock; chat keeps its sidebars full-height. */}
+      <main
+        {...swipeHandlers}
+        data-section={section}
+        data-swipe-shell=""
+        className="u-under-dock flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+      >
         <PanelBoundary section={section}>
           <Suspense
             fallback={
@@ -56,7 +76,7 @@ export function App() {
         </PanelBoundary>
       </main>
 
-      <DockNav current={section} onNavigate={navigate} />
+      {isPhone ? null : <DockNav current={section} onNavigate={navigate} />}
       <CommandPalette />
     </div>
   );

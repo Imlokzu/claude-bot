@@ -1,3 +1,4 @@
+import { t } from '@/locales/chat';
 import {
   MarkdownTextPrimitive,
   type CodeHeaderProps,
@@ -11,6 +12,7 @@ import { DataTable, FileDiff, parseUnifiedDiff } from '@/vendor/aicss';
 import { ChatGallery, ChatImage } from './Gallery';
 import { remarkImageGroups } from './remarkImageGroups';
 import { cn } from '@/lib/cn';
+import { copyText } from '@/lib/clipboard';
 
 /*
  * Розмітка відповіді.
@@ -89,8 +91,10 @@ function pictures(children: ReactNode): { src: string; alt: string }[] | null {
 function CodeHeader({ language, code }: CodeHeaderProps) {
   const [copied, setCopied] = useState(false);
 
+  // Same fallback as the reply actions: over plain HTTP there is no
+  // `navigator.clipboard` at all, and this button was silently dead there.
   const copy = () => {
-    void navigator.clipboard.writeText(code).then(() => {
+    void copyText(code).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     });
@@ -98,14 +102,14 @@ function CodeHeader({ language, code }: CodeHeaderProps) {
 
   return (
     <div className="flex items-center justify-between rounded-t-md border border-b-0 border-line bg-surface-3 px-3 py-1.5">
-      <span className="u-label text-[10px]">{language || 'код'}</span>
+      <span className="u-label text-[10px]">{language || t('code.default')}</span>
       <button
         type="button"
         onClick={copy}
         className="flex items-center gap-1.5 rounded-xs px-1.5 py-0.5 text-[11px] text-ink-3 transition-colors hover:text-ink"
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
-        {copied ? 'Скопійовано' : 'Копіювати'}
+        {copied ? t('code.copied') : t('code.copy')}
       </button>
     </div>
   );
@@ -209,7 +213,7 @@ export function Markdown() {
           // її розбере далі звичайна розмітка, ніж показати порожню картку.
           if (head.length === 0 || rows.length === 0) return <>{children}</>;
           return (
-            <div className="my-3 overflow-x-auto">
+            <div data-horizontal-scroll className="markdown-table-scroll my-3 max-w-full pb-1 [scrollbar-width:thin]">
               <DataTable columns={head} rows={rows} />
             </div>
           );

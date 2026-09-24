@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
 import logging
 import os
@@ -53,6 +54,7 @@ import brain_context
 import brains
 import chat_store
 import openclaw_models
+from tool_activity import ActivityLog, detail_for, result_failed
 import coding
 import coding_api
 import console_log
@@ -78,6 +80,7 @@ import openclaw_store
 import profile_store
 import services_manager
 import setup_suggestions
+import tool_access
 import tools
 import projects
 import vision_watcher
@@ -266,6 +269,26 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+
+@app.middleware("http")
+async def rewrite_share_host(request: Request, call_next):
+    """
+    Публічні сайти через тунель приходять на цей самий сервер із Host
+    <slug>.waveio.me (ingress тунеля вказує на корінь, бо шляхи в ingress
+    Cloudflare не вміє). Переписуємо шлях на /site/<slug>/... — далі працює
+    звичайний роутер. Хости самої панелі не чіпаємо.
+    """
+    host = (request.headers.get("host") or "").split(":")[0]
+    if host.endswith(".waveio.me"):
+        slug = host[: -len(".waveio.me")]
+        if slug and slug not in {"www", "waveio"}:
+            path = request.url.path
+            if not path.startswith("/site/"):
+                scope = request.scope
+                scope["path"] = f"/site/{slug}{path if path != '/' else ''}"
+                scope["raw_path"] = scope["path"].encode("utf-8")
+    return await call_next(request)
 
 
 @app.middleware("http")
@@ -616,14 +639,17 @@ async def api_brain_models(request: Request, refresh: bool = Query(default=False
             "available": False,
         }
     models = await openclaw_models.catalog(force=refresh)
-    return {
+    return JSONResponse(
+        content={
         "models": models,
         "selected": openclaw_models.get_selected(),
         "default": openclaw_models.default_model(models),
         "thinking": await openclaw_models.get_thinking(),
         "thinking_levels": list(openclaw_models.THINKING_LEVELS),
         "available": True,
-    }
+        },
+        headers={"Cache-Control": "private, max-age=30, stale-while-revalidate=120"},
+    )
 
 
 @app.post("/api/brain/model")
@@ -1264,6 +1290,14 @@ def _get_or_create_session_id(req: ChatRequest) -> str:
     return uuid.uuid4().hex[:16]
 
 
+def _openclaw_session_key(session_id: str, clerk_user_id: str) -> str:
+    """Derive a stable, non-identifying Gateway key for one chat thread."""
+    digest = hashlib.sha256(f"{clerk_user_id}:{session_id}".encode()).hexdigest()[:32]
+    # Version the namespace so sessions created before transcript ownership
+    # moved to OpenClaw cannot be reused with duplicate history.
+    return f"virtual-bot-v2:{digest}"
+
+
 def _get_history(sid: str, req_history: list[dict[str, str]]) -> list[dict[str, str]]:
     """Історія: спершу явно передана, інакше з in-memory сесії."""
     if req_history:
@@ -1500,10 +1534,18 @@ def _load_chat_images(attachments: list[dict[str, str]]) -> list[dict[str, str]]
 
 # ------------------------------------------------------------------ чат
 
-# Чанк довший за це — ознака, що мозок НЕ стрімив, а віддав відповідь цілком
-# (саме так поводиться шлюз OpenClaw: заміряно — один-єдиний чанк через 14с).
-# Такий шматок розсипаємо на слова, інакше текст падає стіною попри stream:true.
-_LUMP_CHARS = 40
+# A chunk longer than this means the brain did NOT stream: it handed over the
+# whole answer at once. We slice such a lump into words, otherwise the text
+# lands as a wall despite stream:true.
+#
+# The threshold is deliberately far above a normal chunk. Measured 2026-09-20
+# against the OpenClaw gateway: a plain turn streams in 30-58 char pieces
+# ~80ms apart, while a turn that ran a tool arrives as a single 307 char chunk
+# after 21s. At the old value of 40 every genuine piece tripped the check, so
+# real streaming was re-typed as a fake typewriter — and, because the delay
+# below is awaited inside the reader, the stream itself was stalled 20ms per
+# word while doing it.
+_LUMP_CHARS = 280
 # Пауза між словами імітованого набору (та сама, що й у гілці «мозок не стрімить»)
 _TYPE_DELAY_S = 0.02
 
@@ -1545,6 +1587,7 @@ async def api_chat(request: Request, req: ChatRequest):
 
     with _brain_context(sid, clerk_uid):
         history = _get_history(sid, req.history)
+        openclaw_session_key = _openclaw_session_key(sid, clerk_uid)
         # Зберігаємо факти з цього повідомлення ДО відповіді (незалежно від мозку)
         await asyncio.to_thread(_extract_and_save_facts, message)
 
@@ -1555,6 +1598,7 @@ async def api_chat(request: Request, req: ChatRequest):
                         agent_message, history, **_chat_image_kwargs(images),
                         **_chat_reasoning_kwargs(req.reasoning_effort),
                         **_chat_voice_kwargs(req.voice, req.spoken),
+                        session_key=openclaw_session_key,
                     )
                 except Exception as exc:  # noqa: BLE001 — хід треба закрити, помилку віддаємо далі
                     trace_log.end_turn(error=f"{type(exc).__name__}: {exc}")
@@ -1600,6 +1644,7 @@ async def api_chat(request: Request, req: ChatRequest):
         # не успадковуватися автоматично.
         with _brain_context(sid, clerk_uid), trace_log.bind(turn_id):
             event_queue: asyncio.Queue[dict] = asyncio.Queue()
+            activity = ActivityLog()
 
             # Скільки тексту вже віддали СПРАВЖНІМ стрімом токенів (brains шле delta).
             # Якщо мозок стрімить — НЕ ріжемо готову відповідь на слова вдруге.
@@ -1609,6 +1654,8 @@ async def api_chat(request: Request, req: ChatRequest):
             tag_filter = emotions.StreamTagFilter()
 
             async def emit(event: dict) -> None:
+                if event.get("type") in ("tool_start", "tool_progress", "tool_done", "tool_result", "tool_error"):
+                    event = activity.record(event)
                 if event.get("type") == "delta":
                     visible, found = tag_filter.feed(event.get("chunk") or "")
                     if found:
@@ -1640,9 +1687,12 @@ async def api_chat(request: Request, req: ChatRequest):
                 agent_message, history, emit=emit, **_chat_image_kwargs(images),
                 **_chat_reasoning_kwargs(req.reasoning_effort),
                 **_chat_voice_kwargs(req.voice, req.spoken),
+                session_key=openclaw_session_key,
             ))
 
+            saved = False
             try:
+                yield f"event: session\ndata: {json.dumps({'session_id': sid})}\n\n"
                 # Читаємо події від тулзів, поки чат виконується
                 while not chat_task.done() or not event_queue.empty():
                     try:
@@ -1659,8 +1709,10 @@ async def api_chat(request: Request, req: ChatRequest):
                 log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
                 _save_history(
                     sid, history, message, reply,
+                    steps=activity.finish(),
                     attachments=req.attachments, participant_name=participant_name,
                 )
+                saved = True
                 asyncio.create_task(_autoname_chat(sid, message, reply))
 
                 # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом)
@@ -1690,7 +1742,7 @@ async def api_chat(request: Request, req: ChatRequest):
                         await asyncio.sleep(0.02)
 
                 yield f"event: emotion\ndata: {json.dumps({'emotion': final_emotion})}\n\n"
-                yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': final_emotion, 'session_id': sid, 'mode': mode, 'model': brains.get_last_model(), 'tool_results': tool_results})}\n\n"
+                yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': final_emotion, 'session_id': sid, 'mode': mode, 'model': brains.get_last_model(), 'tool_results': tool_results, 'steps': activity.finish()})}\n\n"
 
                 # Інтеграційний шар після стрімінгу
                 try:
@@ -1713,7 +1765,17 @@ async def api_chat(request: Request, req: ChatRequest):
                     events.publish_emotion("idle")
                 except Exception:  # noqa: BLE001
                     pass
-                yield f"event: error\ndata: {json.dumps({'error': str(exc)})}\n\n"
+                yield f"event: error\ndata: {json.dumps({'error': str(exc), 'steps': activity.finish()})}\n\n"
+            finally:
+                # Disconnecting must not leave an orphaned agent or subscriber.
+                if not chat_task.done():
+                    chat_task.cancel()
+                if not saved:
+                    _save_history(sid, history, message, streamed["text"],
+                                  steps=activity.finish(), attachments=req.attachments,
+                                  participant_name=participant_name)
+                    trace_log.end_turn(error="interrupted")
+                await asyncio.gather(chat_task, return_exceptions=True)
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")
 
@@ -2253,13 +2315,13 @@ async def api_processes() -> dict:
 
 
 @app.get("/api/events")
-async def api_events() -> StreamingResponse:
+async def api_events(request: Request) -> StreamingResponse:
     """
     SSE-стрічка живих подій бота (нативний EventSource, без CDN):
     emotion / say / vision за спільним контрактом; keep-alive ~15 с.
     """
     return _SSEResponse(
-        events.sse_stream(),
+        events.sse_stream(audience=await _require_user(request)),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache"},
     )
@@ -2285,12 +2347,8 @@ _UI_TOOL_NAMES = {"ask_question", "todo_list", "show_choice"}
 
 
 def _tool_detail(args: dict) -> str:
-    """Найінформативніший аргумент виклику — те, що показуємо в панелі."""
-    for key in ("query", "city", "path", "base"):
-        value = args.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
+    """Share the same redaction as the per-response activity stream."""
+    return detail_for(args)[:160]
 
 
 @app.post("/api/tools/call")
@@ -2319,17 +2377,50 @@ async def api_tools_call(request: Request, req: ToolCallRequest) -> dict:
         with _brain_context(req.session_id, clerk_uid):
             result = await tools.execute_tool(req.name, req.args)
     except Exception as exc:  # noqa: BLE001 — крок консолі, помилку віддаємо далі
+        if show_generic:
+            events.publish_tool(req.name, detail, "fail")
         trace_log.step("tool", req.name, "fail", f"{type(exc).__name__}: {exc}",
                        (time.perf_counter() - tool_started) * 1000)
         raise
-    trace_log.step("tool", req.name, "ok", detail, (time.perf_counter() - tool_started) * 1000)
+    failed = result_failed(result)
+    trace_log.step("tool", req.name, "fail" if failed else "ok", detail, (time.perf_counter() - tool_started) * 1000)
 
     if show_generic:
+        # A tool that answered "error" did not do its job, and the panel has to
+        # say so: otherwise a reply built on a failed lookup looks as solid as
+        # one built on a real answer.
         try:
-            events.publish_tool(req.name, detail, "done")
+            events.publish_tool(req.name, detail, "fail" if failed else "done")
         except Exception:  # noqa: BLE001
             log.exception("Не вдалося опублікувати подію завершення тулзу")
     return {"tool": req.name, "args": req.args, "result": result}
+
+
+class ToolAccessRequest(BaseModel):
+    qualified: str = Field(min_length=1, max_length=120)
+    enabled: bool
+
+
+@app.get("/api/tools/catalog")
+async def api_tools_catalog(request: Request) -> dict:
+    """Які тули оголошені мостами й які з них шлюз пропускає до агента.
+
+    Оголошення тула мостом ще не означає, що агент його бачить: OpenClaw
+    тримає профіль `minimal` і власний білий список. Панель показує обидва
+    боки, бо інакше вимкнений тул виглядає як зламаний.
+    """
+    await _require_user(request)
+    return await asyncio.to_thread(tool_access.catalog)
+
+
+@app.post("/api/tools/access")
+async def api_tools_access(request: Request, req: ToolAccessRequest) -> dict:
+    """Дозволити або заборонити агенту один тул."""
+    await _require_user(request)
+    result = await asyncio.to_thread(tool_access.set_enabled, req.qualified, req.enabled)
+    if result.get("error"):
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 
 # ------------------------------------------------------------------ зір
@@ -2502,6 +2593,15 @@ _WORKSPACE_TOOL_NAMES = {
 }
 
 
+def _workspace_tool_failed(tool: str, detail: str, started: float) -> None:
+    """Close a workspace tool step as failed, so the line does not hang active."""
+    try:
+        events.publish_tool(tool, detail, "fail")
+    except Exception:  # noqa: BLE001 — indication must not break the operation
+        log.exception("Failed to publish workspace tool failure")
+    trace_log.step("tool", tool, "fail", detail, (time.perf_counter() - started) * 1000)
+
+
 def _workspace_call(session_id: str, fn, *args, **kwargs):
     """
     Спільна обгортка: активна сесія + переклад помилок у HTTP-коди.
@@ -2527,10 +2627,13 @@ def _workspace_call(session_id: str, fn, *args, **kwargs):
             trace_log.step("tool", tool, "ok", detail, (time.perf_counter() - started) * 1000)
             return result
     except FileNotFoundError as exc:
+        _workspace_tool_failed(tool, detail, started)
         raise HTTPException(status_code=404, detail=str(exc))
     except (ValueError, FileExistsError, NotADirectoryError, IsADirectoryError) as exc:
+        _workspace_tool_failed(tool, detail, started)
         raise HTTPException(status_code=400, detail=str(exc))
     except OSError as exc:
+        _workspace_tool_failed(tool, detail, started)
         trace_log.step("tool", tool, "fail", f"{type(exc).__name__}: {exc}",
                        (time.perf_counter() - started) * 1000)
         raise HTTPException(status_code=500, detail=f"Помилка файлової системи: {type(exc).__name__}")
@@ -2899,6 +3002,41 @@ _PREVIEW_TYPES = {
 }
 
 
+# ---------------------------------------------------------------- сайти через тунель
+
+class ShareRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=300)
+    slug: str = Field(min_length=1, max_length=63)
+
+
+class UnshareRequest(BaseModel):
+    slug: str = Field(min_length=1, max_length=63)
+
+
+@app.post("/api/share/site")
+async def api_share_site(request: Request, req: ShareRequest) -> dict:
+    """Публікує теку/файл із workspace за https://<slug>.waveio.me."""
+    await _require_user(request)
+    import site_share
+    return await site_share.share(req.path, req.slug)
+
+
+@app.post("/api/share/unshare")
+async def api_unshare_site(request: Request, req: UnshareRequest) -> dict:
+    """Знімає публікацію сайту."""
+    await _require_user(request)
+    import site_share
+    return await site_share.unshare(req.slug)
+
+
+@app.get("/api/share/list")
+async def api_share_list(request: Request) -> dict:
+    """Усі активні публікації."""
+    await _require_user(request)
+    import site_share
+    return site_share.list_shares()
+
+
 @app.get("/preview/{file_path:path}", include_in_schema=False)
 def serve_workspace_preview(file_path: str, session_id: str = Query(default="", max_length=64)):
     """
@@ -3065,6 +3203,37 @@ def serve_upload(file_path: str):
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Файл не знайдено")
     return FileResponse(target)
+
+
+# ---------------------------------------------------- публічні сайти (тунель)
+# ВАЖЛИВО: до catch-all статики й після /api/* — інакше перекриє панель.
+
+@app.get("/site/{slug}", include_in_schema=False)
+@app.get("/site/{slug}/{file_path:path}", include_in_schema=False)
+def serve_shared_site(slug: str, file_path: str = ""):
+    """
+    Публічна роздача пошареного сайту. https://<slug>.waveio.me/... сюди
+    потрапляє через ingress тунеля (origin — цей самий сервер). Slug → шлях
+    дивиться site_share; шлях додатково перевіряється workspace._resolve,
+    тож вийти за межі пошареної теки неможливо.
+    """
+    import site_share
+    shares = site_share.list_shares()["shares"]
+    base = next((item["path"] for item in shares if item["slug"] == slug), None)
+    if base is None:
+        raise HTTPException(status_code=404, detail="Немає такої публікації")
+    rel = f"{base}/{file_path}" if file_path else base
+    try:
+        target = workspace._resolve(rel, must_exist=True)
+    except (ValueError, FileNotFoundError):
+        raise HTTPException(status_code=404, detail="Немає такого файлу")
+    if target.is_dir():
+        index = target / "index.html"
+        if not index.is_file():
+            raise HTTPException(status_code=404, detail="У теці немає index.html")
+        target = index
+    media = _PREVIEW_TYPES.get(target.suffix.lower(), "application/octet-stream")
+    return FileResponse(target, media_type=media)
 
 
 # ------------------------------------------------------------------ статика

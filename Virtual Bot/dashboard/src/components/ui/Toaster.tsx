@@ -66,7 +66,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     <ToastContext.Provider value={api}>
       {children}
       <div
-        className="u-safe-b pointer-events-none fixed inset-x-0 bottom-0 flex flex-col items-center gap-2 p-4 sm:items-end"
+        className="toast-stack u-safe-b pointer-events-none fixed inset-x-0 bottom-0 flex flex-col items-center gap-2 p-4 sm:items-end"
         style={{ zIndex: 'var(--z-toast)' }}
         role="status"
         aria-live="polite"

@@ -10,7 +10,7 @@ from typing import Awaitable, Callable
 from tools.currency import get_common_rates, get_rate
 from tools.facts import get_fact
 from tools.images import search_images
-from tools import music_tools, screen_tools, ui_tools, video_tools, workspace_tools
+from tools import email_tools, music_tools, screen_tools, share_tools, ui_tools, video_tools, workspace_tools
 from tools.search import search_web
 from tools.weather import get_weather
 import memory
@@ -141,6 +141,8 @@ _TOOL_SCHEMAS: list[dict] = [
     *music_tools.SCHEMAS,
     # Відео з картинкою в застосунку youtube: показати, керувати, адблок
     *video_tools.SCHEMAS,
+    # Пошта агента (@ag.waveio.me): читання скриньки, очікування OTP кодів
+    *email_tools.SCHEMAS,
 ]
 
 async def _currency_handler(base: str, target: str = "UAH") -> dict:
@@ -198,6 +200,57 @@ def _merge_memory_notes(*groups: list[dict]) -> list[dict]:
     return merged
 
 
+_SHARE_SCHEMAS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "share_site",
+            "description": (
+                "Опублікувати сайт із робочої теки в інтернеті через Cloudflare Tunnel. "
+                "Повертає публічне посилання виду https://<slug>.waveio.me — його можна "
+                "відкрити з будь-якого пристрою. Використовуй, коли користувач просить "
+                "показати чи поділитись сайтом, який ти зробив."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Шлях у workspace (тека з index.html або сам файл), напр. 'games/mario'.",
+                    },
+                    "slug": {
+                        "type": "string",
+                        "description": "Коротке ім'я для посилання (a-z, 0-9, дефіс), напр. 'mario'.",
+                    },
+                },
+                "required": ["path", "slug"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "unshare_site",
+            "description": "Зняти сайт із публікації (посилання перестає працювати).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "slug": {"type": "string", "description": "Slug, яким сайт публікували."},
+                },
+                "required": ["slug"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_shared_sites",
+            "description": "Показати всі сайти, що зараз опубліковані через тунель.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
+]
+
 _HANDLERS: dict[str, ToolHandler] = {
     "weather": get_weather,
     "currency": _currency_handler,
@@ -213,16 +266,18 @@ _HANDLERS: dict[str, ToolHandler] = {
     **screen_tools.HANDLERS,
     **music_tools.HANDLERS,
     **video_tools.HANDLERS,
+    **email_tools.HANDLERS,
+    **share_tools.HANDLERS,
 }
 
 
 def list_tools() -> list[dict]:
     """Повертає JSON-схеми тулзів для LLM."""
-    return list(_TOOL_SCHEMAS)
+    return [*_TOOL_SCHEMAS, *_SHARE_SCHEMAS]
 
 
 def _tool_names() -> list[str]:
-    return [t["function"]["name"] for t in _TOOL_SCHEMAS]
+    return [t["function"]["name"] for t in [*_TOOL_SCHEMAS, *_SHARE_SCHEMAS]]
 
 
 def tool_names() -> frozenset[str]:

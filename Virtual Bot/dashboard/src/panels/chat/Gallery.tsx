@@ -11,6 +11,8 @@ import {
 import { AccordionGallery, AnimatedContent, GlareHover } from '@/vendor/reactbits';
 import { useAccentColor, useCssVar } from '@/hooks/useAccentRgb';
 import { ImageViewer, type GalleryImage } from './ImageViewer';
+import { t } from '@/locales/workspace';
+import { t as chatT } from '@/locales/chat';
 
 /*
  * Картинки у відповіді бота.
@@ -104,9 +106,8 @@ function useGroup(images: GalleryImage[]) {
   const api = useContext(ScopeContext);
   const id = useId();
   const node = useRef<HTMLDivElement>(null);
-  // Ключ за адресами: під час стрімінгу масив новий на кожен рендер, а
-  // насправді змінюється він лише коли модель дописала ще одну картинку.
-  const key = images.map((image) => image.src).join('|');
+  // Streaming can update a caption without changing the image URL.
+  const key = JSON.stringify(images);
 
   useEffect(() => {
     api?.register(id, { node: node.current, images });
@@ -147,7 +148,7 @@ export function ChatImage({ src, alt }: GalleryImage) {
           <button
             type="button"
             onClick={() => open(0)}
-            aria-label={alt ? `Відкрити: ${alt}` : 'Відкрити картинку'}
+            aria-label={alt ? chatT('image.openNamed', { alt }) : chatT('image.open')}
             className="block size-full cursor-zoom-in"
           >
             <img src={src} alt={alt} loading="lazy" draggable={false} />
@@ -191,18 +192,9 @@ export function ChatGallery({ images }: { images: GalleryImage[] }) {
           onOpen={open}
         />
         <p className="mt-1.5 text-[12px] text-ink-3">
-          {images.length} {plural(images.length)} · натисніть, щоб відкрити
+          {t('gallery.hint', { count: images.length })}
         </p>
       </div>
     </AnimatedContent>
   );
-}
-
-function plural(count: number): string {
-  const tail = count % 10;
-  const teen = count % 100;
-  if (teen >= 11 && teen <= 14) return 'картинок';
-  if (tail === 1) return 'картинка';
-  if (tail >= 2 && tail <= 4) return 'картинки';
-  return 'картинок';
 }

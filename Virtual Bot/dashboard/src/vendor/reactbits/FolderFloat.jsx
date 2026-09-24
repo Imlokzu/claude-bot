@@ -321,6 +321,7 @@ export default function FolderFloat({
   return (
     <div
       className={`folder-float${className ? ` ${className}` : ''}`}
+      data-swipe-ignore=""
       data-open={open ? '' : undefined}
       data-live={live ? '' : undefined}
       data-physics={physics ? '' : undefined}

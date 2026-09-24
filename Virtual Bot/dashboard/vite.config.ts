@@ -10,7 +10,7 @@ const BACKEND = process.env.VBOT_URL || 'http://127.0.0.1:8100';
 
 // Шляхи, які належать бекенду, а не фронтенду: у деві їх треба проксіювати,
 // інакше панель у `pnpm dev` бачить 404 замість API, стріму й прев'ю файлів.
-const BACKEND_PATHS = ['/api', '/preview', '/file', '/uploads', '/store-apps', '/docs', '/openapi.json'];
+const BACKEND_PATHS = ['/api', '/preview', '/file', '/uploads', '/store-apps', '/screen', '/static/screen', '/static/shared', '/docs', '/openapi.json'];
 
 export default defineConfig({
   base: '/static/dash/',

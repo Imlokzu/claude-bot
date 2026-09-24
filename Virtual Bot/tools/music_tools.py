@@ -17,9 +17,17 @@ import music
 
 log = logging.getLogger("virtual_bot.tools.music")
 
-# Скільки тексту транскрайбу віддаємо мозку: більше — і промпт роздується
-# понад бюджет маленьких моделей
-TRANSCRIPT_CHARS = 4000
+# Скільки тексту транскрайбу віддаємо мозку ЗА ОДИН раз. Це не стеля на все
+# відео, а розмір однієї частини: решта доступна через part=2, 3…
+#
+# Число підбиралось під ДВА обмеження одразу, і друге неочевидне. Перше —
+# вікно моделі: 4000 символів лишились від часів маленьких моделей, у нинішніх
+# вікно на два порядки більше, і така ощадливість означала, що з 82 хвилин
+# мозок бачив перші п'ять. Друге — стеля на весь хід (chat.openclaw_wall_s,
+# зараз 120 с): кожна частина це окреме звернення до моделі, і шість звернень
+# поспіль у неї не вкладаються — хід обривався ReadTimeout ще до відповіді.
+# Тому частина велика: типове відео читається за один раз, довге — за два.
+TRANSCRIPT_CHARS = 40000
 
 
 async def play_music(query: str) -> dict:
@@ -53,7 +61,7 @@ async def stop_music() -> dict:
     return {"ok": True, "note": "Музику зупинено."}
 
 
-async def listen_to_video(url: str, lang: str = "uk") -> dict:
+async def listen_to_video(url: str, lang: str = "uk", part: int = 1) -> dict:
     """Транскрайб YouTube-відео текстом — щоб бот знав, про що воно."""
     video_id = music.parse_video_id(url)
     if not video_id:
@@ -70,23 +78,46 @@ async def listen_to_video(url: str, lang: str = "uk") -> dict:
     if not segments:
         return {"error": "Субтитри порожні."}
 
-    text = music.transcript_to_text(segments, max_chars=TRANSCRIPT_CHARS)
+    chunks = music.transcript_parts(segments, part_chars=TRANSCRIPT_CHARS)
+    if not chunks:
+        return {"error": "Субтитри порожні."}
     total = segments[-1]["start"] if segments else 0
 
-    # Заодно включаємо відео на екрані: користувач слухає, бот читає
-    events.publish_music({"provider": "youtube", "id": video_id})
+    # Частина поза межами — не помилка, а підказка: краще сказати мозку,
+    # скільки їх насправді, ніж віддати порожнечу.
+    index = max(1, min(int(part or 1), len(chunks)))
+    chunk = chunks[index - 1]
+    more = index < len(chunks)
+
+    # Заодно включаємо відео на екрані лише на першій частині: повторний
+    # publish перезапускав би відтворення з початку щоразу, коли мозок
+    # просто читає наступний шматок.
+    if index == 1:
+        events.publish_music({"provider": "youtube", "id": video_id})
+
+    note = (
+        f"Частина {index} з {len(chunks)} "
+        f"(хвилини {chunk['start_sec'] // 60}–{chunk['end_sec'] // 60}). "
+        "Обговорюй ЗМІСТ за текстом, а не вигадуй."
+    )
+    if more:
+        note += (
+            f" Це ще НЕ все відео. Щоб прочитати далі, виклич listen_to_video "
+            f"ще раз із part={index + 1}."
+        )
+    else:
+        note += " Це остання частина."
 
     return {
         "ok": True,
         "video_id": video_id,
         "duration_sec": int(total),
         "segments": len(segments),
-        "note": (
-            "Відео грає на екрані пристрою. Нижче — текст транскрайбу (можливо, "
-            "обрізаний). Обговорюй ЗМІСТ за ним, а не вигадуй. "
-            "Якщо текст обрізаний і не вистачає — скажи про це."
-        ),
-        "transcript": text,
+        "part": index,
+        "parts": len(chunks),
+        "has_more": more,
+        "note": note,
+        "transcript": chunk["text"],
     }
 
 
@@ -140,6 +171,14 @@ SCHEMAS: list[dict] = [
                     "lang": {
                         "type": "string",
                         "description": "Бажана мова субтитрів (uk, en…). Типово uk.",
+                    },
+                    "part": {
+                        "type": "integer",
+                        "description": (
+                            "Яку частину транскрайбу читати. Довге відео не влазить "
+                            "в один запит: почни з 1, а якщо у відповіді has_more=true "
+                            "і треба знати більше — виклич ще раз із part=2, 3 і далі."
+                        ),
                     },
                 },
                 "required": ["url"],

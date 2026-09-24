@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { FolderFloat } from '@/vendor/reactbits';
 import { useCssVar } from '@/hooks/useAccentRgb';
+import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { get } from '@/lib/api';
 
 /*
@@ -22,6 +23,7 @@ export function ProjectsTile() {
   const paper = useCssVar('--c-surface', '#fffdf8');
   const ink = useCssVar('--c-text', '#231e19');
   const ink2 = useCssVar('--c-text-2', '#6a6056');
+  const finePointer = useMediaQuery('(hover: hover) and (pointer: fine)');
 
   const projects = useQuery({
     queryKey: ['projects'],
@@ -43,7 +45,7 @@ export function ProjectsTile() {
           items={items}
           label="Проєкти"
           sublabel={`${list.length} ${list.length === 1 ? 'проєкт' : 'проєкти'}`}
-          trigger="hover"
+          trigger={finePointer ? 'hover' : 'click'}
           width={140}
           height={96}
           spread={118}

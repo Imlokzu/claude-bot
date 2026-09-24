@@ -160,7 +160,213 @@ TOOLS = [
     },
 ]
 
+TOOLS.append(
+    {
+        "name": "share_site",
+        "description": (
+            "Опублікувати сайт із робочої теки в інтернеті через Cloudflare Tunnel. "
+            "Повертає публічне посилання https://<slug>.waveio.me. Використовуй, коли "
+            "користувач просить показати чи поділитись сайтом, який ти зробив."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Шлях у workspace, напр. 'games/mario'."},
+                "slug": {"type": "string", "description": "Коротке ім'я для посилання (a-z, 0-9, дефіс)."},
+            },
+            "required": ["path", "slug"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "unshare_site",
+        "description": "Зняти сайт із публікації — посилання перестає працювати.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"slug": {"type": "string", "description": "Slug публікації."}},
+            "required": ["slug"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "list_shared_sites",
+        "description": "Показати всі сайти, що зараз опубліковані через тунель.",
+        "inputSchema": {"type": "object", "properties": {}},
+    }
+)
+
+# Media. These live in tools/music_tools.py and the local registry already had
+# them, but the bridge never declared them — so through OpenClaw the bot
+# honestly answered "I have no video tool" while the capability sat unused.
+# Descriptions are kept in sync with tools/music_tools.py SCHEMAS.
+TOOLS.append(
+    {
+        "name": "listen_to_video",
+        "description": (
+            "ПРОЧИТАТИ зміст YouTube-відео через субтитри (безкоштовний "
+            "транскрайб) і ввімкнути його звук на екрані пристрою. "
+            "Використовуй, коли користувач кидає посилання на відео або "
+            "просить «подивись/послухай це відео»."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Посилання на відео: https://youtube.com/watch?v=… або https://youtu.be/…",
+                },
+                "lang": {
+                    "type": "string",
+                    "description": "Бажана мова субтитрів (uk, en…). Типово uk.",
+                },
+                "part": {
+                    "type": "integer",
+                    "description": (
+                        "Яку частину транскрайбу читати. Довге відео не влазить в "
+                        "один запит: почни з 1, а якщо у відповіді has_more=true і "
+                        "треба знати більше — виклич ще раз із part=2, 3 і далі."
+                    ),
+                },
+            },
+            "required": ["url"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "play_music",
+        "description": (
+            "Увімкнути музику на екрані пристрою: шукає трек на YouTube за "
+            "назвою або виконавцем і починає відтворення."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Назва пісні або виконавець."},
+            },
+            "required": ["query"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "stop_music",
+        "description": "Зупинити відтворення на екрані пристрою.",
+        "inputSchema": {"type": "object", "properties": {}},
+    }
+)
+
+# Відео з картинкою на екрані пристрою (tools/video_tools.py). Окреме від
+# listen_to_video: те читає субтитри, а це показує ролик. Бот справедливо
+# скаржився, що «інструмент відтворення недоступний» — міст його не оголошував.
+TOOLS.append(
+    {
+        "name": "play_video",
+        "description": (
+            "Показати ВІДЕО з YouTube на екрані пристрою — з КАРТИНКОЮ, на весь "
+            "екран, з автоматичним пропуском вклеєної реклами. Використовуй, коли "
+            "просять «покажи відео», «увімкни ролик», «постав на екран …», "
+            "«знайди відео про …» або кидають посилання й хочуть ДИВИТИСЬ. "
+            "Якщо просять саме МУЗИКУ/звук у фоні — бери play_music."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Що шукати, напр. «огляд Raspberry Pi 5» або назва кліпу.",
+                },
+                "url": {
+                    "type": "string",
+                    "description": "Пряме посилання, якщо дали його: watch?v=… або youtu.be/…",
+                },
+                "start": {
+                    "type": "string",
+                    "description": "З якої секунди/хвилини почати, напр. «2:30» або «150». Не обовʼязково.",
+                },
+            },
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "video_control",
+        "description": (
+            "Керувати відео, яке ВЖЕ грає на екрані: пауза, продовжити, зупинити, "
+            "перемотати вперед/назад, стрибнути на час, у початок, у кінець, "
+            "змінити швидкість, приглушити. Використовуй на «стоп», «пауза», "
+            "«перемотай вперед», «на 5 хвилині», «в кінець», «швидше»."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["pause", "resume", "stop", "forward", "back", "seek",
+                             "restart", "end", "speed", "mute", "unmute"],
+                    "description": (
+                        "pause — пауза; resume — далі; stop — зупинити й закрити; "
+                        "forward/back — перемотати на seconds; seek — на position; "
+                        "restart — з початку; end — у кінець; speed — швидкість rate; "
+                        "mute/unmute — звук."
+                    ),
+                },
+                "seconds": {
+                    "type": "string",
+                    "description": "На скільки перемотати для forward/back. Типово 10 секунд.",
+                },
+                "position": {
+                    "type": "string",
+                    "description": "Куди стрибнути для seek: «2:30», «1:05:00» або секунди.",
+                },
+                "rate": {
+                    "type": "string",
+                    "description": "Швидкість для speed: 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2.",
+                },
+            },
+            "required": ["action"],
+        },
+    }
+)
+TOOLS.append(
+    {
+        "name": "video_status",
+        "description": (
+            "Дізнатися, що зараз грає на екрані: назва, позиція, скільки лишилось, "
+            "швидкість, скільки реклами пропущено. Викликай ПЕРЕД тим, як казати "
+            "щось про поточне відео — інакше вигадаєш."
+        ),
+        "inputSchema": {"type": "object", "properties": {}},
+    }
+)
+TOOLS.append(
+    {
+        "name": "video_settings",
+        "description": (
+            "Показати або змінити налаштування відео: пропуск вклеєної реклами "
+            "(SponsorBlock), які категорії пропускати, чи тягнути прев'ю через "
+            "бота замість серверів Google. Без аргументів — просто показує стан."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "skip_sponsors": {"type": "boolean", "description": "Пропускати вклеєну рекламу."},
+                "categories": {"type": "string", "description": "Категорії через кому."},
+                "proxy_thumbs": {"type": "boolean", "description": "Тягнути прев'ю через бота."},
+            },
+        },
+    }
+)
+
 _TOOL_NAMES = {t["name"] for t in TOOLS}
+
+
+# Fetching subtitles for a long video is a download, not a lookup: the default
+# 30s budget cut it off and the agent saw a timeout instead of the transcript.
+SLOW_TOOLS = {"listen_to_video": 120, "play_music": 60}
+DEFAULT_TIMEOUT_S = 30
 
 
 def _call_panel(name: str, args: dict) -> dict:
@@ -173,7 +379,7 @@ def _call_panel(name: str, args: dict) -> dict:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=SLOW_TOOLS.get(name, DEFAULT_TIMEOUT_S)) as resp:
             return json.loads(resp.read().decode("utf-8")).get("result", {})
     except urllib.error.HTTPError as exc:
         try:

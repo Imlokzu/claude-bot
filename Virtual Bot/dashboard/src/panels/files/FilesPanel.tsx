@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronRight, File, Folder, FolderOpen, RotateCw, Save } from 'lucide-react';
+import { ChevronRight, Code, ExternalLink, Eye, File, Folder, FolderOpen, RotateCw, Save } from 'lucide-react';
 import { Panel, PanelHead } from '@/components/ui/Panel';
 import { Button } from '@/components/ui/Button';
 import { Empty, SkeletonList } from '@/components/ui/Feedback';
@@ -10,6 +10,7 @@ import { get, post } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { glue } from '@/lib/glue';
 import { useIsDesk } from '@/hooks/useMediaQuery';
+import { useRouteParam } from '@/app/useRoute';
 
 /*
  * Робоча тека бота.
@@ -35,6 +36,12 @@ interface FileData {
   content: string;
 }
 
+const HTML_EXTENSIONS = new Set(['html', 'htm']);
+
+function previewUrl(path: string): string {
+  return `/preview/${path.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
@@ -45,11 +52,22 @@ export default function FilesPanel() {
   const isDesk = useIsDesk();
   const toast = useToast();
   const client = useQueryClient();
+  const requestedPath = useRouteParam('path');
 
   const [dir, setDir] = useState('');
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [dirty, setDirty] = useState(false);
+  /* HTML-файли мають два обличчя: код і відрендерена сторінка. Типовий
+     режим — перегляд: саме заради нього бот ці файли й пише. */
+  const [showPreview, setShowPreview] = useState(true);
+
+  useEffect(() => {
+    if (!requestedPath) return;
+    setOpenPath(requestedPath);
+    const slash = requestedPath.lastIndexOf('/');
+    setDir(slash > 0 ? requestedPath.slice(0, slash) : '');
+  }, [requestedPath]);
 
   const listing = useQuery({
     queryKey: ['workspace', dir],
@@ -166,6 +184,8 @@ export default function FilesPanel() {
     </div>
   );
 
+  const isHtml = openPath ? HTML_EXTENSIONS.has(openPath.split('.').pop()?.toLowerCase() ?? '') : false;
+
   const editor = (
     <Panel flush className="min-h-0 flex-1 overflow-hidden">
       {!openPath ? (
@@ -193,6 +213,29 @@ export default function FilesPanel() {
               hint={dirty ? 'незбережено' : humanSize(file.data?.size ?? 0)}
               actions={
                 <>
+                  {isHtml ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={showPreview ? 'Показати код' : 'Показати сторінку'}
+                        onClick={() => setShowPreview((v) => !v)}
+                      >
+                        {showPreview ? <Code /> : <Eye />}
+                      </Button>
+                      {/* Відкриття у новій вкладці йде через наш /preview/ —
+                          так файл працює і з телефона, і через тунель, бо
+                          адреса лишається на цьому ж домені. */}
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Відкрити в новій вкладці"
+                        onClick={() => window.open(previewUrl(openPath!), '_blank', 'noopener')}
+                      >
+                        <ExternalLink />
+                      </Button>
+                    </>
+                  ) : null}
                   <Button
                     variant="ghost"
                     size="icon-sm"
@@ -209,16 +252,27 @@ export default function FilesPanel() {
               }
             />
           </div>
-          <div className="min-h-0 flex-1 overflow-auto">
-            <CodeEditor
-              path={openPath}
-              value={draft}
-              onChange={(next) => {
-                setDraft(next);
-                setDirty(true);
-              }}
-            />
-          </div>
+          {isHtml && showPreview ? (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <iframe
+                title={openPath.split('/').pop()}
+                src={previewUrl(openPath)}
+                sandbox="allow-scripts"
+                className="size-full border-0 bg-white"
+              />
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-auto">
+              <CodeEditor
+                path={openPath}
+                value={draft}
+                onChange={(next) => {
+                  setDraft(next);
+                  setDirty(true);
+                }}
+              />
+            </div>
+          )}
         </>
       )}
     </Panel>

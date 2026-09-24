@@ -35,6 +35,11 @@ _QUEUE_MAX = 200
 # Черги активних підписників (по одній на SSE-клієнта)
 _subscribers: set[asyncio.Queue] = set()
 
+# Останній todo-чекліст на користувача (clerk uid; "" — локальний режим).
+# Клієнт, що підключився після події, одразу отримує актуальний список —
+# інакше перезавантажена вкладка втрачала б чекліст, який бот уже показав.
+_latest_todo: dict[str, dict] = {}
+
 # Сентинел «потік завершено»: close_all() кладе його в кожну чергу,
 # генератор sse_stream, побачивши його, негайно завершується.
 _CLOSE = object()
@@ -68,14 +73,14 @@ def close_all() -> None:
             pass
 
 
-def publish(payload: dict) -> None:
+def publish(payload: dict, *, audience: str | None = None) -> None:
     """
     Розсилає подію всім підписникам. Ніколи не кидає виняток і не блокує:
     переповнену чергу конкретного клієнта просто пропускаємо.
     """
     for queue in list(_subscribers):
         try:
-            queue.put_nowait(payload)
+            queue.put_nowait((payload, audience))
         except asyncio.QueueFull:
             log.debug("Черга SSE-клієнта переповнена — подію пропущено")
         except Exception:  # noqa: BLE001 — шина не має права валити відправника
@@ -112,17 +117,24 @@ def publish_reply(text: str, emotion: str) -> None:
     publish({"type": "reply", "text": str(text)[:16000], "emotion": emotion})
 
 
+_TOOL_STATES = ("start", "done", "fail")
+
+
 def publish_tool(tool: str, detail: str = "", state: str = "start") -> None:
     """
-    Бот скористався інструментом. Потрібно, коли тули виконує НЕ панель, а
-    зовнішній мозок (OpenClaw через tools_mcp) — інакше в панелі не було б
-    видно ні що він шукає, ні що взагалі щось робить.
+    The bot used a tool. Needed when tools are executed NOT by the panel but
+    by the external brain (OpenClaw through tools_mcp): without this the panel
+    would show neither what it is looking for nor that it is doing anything.
+
+    "fail" is a state of its own, not a flavour of "done". A tool that raised
+    and a tool that answered look identical in the chat otherwise, and the
+    reader is left believing an answer rests on data that never arrived.
     """
     publish({
         "type": "tool",
         "tool": str(tool)[:60],
         "detail": str(detail)[:160],
-        "state": "done" if state == "done" else "start",
+        "state": state if state in _TOOL_STATES else "start",
     })
 
 
@@ -161,14 +173,19 @@ def publish_video(command: dict) -> None:
     publish({"type": "video", **dict(command or {})})
 
 
-def publish_ui(kind: str, data: dict) -> None:
+def publish_ui(kind: str, data: dict, audience: str | None = None) -> None:
     """
     Елемент інтерфейсу від бота: питання з кнопками, чекліст, картки вибору.
 
     Панель домальовує його прямо у відповідь — щоб бот міг ПОКАЗАТИ, а не
     описувати текстом «оберіть варіант 1 або 2».
     """
-    publish({"type": "ui", "kind": str(kind)[:20], "data": data or {}})
+    kind = str(kind)[:20]
+    if kind == "todo":
+        # Чекліст — стан, а не мить: запам'ятовуємо останній, щоб новий
+        # клієнт (перезавантаження, другий пристрій) бачив актуальний список.
+        _latest_todo[audience or ""] = data or {}
+    publish({"type": "ui", "kind": kind, "data": data or {}}, audience=audience)
 
 
 def publish_preview(path: str) -> None:
@@ -210,7 +227,7 @@ def subscribers_count() -> int:
     return len(_subscribers)
 
 
-async def sse_stream() -> AsyncIterator[str]:
+async def sse_stream(audience: str | None = None) -> AsyncIterator[str]:
     """
     Генератор тіла text/event-stream для одного клієнта.
 
@@ -227,6 +244,11 @@ async def sse_stream() -> AsyncIterator[str]:
     try:
         # Одразу шлемо коментар, щоб проксі/браузер відкрили потік
         yield ": ping\n\n"
+        # Останній чекліст цього користувача — одразу після підключення,
+        # щоб панель не чекала наступної дії бота.
+        todo = _latest_todo.get(audience or "")
+        if todo:
+            yield f"data: {json.dumps({'type': 'ui', 'kind': 'todo', 'data': todo}, ensure_ascii=False)}\n\n"
         while not _shutting_down:
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_S)
@@ -235,6 +257,10 @@ async def sse_stream() -> AsyncIterator[str]:
                 continue
             if payload is _CLOSE or _shutting_down:
                 break
+            if isinstance(payload, tuple):
+                payload, event_audience = payload
+                if event_audience and event_audience != audience:
+                    continue
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
     finally:
         _subscribers.discard(queue)

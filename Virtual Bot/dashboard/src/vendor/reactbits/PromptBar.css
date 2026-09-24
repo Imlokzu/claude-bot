@@ -40,6 +40,30 @@
   transform-origin: bottom left;
 }
 
+/*
+ * На тачі меню прибите до НИЗУ ВИДИМОГО в'юпорта, а не до поля вводу.
+ * Поле під час відкриття меню стоїть просто над клавіатурою, тож меню,
+ * прив'язане до нього, перриваблюється над нею — і частина пунктів
+ * опиняється під клавіатурою. `position: fixed` у в'юпорті цього уникає.
+ */
+@media (pointer: coarse) {
+  .prompt-bar__menu--vv {
+    position: fixed;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    left: 12px;
+    width: auto;
+    max-height: 52dvh;
+    overflow-y: auto;
+    transform-origin: bottom center;
+    z-index: 50;
+  }
+  .prompt-bar__menu--vv[data-kind='model'] {
+    right: 12px;
+    width: auto;
+  }
+}
+
 @keyframes prompt-bar-pop {
   from {
     opacity: 0;
@@ -245,6 +269,31 @@
 @media (pointer: coarse) {
   .prompt-bar__input {
     font-size: 16px;
+  }
+
+  .prompt-bar__tool,
+  .prompt-bar__send {
+    width: 44px;
+    height: 44px;
+  }
+
+  .prompt-bar__pick,
+  .prompt-bar__row {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  /*
+   * На тачі кнопки меню (+, модель, думання, мікрофон) мають реагувати на
+   * ПЕРШИЙ дотик, а не на другий. iOS/Android інакше віддають перший тап
+   * на зняття фокуса з поля (сховати клавіатуру), і click до кнопки просто
+   * не доходить. touch-action: manipulation прибирає цю затримку.
+   */
+  .prompt-bar__tool,
+  .prompt-bar__pick,
+  .prompt-bar__send,
+  .prompt-bar__row {
+    touch-action: manipulation;
   }
 }
 

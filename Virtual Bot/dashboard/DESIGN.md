@@ -129,8 +129,11 @@ self-hosted через `@fontsource`, з кирилицею — панель м�
 Док плаває над вмістом і переноситься: затиснути й повести — прилипне до
 найближчого краю (низ, верх, ліворуч, праворуч). Вибір живе в
 `localStorage.claudeBotDockSide` поруч із темою й акцентом — це така сама
-особиста звичка. Місце під док лишає CSS за атрибутом `data-dock` на `<html>`,
-а не кожен розділ окремо.
+особиста звичка.
+
+Dock clearance follows `data-dock` on `<html>`. In chat, only the conversation
+column reserves bottom clearance; both sidebars extend to the window edge.
+Vertical navigation occupies a continuous 72px surface with a dividing rule.
 
 Вертикальний варіант — не поворот через CSS: у повернутого елемента
 `getBoundingClientRect` віддає повернуту рамку, і збільшення під курсором
@@ -143,3 +146,63 @@ self-hosted через `@fontsource`, з кирилицею — панель м�
 замість бічних панелей), `760–1180px` планшет, `> 1180px` стіл (бічна рейка
 розділів + дві-три колонки). Безпечні зони iOS через `env(safe-area-inset-*)` —
 панель ставиться на домашній екран як PWA.
+
+## Chat workspace (2026-09-20)
+
+- Preserve the existing warm palette, Plex typography, and thin surface borders.
+- Desktop chat's right rail offers opt-in Projects, Vision, and Screen pins from
+  a bottom-anchored plus menu. Selection and order persist locally. Pins remain a desktop column;
+  narrow layouts reach them through the "+" sheet as a dialog.
+- The screen pin embeds the real same-origin `/screen` at its native 320x240 size.
+  Removing a pin unmounts its iframe/stream. Pinning Vision does not start a camera.
+- Standalone Markdown images in one reply share the existing React Bits accordion,
+  even with prose between them. Captions and all prose remain; inline illustrations,
+  links, tables, and code examples are not regrouped.
+- Radial-menu taps toggle it; dragging selects once; Escape and outside clicks close
+  it. Keyboard activation must retain trigger focus, not focus the composer.
+- New labels use `src/locales/workspace.ts` (Ukrainian and English).
+- Checks: `npm test`, `npm run typecheck`, `npm run build`; optional
+  `npm run test:browser` uses an installed agent-browser and a running server with
+  isolated browser-only fixtures, never real chat writes. Tests require Node 22.6+.
+
+## Narrow chat (2026-09-23)
+
+Below the desk breakpoint the chat is reorganised around the thumb, after the
+owner's sketch:
+
+- **Header:** conversations list | model name as the title | new conversation.
+  The title opens `ModelMenu`: the model list and the thinking level as a row
+  of stops. The compact face is gone from this header — at this width it was
+  an ornament competing with the model name.
+- **Prompt bar:** only what you type with — "+", the field, mic, send. The
+  model and thinking pickers moved to the header; they squeezed the field to
+  a few words.
+- **"+" sheet** (`AttachSheet`), opening in place above the bar: camera,
+  photos and files as thumb-sized tiles, then context, tools and panels as
+  rows. The context meter moved here from under the bar.
+- Escape peels one layer at a time; a tap inside the context popover does not
+  count as a tap outside the sheet.
+- The desktop layout is unchanged.
+
+## Model picker (2026-09-24)
+
+One `ModelMenu` for every layout — the phone chat header's title, and on the
+desk the slot in the prompt bar where the vendor pickers were (PromptBar
+edit 6, `modelSlot`). The catalog grew to ~60 models with the same model
+often listed under three hosts, and a plain dropdown in catalog order meant
+scrolling past all of it.
+
+- **Maker logos** from lobe-icons (`src/vendor/lobe-icons/`, MIT), copied
+  rather than installed: ~15 of the package's 950 icons. Monochrome, filled
+  with `currentColor` — they take the text colour and follow both themes; a
+  column of brand colours would break rule 3. The maker comes from the model
+  part of the id, never the host (`regolo/gpt-oss-120b` is OpenAI's). Unknown
+  makers get a neutral mark rather than a guessed logo.
+- **Search** matches the start of any word, in any order, ignoring the
+  catalog's punctuation ("gpt6", "qwen 3.8", "regolo qwen", "xai").
+- **Sort**: by maker (grouped, sticky headings), A–Z, or by context window.
+  The choice persists in `localStorage.claudeBotModelSort`.
+- **Recent**: the last three picks lead the list while nothing is typed.
+- The host is shown under each name, so the copies of one model can be told
+  apart.
+

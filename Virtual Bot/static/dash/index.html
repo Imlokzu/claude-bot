@@ -2,7 +2,7 @@
 <html lang="uk" data-theme="dark" data-accent="terracotta">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <meta name="color-scheme" content="light dark" />
     <title>Клод Бот — панель</title>
     <link rel="icon" href="/static/dash/icon.svg" type="image/svg+xml" />
@@ -23,13 +23,14 @@
           var r = document.documentElement;
           r.dataset.theme = dark ? 'dark' : 'light';
           r.dataset.accent = a;
+          r.lang = localStorage.getItem('claudeBotLang') === 'uk' ? 'uk' : 'en';
         } catch (e) {}
       })();
     </script>
-    <script type="module" crossorigin src="/static/dash/assets/index-CPoQcEKv.js"></script>
-    <link rel="modulepreload" crossorigin href="/static/dash/assets/useMediaQuery-DW0UGCwD.js">
-    <link rel="stylesheet" crossorigin href="/static/dash/assets/useMediaQuery-S2Y7lb0u.css">
-    <link rel="stylesheet" crossorigin href="/static/dash/assets/index-DejVdxFS.css">
+    <script type="module" crossorigin src="/static/dash/assets/index-C_GmWUBy.js"></script>
+    <link rel="modulepreload" crossorigin href="/static/dash/assets/jsx-runtime-TaBJmr98.js">
+    <link rel="modulepreload" crossorigin href="/static/dash/assets/createLucideIcon-CCC-Cer9.js">
+    <link rel="stylesheet" crossorigin href="/static/dash/assets/index-934Rq7KX.css">
   <link rel="manifest" href="/static/dash/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/static/dash/registerSW.js"></script></head>
   <body>
     <div id="root"></div>

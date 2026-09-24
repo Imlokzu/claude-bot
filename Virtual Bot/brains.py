@@ -1,15 +1,10 @@
 """
-«Клод Бот» — Virtual Bot: «мозок» чату з пʼятьма режимами (за пріоритетом):
+«Клод Бот» — Virtual Bot: OpenClaw gateway єдиний мережевий мозок чату.
 
-0) OpenClaw gateway (127.0.0.1:18789, OpenAI-сумісний /v1/chat/completions) —
-   ГОЛОВНИЙ мозок: памʼять, tool use, маршрутизація до Claude (за баченням
-   власника через нього має йти все). Ендпоінт треба увімкнути в конфізі OpenClaw;
-1) Omni-роутер (127.0.0.1:20128/v1) — запасний OpenAI-сумісний мультимодельний
-   шлюз; модель обирається у панелі (за замовчуванням Claude);
-2) прямий Anthropic API (httpx, БЕЗ SDK);
-3) Chat2API — локальний OpenAI-сумісний сервер (127.0.0.1:8080/v1);
-4) демо-режим — заготовлені українські відповіді за ключовими словами,
-   щоб застосунок працював завжди.
+OpenClaw сам маршрутизує текстові, vision-моделі, tools і fallback-провайдерів;
+Virtual Bot не дублює цей ланцюг через окремий Omni, Anthropic або Chat2API.
+Якщо gateway недоступний, застосунок чесно повертає offline-стан або локальну
+демо-відповідь, коли її явно увімкнено в конфігурації.
 
 Кожна відповідь проходить через шар емоцій (emotions.py).
 Модуль памʼятає, який мозок РЕАЛЬНО відповів останнім (last_successful_brain) —
@@ -35,6 +30,7 @@ import trace_log
 from emotions import ALLOWED_EMOTIONS, extract_emotion, guess_emotion
 from memory import append_user_profile, find_relevant_notes, load_user_profile
 import openclaw_models
+from openclaw_activity import GatewayActivity
 import tools as tool_registry
 
 # Тип історії сесії: [{'role': 'user'|'assistant', 'content': str}, ...]
@@ -394,7 +390,13 @@ def _openclaw_agent_model() -> str:
 
 def get_last_model() -> str:
     if _last_successful_brain == "openclaw":
-        real = _openclaw_agent_model()
+        # A provider/model route captured from the Gateway is authoritative;
+        # bare legacy names are only fallback display state and may be stale.
+        if "/" in _last_model:
+            real = _last_model
+        else:
+            override = openclaw_models.get_selected()
+            real = override.split("/")[-1] if override else _openclaw_agent_model()
         if real:
             return f"{real} · OpenClaw"
     return _last_model
@@ -666,13 +668,25 @@ def _openclaw_note_success() -> None:
     _openclaw_failed_at_mono = None
 
 
-async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, emit=None, images=None) -> tuple[str, list[dict]]:
+async def chat_openclaw(
+    message: str,
+    system_prompt: str,
+    history: ChatHistory,
+    emit=None,
+    images=None,
+    session_key: str | None = None,
+) -> tuple[str, list[dict], str]:
     """Питає OpenClaw gateway (токен — секрет, у відповіді/логах не світимо)."""
     token = cfg.get_openclaw_token()
     if not token:
         raise RuntimeError("Немає токена OpenClaw")
+    observed_model = {"value": ""}
 
-    messages = _build_messages(system_prompt, history, message, images)
+    # Durable OpenClaw sessions already own their transcript. Sending the
+    # application history again makes the Gateway wrap it as pending context
+    # (`Chat messages since your last reply`) and duplicates every turn.
+    request_history = [] if session_key else history
+    messages = _build_messages(system_prompt, request_history, message, images)
     payload = {
         "model": cfg.OPENCLAW_AGENT,
         "messages": messages,
@@ -683,28 +697,53 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
-        # Вибір моделі в панелі. Поле `model` вище — це АГЕНТ, а не модель
-        # (рядок `omni/opencode-go/minimax-m3` там дає 400); модель
-        # перекривається саме заголовком. Без нього панель показувала одну
-        # модель, а відповідала завжди типова модель агента.
-        **openclaw_models.chat_headers(),
+        # Вибір моделі в панелі. Поле `model` вище — це АГЕНТ, а не модель.
+        # Vision явно йде на image-модель OpenClaw; текст лишає вибір панелі.
+        **(
+            {"x-openclaw-model": cfg.OPENCLAW_IMAGE_MODEL}
+            if images
+            else openclaw_models.chat_headers()
+        ),
     }
+    if session_key:
+        headers["x-openclaw-session-key"] = session_key
     url = f"{cfg.OPENCLAW_BASE_URL}/v1/chat/completions"
     trust_env = cfg.httpx_trust_env(cfg.OPENCLAW_BASE_URL)
 
     # Справжній стрімінг токенів (з відкотом на звичайний виклик)
     if emit is not None:
+        observed_work = False
+
+        async def tracked_emit(event):
+            nonlocal observed_work
+            if event.get("type") == "model":
+                provider = str(event.get("provider") or "").strip()
+                model = str(event.get("model") or "").strip()
+                if provider and model:
+                    observed_model["value"] = f"{provider}/{model}"
+                await emit(event)
+                return
+            if event.get("type") == "delta" or str(event.get("type", "")).startswith("tool_"):
+                observed_work = True
+            await emit(event)
+
         try:
-            text = await _stream_openai_compatible(
-                url, headers, payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env, emit=emit
-            )
-            return text, []
+            async with GatewayActivity(tracked_emit, session_key=session_key) as activity:
+                text = await _stream_openai_compatible(
+                    url, {**headers, "x-openclaw-session-key": activity.session_key},
+                    payload, cfg.CHAT_OPENCLAW_TIMEOUT_S, trust_env,
+                    emit=tracked_emit, read_timeout=cfg.CHAT_OPENCLAW_WALL_S,
+                )
+            return text, [], observed_model["value"]
         except _NeedsTools:
             log.info("OpenClaw потребує тулзів — переходжу на нестрімовий виклик")
         except Exception as exc:  # noqa: BLE001
+            # Replaying a request after an observed tool could repeat a write.
+            if observed_work:
+                raise
             log.warning("Стрімінг OpenClaw не вдався (%s) — звичайний виклик", type(exc).__name__)
 
-    return await _call_openai_compatible_with_tools(
+    text, tool_results = await _call_openai_compatible_with_tools(
         url,
         headers,
         payload,
@@ -713,6 +752,7 @@ async def chat_openclaw(message: str, system_prompt: str, history: ChatHistory, 
         trust_env,
         emit=emit,
     )
+    return text, tool_results, observed_model["value"]
 
 
 # ------------------------------------------------------------------ мозок 2: Anthropic
@@ -1067,19 +1107,32 @@ async def _stream_openai_compatible(
     timeout: float,
     trust_env: bool,
     emit=None,
+    read_timeout: float | None = None,
 ) -> str:
-    """СПРАВЖНІЙ стрімінг токенів (SSE) для OpenAI-сумісного ендпойнта.
+    """Real token streaming (SSE) for an OpenAI-compatible endpoint.
 
-    Раніше ми чекали відповідь ЦІЛКОМ і лише потім різали її на слова — тому
-    весь текст з’являвся раптом. Тепер кожен токен віддається через emit()
-    одразу, як надійшов від моделі.
+    We used to wait for the whole answer and only then slice it into words,
+    which is why the text appeared all at once. Now every token goes out
+    through emit() the moment the model produces it.
 
-    Тулзи ТУТ НЕ підтримуються свідомо: якщо потрібні tool_calls, викликач
-    переходить на звичайний (нестрімовий) шлях. Повертає повний текст.
+    Tools are deliberately NOT supported here: if the model wants tool_calls,
+    the caller switches to the plain (non-streaming) path. Returns full text.
+
+    `read_timeout` is the gap we tolerate BETWEEN chunks, and it is not the
+    same budget as `timeout`. An agent that is thinking or running a tool
+    sends nothing meanwhile: with one blanket timeout of 35s every such turn
+    died with ReadTimeout, fell back to a non-streaming call and paid for the
+    whole answer twice. Connecting still has to be quick — a gateway that is
+    down must be noticed at once, not after two minutes.
     """
     payload = {**payload_base, "stream": True}
     parts: list[str] = []
-    async with httpx.AsyncClient(timeout=timeout, trust_env=trust_env) as client:
+    budget = httpx.Timeout(
+        timeout,
+        connect=min(timeout, 10.0),
+        read=read_timeout or timeout,
+    )
+    async with httpx.AsyncClient(timeout=budget, trust_env=trust_env) as client:
         async with client.stream("POST", url, headers=headers, json=payload) as resp:
             if resp.status_code >= 400:
                 body = (await resp.aread())[:200]
@@ -1698,6 +1751,7 @@ async def chat(
     images: list[ImageAttachment] | None = None,
     voice: bool = False,
     spoken: bool = False,
+    session_key: str | None = None,
 ) -> tuple[str, str, str, list[dict]]:
     """
     Обробляє повідомлення користувача. Повертає (reply, emotion, mode, tool_results).
@@ -1710,19 +1764,16 @@ async def chat(
     окремі мозки тут. Маршрутизацію й фолбеки між ними робить OpenClaw; другий
     такий самий ланцюжок у боті лише дублював логіку і плутав діагностику.
 
-    Єдиний виняток — КАРТИНКИ. Шлюз приймає OpenAI-подібний image block, але
-    мовчки викидає його перед агентом, тому vision-запити йдуть в Omni напряму.
-    Коли шлюз навчиться передавати картинки, цей обхід треба прибрати.
+    Картинки теж ідуть через gateway: для них OpenClaw використовує окрему
+    `agents.defaults.imageModel`, щоб текстова модель не отримувала невідомий
+    image block.
     """
     history = history or []
     system_prompt = build_system_prompt(message, voice=voice, spoken=spoken)
 
-    # Мозок 0: OpenClaw gateway (ГОЛОВНИЙ) — персона/емоції/памʼять усередині OpenClaw
-    # Поточний OpenClaw gateway приймає OpenAI-подібний image block, але мовчки
-    # викидає його перед агентом. Для реального vision-запиту йдемо одразу в
-    # Omni/Claude, який підтримує multimodal content; текстові запити лишаються
-    # на головному агентному мозку OpenClaw.
-    if cfg.get_openclaw_token() and not images:
+    # OpenClaw gateway — єдиний шлях для тексту й vision. Gateway вибирає
+    # текстову або image-модель із власної конфігурації.
+    if cfg.get_openclaw_token():
         backoff_left = openclaw_backoff_remaining()
         if backoff_left > 0:
             log.info("OpenClaw у бекофі після невдачі — пропускаю (ще %.0f с)", backoff_left)
@@ -1731,21 +1782,33 @@ async def chat(
             trace_log.step("brain", "openclaw", "start", cfg.OPENCLAW_AGENT)
             started = time.perf_counter()
             try:
-                raw, tool_results = await asyncio.wait_for(
-                    chat_openclaw(message, system_prompt, history, emit=emit, images=images),
+                result = await asyncio.wait_for(
+                    chat_openclaw(
+                        message,
+                        system_prompt,
+                        history,
+                        emit=emit,
+                        images=images,
+                        session_key=session_key,
+                    ),
                     # Стеля на ВСЮ відповідь. Мовчання gateway ловить коротший
                     # мережевий таймаут усередині (CHAT_OPENCLAW_TIMEOUT_S);
                     # тут — лише запобіжник від нескінченної відповіді, інакше
                     # будь-який пошук не встигав би вкластись.
                     timeout=cfg.CHAT_OPENCLAW_WALL_S,
                 )
+                if len(result) == 3:
+                    raw, tool_results, actual_model = result
+                else:  # Backward-compatible adapter for test/legacy callables.
+                    raw, tool_results = result
+                    actual_model = ""
                 if _looks_like_gateway_error(raw):
                     raise RuntimeError(f"OpenClaw віддав помилку замість відповіді: {raw.strip()[:120]}")
                 reply, emotion = extract_emotion(raw)
                 reply, inline_results = await _run_inline_tool_calls(reply, emit=emit)
                 tool_results = [*tool_results, *inline_results]
                 _openclaw_note_success()
-                _remember_brain("openclaw", cfg.OPENCLAW_AGENT)
+                _remember_brain("openclaw", actual_model or _openclaw_agent_model())
                 trace_log.step("brain", "openclaw", "ok", cfg.OPENCLAW_AGENT, _elapsed_ms(started))
                 return reply, emotion, "openclaw", tool_results
             except Exception as exc:  # noqa: BLE001 — свідомо ковтаємо, падаємо на наступний мозок
@@ -1759,53 +1822,8 @@ async def chat(
                     "наступні ~%.0f с пропускаю. Дивись провайдерів у ~/.openclaw/openclaw.json",
                     type(exc).__name__, cfg.CHAT_OPENCLAW_BACKOFF_S,
                 )
-    elif images:
-        log.info("Запит містить %d зображень — пропускаю OpenClaw без vision", len(images))
-        trace_log.step("brain", "openclaw", "skip", f"{len(images)} зображень — шлюз їх не бачить")
     else:
         trace_log.step("brain", "openclaw", "skip", "немає токена")
-
-    # Обхід для КАРТИНОК: шлюз їх мовчки губить, тому vision іде в Omni напряму.
-    # Це не «запасний мозок», а саме виняток по можливості — для тексту сюди
-    # не потрапляємо взагалі. Anthropic і Chat2API з ланцюжка прибрані: їхнє
-    # місце — провайдери в конфізі OpenClaw, а не паралельна гілка тут.
-    if images and cfg.get_omni_key():
-        backoff_left = omni_backoff_remaining()
-        if backoff_left > 0:
-            trace_log.step("brain", "omni-vision", "skip", f"бекоф, ще {backoff_left:.0f} с")
-        else:
-            trace_log.step("brain", "omni-vision", "start", cfg.OMNI_VISION_MODEL)
-            started = time.perf_counter()
-            try:
-                raw, tool_results = await asyncio.wait_for(
-                    chat_omni(
-                        message, system_prompt, history, emit=emit,
-                        reasoning_effort=reasoning_effort,
-                        images=images,
-                    ),
-                    timeout=cfg.CHAT_OMNI_TIMEOUT_S,
-                )
-                if _looks_like_gateway_error(raw):
-                    raise RuntimeError(f"Omni віддав помилку замість відповіді: {raw.strip()[:120]}")
-                reply, emotion = extract_emotion(raw)
-                reply, inline_results = await _run_inline_tool_calls(reply, emit=emit)
-                tool_results = [*tool_results, *inline_results]
-                _omni_note_success()
-                _remember_brain("omni", _last_omni_model or get_selected_omni_model())
-                trace_log.step(
-                    "brain", "omni-vision", "ok",
-                    _last_omni_model or get_selected_omni_model(), _elapsed_ms(started),
-                )
-                return reply, emotion, "omni", tool_results
-            except Exception as exc:  # noqa: BLE001 — далі лише offline
-                _omni_note_failure()
-                trace_log.step(
-                    "brain", "omni-vision", "fail",
-                    _fail_detail(exc, cfg.CHAT_OMNI_TIMEOUT_S), _elapsed_ms(started),
-                )
-                log.warning("Omni не впорався з картинками (%s)", type(exc).__name__)
-    elif images:
-        trace_log.step("brain", "omni-vision", "skip", "немає ключа OMNI_API_KEY")
 
     # Жоден мозок не відповів. Що показати — вирішує chat.demo_fallback.
     if not cfg.CHAT_DEMO_FALLBACK:

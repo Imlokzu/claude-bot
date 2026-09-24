@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { t } from '@/locales/workspace';
 import './RadialMenu.css';
 
 /*
@@ -52,13 +53,15 @@ export function RadialMenu({
   radius = 68,
   spread = 150,
   bias = 0,
-  label = 'Додати',
+  label = t('menu.add'),
   className,
 }: RadialMenuProps) {
   const [open, setOpen] = useState(false);
   const [aim, setAim] = useState<number | null>(null);
   const origin = useRef({ x: 0, y: 0 });
   const moved = useRef(false);
+  const pointer = useRef<number | null>(null);
+  const wasOpen = useRef(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const n = items.length;
@@ -93,6 +96,7 @@ export function RadialMenu({
   );
 
   const close = useCallback(() => {
+    pointer.current = null;
     setOpen(false);
     setAim(null);
   }, []);
@@ -115,9 +119,12 @@ export function RadialMenu({
   }, [open, close]);
 
   const onPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || pointer.current !== null) return;
     event.preventDefault();
+    event.currentTarget.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
+    pointer.current = event.pointerId;
+    wasOpen.current = open;
     origin.current = { x: event.clientX, y: event.clientY };
     moved.current = false;
     setAim(null);
@@ -125,7 +132,7 @@ export function RadialMenu({
   };
 
   const onPointerMove = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (!open) return;
+    if (pointer.current !== event.pointerId) return;
     const dx = event.clientX - origin.current.x;
     const dy = event.clientY - origin.current.y;
     if (Math.hypot(dx, dy) < TAP_RADIUS) {
@@ -136,15 +143,19 @@ export function RadialMenu({
     setAim(nearestByAngle(dx, dy));
   };
 
-  const onPointerUp = () => {
-    // Рух був і ціль є — це жест: виконуємо й закриваємо.
-    // Руху не було — це звичайний клік, меню лишається відкритим.
-    if (moved.current && aim !== null) {
-      items[aim]?.onSelect();
+  const onPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (pointer.current !== event.pointerId) return;
+    pointer.current = null;
+    const dx = event.clientX - origin.current.x;
+    const dy = event.clientY - origin.current.y;
+    // Resolve the final position directly: React may not have rendered the last move.
+    if (Math.hypot(dx, dy) >= TAP_RADIUS) {
+      items[nearestByAngle(dx, dy)]?.onSelect();
       close();
       return;
     }
     if (moved.current) close();
+    else setOpen(!wasOpen.current);
   };
 
   return (
@@ -186,16 +197,25 @@ export function RadialMenu({
       <button
         type="button"
         className="fan-core"
-        aria-label={label}
+        aria-label={open ? t('menu.close') : label}
         aria-expanded={open}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={close}
+        onLostPointerCapture={(event) => {
+          // Unexpected capture loss cancels the gesture, not normal post-release loss.
+          if (pointer.current === event.pointerId) close();
+        }}
         onClick={(event) => {
-          // Клік уже опрацьовано в pointerdown/up; тут лише глушимо повторне
-          // спрацювання, інакше меню відкривалось і одразу закривалось.
+          // Pointer clicks are handled above; keyboard and assistive clicks are not.
           event.preventDefault();
+          // The composer focuses its input on bubbled clicks; keep keyboard focus here.
+          event.stopPropagation();
+          if (event.detail === 0) {
+            setOpen((value) => !value);
+            setAim(null);
+          }
         }}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none"

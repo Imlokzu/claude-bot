@@ -25,6 +25,19 @@ function read(): DockSide {
 
 export function useDockSide(): [DockSide, (side: DockSide) => void] {
   const [side, setSide] = useState<DockSide>(read);
+  const [phone, setPhone] = useState(() => window.matchMedia('(max-width: 759px)').matches);
+
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 759px)');
+    const update = () => setPhone(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+
+  // The phone layout always uses bottom navigation, while preserving the
+  // owner's preferred desktop edge for the next wide-screen session.
+  const effectiveSide: DockSide = phone ? 'bottom' : side;
 
   useEffect(() => {
     try {
@@ -33,10 +46,10 @@ export function useDockSide(): [DockSide, (side: DockSide) => void] {
       /* див. вище */
     }
     // Розділам треба знати, з якого боку лишати місце: док плаває НАД ними.
-    document.documentElement.setAttribute('data-dock', side);
-  }, [side]);
+    document.documentElement.setAttribute('data-dock', effectiveSide);
+  }, [effectiveSide, side]);
 
-  return [side, useCallback((next: DockSide) => setSide(next), [])];
+  return [effectiveSide, useCallback((next: DockSide) => setSide(next), [])];
 }
 
 /** Найближчий край до точки — куди док прилипне, коли його відпустять. */

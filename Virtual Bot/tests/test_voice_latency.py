@@ -31,7 +31,7 @@ def _parse_sse(body: str) -> list[tuple[str, str]]:
 
 
 class LumpReplyTests(unittest.TestCase):
-    """Відповідь одним шматком має ДОЇХАТИ до фронтенду словами."""
+    """How the answer reaches the panel: as typing, or exactly as it came."""
 
     def _stream(self, chunks: list[str], reply: str):
         async def fake_chat(message, history, emit=None, **kwargs):
@@ -49,19 +49,50 @@ class LumpReplyTests(unittest.TestCase):
         return _parse_sse(resp.text)
 
     def test_single_lump_is_typed_out_word_by_word(self) -> None:
+        """A whole answer in one chunk is typed out, not dropped as a wall.
+
+        This is what a turn that ran a tool looks like: the OpenClaw gateway
+        stays silent while the agent works and then hands over the finished
+        message in a single piece.
+        """
         reply = (
-            "Дякую тобі, друже! Мені приємно це чути, і я радий, "
-            "що можу бути поруч у цей теплий день."
+            "Дякую тобі, друже! Мені приємно це чути, і я радий, що можу бути "
+            "поруч у цей теплий день. Розкажу трохи більше, щоб відповідь була "
+            "схожа на ту, яку шлюз віддає одним шматком після виклику тулза: "
+            "довгу, цілу й без жодного натяку на те, що вона набиралась "
+            "поступово, слово за словом, на очах у людини."
         )
+        self.assertGreater(len(reply), main._LUMP_CHARS)
         events = self._stream([reply], reply)
         deltas = [data for name, data in events if name == "delta"]
-        # Один чанк на вході — багато дельт на виході (інакше стіна тексту)
         self.assertGreater(len(deltas), 5)
 
     def test_real_token_stream_is_not_chopped_further(self) -> None:
-        """Справжній стрім дрібних токенів проходить як є — по чанку на дельту."""
+        """A real stream of small tokens passes through — one delta per chunk."""
         chunks = ["При", "віт", ", ", "як ", "спра", "ви?"]
         events = self._stream(chunks, "Привіт, як справи?")
+        deltas = [data for name, data in events if name == "delta"]
+        self.assertEqual(len(deltas), len(chunks))
+
+    def test_gateway_sized_chunks_are_not_retyped(self) -> None:
+        """Chunks the size the gateway really sends must survive untouched.
+
+        Measured 2026-09-20: a plain OpenClaw turn streams in 30-58 char
+        pieces about 80ms apart. The lump threshold used to sit at 40, so
+        every one of those genuine pieces was treated as "not streaming" and
+        re-typed word by word — real streaming arrived looking like a fake
+        typewriter, and the reader was stalled 20ms per word while doing it.
+        """
+        chunks = [
+            "Море дихає рівно, і хвиля за хвилею лягає ",
+            "на пісок, лишаючи по собі смужку піни та ",
+            "холодний блиск, що тримається рівно доти, ",
+            "доки не прийде наступна.",
+        ]
+        for chunk in chunks[:3]:
+            self.assertGreater(len(chunk), 40, "фікстура має бути більшою за старий поріг")
+            self.assertLess(len(chunk), main._LUMP_CHARS)
+        events = self._stream(chunks, "".join(chunks))
         deltas = [data for name, data in events if name == "delta"]
         self.assertEqual(len(deltas), len(chunks))
 

@@ -295,7 +295,7 @@ def append(
         "role": "assistant",
         "content": assistant,
         "ts": now,
-        **({"steps": steps[:20]} if steps else {}),
+        **({"steps": steps[:200]} if steps else {}),
     })
     data["messages"] = data["messages"][-MAX_MESSAGES:]
 

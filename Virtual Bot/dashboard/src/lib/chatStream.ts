@@ -1,4 +1,6 @@
 import { authHeaders } from './auth';
+import { t } from './i18n';
+import type { ToolStep } from '../panels/chat/types';
 
 /*
  * Стрім відповіді бота.
@@ -15,7 +17,11 @@ import { authHeaders } from './auth';
  */
 
 export interface ToolEvent {
-  type: 'tool_start' | 'tool_progress' | 'tool_done' | 'tool_result';
+  type: 'tool_start' | 'tool_progress' | 'tool_done' | 'tool_result' | 'tool_error';
+  call_id?: string;
+  input?: unknown;
+  is_error?: boolean;
+  step?: ToolStep;
   tool?: string;
   detail?: string;
   result?: unknown;
@@ -29,12 +35,25 @@ export interface ChatDone {
   mode: string;
   model: string;
   tool_results: unknown[];
+  steps?: ToolStep[];
 }
+
+export interface ChatAttachment {
+  url: string;
+  name: string;
+  type: string;
+  size?: number;
+}
+
+export type AgentStatus = 'connecting' | 'running' | 'unavailable' | 'disconnected';
 
 export interface ChatHandlers {
   onDelta?: (chunk: string) => void;
   onEmotion?: (emotion: string) => void;
   onTool?: (event: ToolEvent) => void;
+  onStatus?: (status: AgentStatus) => void;
+  onModel?: (model: string) => void;
+  onSession?: (sessionId: string) => void;
   onDone?: (result: ChatDone) => void;
   onError?: (message: string) => void;
 }
@@ -42,11 +61,19 @@ export interface ChatHandlers {
 export interface ChatPayload {
   message: string;
   session_id?: string;
-  attachments?: unknown[];
+  attachments?: ChatAttachment[];
   participant_name?: string;
   reasoning_effort?: string;
   voice?: boolean;
   history?: unknown[];
+}
+
+/** Remove an internal model emotion marker before text reaches the transcript. */
+export function cleanEmotionTag(text: string): string {
+  return text
+    .replace(/\[\s*(?:емоція|емоцiя|emotion)\s*[:：]\s*[a-zA-Zа-яіїєґА-ЯІЇЄҐʼ'-]+\s*\]/giu, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
 }
 
 /**
@@ -82,26 +109,30 @@ export async function streamChat(
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
 
-    // Кадри SSE розділені порожнім рядком. Останній шматок лишаємо в буфері:
-    // він майже напевно обірваний посеред кадру.
-    let boundary = buffer.indexOf('\n\n');
-    while (boundary !== -1) {
-      const frame = buffer.slice(0, boundary);
-      buffer = buffer.slice(boundary + 2);
-      dispatch(frame, handlers);
-      boundary = buffer.indexOf('\n\n');
+      // Keep incomplete frames buffered, including split CRLF boundaries.
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        if (dispatch(frame, handlers)) return;
+        boundary = buffer.indexOf('\n\n');
+      }
     }
+    if (buffer.trim() && dispatch(buffer, handlers)) return;
+    handlers.onError?.(t('chat.incomplete'));
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
-
-  if (buffer.trim()) dispatch(buffer, handlers);
 }
 
-function dispatch(frame: string, handlers: ChatHandlers): void {
+function dispatch(frame: string, handlers: ChatHandlers): boolean {
   let name = 'message';
   const dataLines: string[] = [];
 
@@ -111,16 +142,20 @@ function dispatch(frame: string, handlers: ChatHandlers): void {
     else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
   }
 
-  if (!dataLines.length) return;
+  if (!dataLines.length) return false;
 
   let data: Record<string, unknown>;
   try {
     data = JSON.parse(dataLines.join('\n'));
   } catch {
-    return;
+    return false;
   }
+  if (!data || typeof data !== 'object') return false;
 
   switch (name) {
+    case 'session':
+      if (typeof data.session_id === 'string') handlers.onSession?.(data.session_id);
+      break;
     case 'delta':
       handlers.onDelta?.(String(data.chunk ?? ''));
       break;
@@ -131,13 +166,26 @@ function dispatch(frame: string, handlers: ChatHandlers): void {
     case 'tool_progress':
     case 'tool_done':
     case 'tool_result':
+    case 'tool_error':
       handlers.onTool?.({ ...data, type: name } as ToolEvent);
       break;
+    case 'agent_status':
+      if (['connecting', 'running', 'unavailable', 'disconnected'].includes(String(data.status))) {
+        handlers.onStatus?.(data.status as AgentStatus);
+      }
+      break;
+    case 'model': {
+      const provider = String(data.provider ?? '').trim();
+      const model = String(data.model ?? '').trim();
+      if (provider && model) handlers.onModel?.(`${provider}/${model}`);
+      break;
+    }
     case 'done':
-      handlers.onDone?.(data as unknown as ChatDone);
-      break;
+      handlers.onDone?.({ ...data, reply: cleanEmotionTag(String(data.reply ?? '')) } as unknown as ChatDone);
+      return true;
     case 'error':
-      handlers.onError?.(String(data.error ?? 'Невідома помилка'));
-      break;
+      handlers.onError?.(String(data.error ?? t('chat.unknownError')));
+      return true;
   }
+  return false;
 }

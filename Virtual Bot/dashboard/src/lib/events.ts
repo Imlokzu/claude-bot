@@ -1,4 +1,4 @@
-import { authStreamUrl } from './auth';
+import { authStreamUrl } from './auth.ts';
 
 /*
  * Живі події бота (/api/events).
@@ -32,9 +32,15 @@ const listeners = new Set<Listener>();
 const statusListeners = new Set<StatusListener>();
 
 let source: EventSource | null = null;
+let opening: Promise<void> | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let openTimer: ReturnType<typeof setTimeout> | null = null;
 let attempt = 0;
 let connected = false;
+
+function shouldOpen(): boolean {
+  return listeners.size > 0 && (typeof document === 'undefined' || !document.hidden);
+}
 
 function setConnected(value: boolean): void {
   if (connected === value) return;
@@ -42,68 +48,118 @@ function setConnected(value: boolean): void {
   statusListeners.forEach((fn) => fn(value));
 }
 
-async function open(): Promise<void> {
-  if (source || !listeners.size) return;
-  const url = await authStreamUrl('/api/events');
-  // Поки чекали на токен, останній підписник міг відписатись.
-  if (!listeners.size) return;
+async function connect(): Promise<void> {
+  try {
+    const url = await authStreamUrl('/api/events');
+    // The last listener may have unsubscribed, or this tab may have become
+    // hidden, while the auth token was loading.
+    if (!shouldOpen()) return;
 
-  const es = new EventSource(url);
-  source = es;
+    const es = new EventSource(url);
+    source = es;
 
-  es.onopen = () => {
-    attempt = 0;
-    setConnected(true);
-  };
+    es.onopen = () => {
+      attempt = 0;
+      setConnected(true);
+    };
 
-  es.onmessage = (message) => {
-    let payload: BotEvent;
-    try {
-      payload = JSON.parse(message.data);
-    } catch {
-      return; // keep-alive або побитий кадр — мовчки пропускаємо
-    }
-    listeners.forEach((fn) => {
+    es.onmessage = (message) => {
+      let payload: BotEvent;
       try {
-        fn(payload);
-      } catch (error) {
-        // Один зламаний підписник не має гасити стрічку для решти.
-        console.error('Підписник подій кинув помилку', error);
+        payload = JSON.parse(message.data);
+      } catch {
+        return; // keep-alive або побитий кадр — мовчки пропускаємо
       }
-    });
-  };
+      listeners.forEach((fn) => {
+        try {
+          fn(payload);
+        } catch (error) {
+          // Один зламаний підписник не має гасити стрічку для решти.
+          console.error('Підписник подій кинув помилку', error);
+        }
+      });
+    };
 
-  es.onerror = () => {
+    es.onerror = () => {
+      if (source !== es) {
+        es.close();
+        return;
+      }
+      setConnected(false);
+      es.close();
+      source = null;
+      if (!shouldOpen()) return;
+      // Відступ із межею: бекенд міг перезапуститись, і довбати його щосекунди
+      // сенсу немає, але й чекати хвилину користувач не має.
+      attempt = Math.min(attempt + 1, 5);
+      const delay = Math.min(500 * 2 ** attempt, 10_000);
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void open();
+      }, delay);
+    };
+  } catch {
     setConnected(false);
-    es.close();
-    if (source === es) source = null;
-    if (!listeners.size) return;
-    // Відступ із межею: бекенд міг перезапуститись, і довбати його щосекунди
-    // сенсу немає, але й чекати хвилину користувач не має.
-    attempt = Math.min(attempt + 1, 5);
-    const delay = Math.min(500 * 2 ** attempt, 10_000);
-    retryTimer = setTimeout(() => {
-      retryTimer = null;
-      void open();
-    }, delay);
-  };
+  } finally {
+    // Clear before this async attempt resolves so a listener added in the next
+    // microtask can start a fresh connection instead of reusing a dead attempt.
+    opening = null;
+  }
 }
 
-function closeIfIdle(): void {
-  if (listeners.size) return;
+function open(): Promise<void> {
+  if (source || !shouldOpen()) return Promise.resolve();
+  // Several widgets mount in the same React commit. Keep the asynchronous
+  // token lookup single-flight so they cannot each open their own SSE stream.
+  if (!opening) opening = connect();
+  return opening;
+}
+
+function closeStream(): void {
+  if (openTimer) {
+    clearTimeout(openTimer);
+    openTimer = null;
+  }
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
   }
-  source?.close();
+  const current = source;
   source = null;
+  current?.close();
   setConnected(false);
+}
+
+function handleVisibilityChange(): void {
+  if (document.hidden) {
+    closeStream();
+    return;
+  }
+  void open();
+}
+
+function closeIfIdle(): void {
+  if (listeners.size) return;
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }
+  closeStream();
 }
 
 /** Підписка на всі події. Повертає функцію відписки. */
 export function subscribe(listener: Listener): () => void {
   listeners.add(listener);
-  void open();
+  if (listeners.size === 1 && typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+  }
+  // Let critical dashboard queries (sessions, models, status) claim the
+  // browser connection pool before opening the long-lived SSE stream.
+  if (!openTimer) {
+    openTimer = setTimeout(() => {
+      openTimer = null;
+      void open();
+    }, 250);
+  }
   return () => {
     listeners.delete(listener);
     closeIfIdle();

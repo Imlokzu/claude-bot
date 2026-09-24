@@ -16,6 +16,7 @@ import { Morph } from '@/components/ui/Morph';
 import { Tip } from '@/components/ui/Tip';
 import { useToast } from '@/components/ui/Toaster';
 import { cn } from '@/lib/cn';
+import { t } from '@/locales/chat';
 
 /*
  * Переглядач картинок.
@@ -39,7 +40,7 @@ const ZOOM = [1, 1.5, 2, 3, 4];
 
 /** Адреса для збереження — через бота, інакше чужий хост не дасть. */
 function downloadHref(image: GalleryImage): string {
-  const name = image.alt?.trim() || 'картинка';
+  const name = image.alt?.trim() || t('image.fallback');
   return `/api/image/fetch?url=${encodeURIComponent(image.src)}&name=${encodeURIComponent(name)}`;
 }
 
@@ -57,6 +58,7 @@ export function ImageViewer({
   const [zoom, setZoom] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const swipeRef = useRef<{ id: number; x: number; y: number } | null>(null);
 
   const image = images[index];
   const scale = ZOOM[zoom];
@@ -102,8 +104,8 @@ export function ImageViewer({
 
   const copyLink = () => {
     void navigator.clipboard.writeText(image.src).then(
-      () => toast('Посилання скопійовано'),
-      () => error('Не вийшло скопіювати'),
+      () => toast(t('image.linkCopied')),
+      () => error(t('image.copyFailed')),
     );
   };
 
@@ -118,14 +120,14 @@ export function ImageViewer({
       return;
     }
     void navigator
-      .share({ title: image.alt || 'Картинка', url: image.src })
+      .share({ title: image.alt || t('image.fallbackCap'), url: image.src })
       .catch(() => undefined);
   };
 
   const download = () => {
     const link = document.createElement('a');
     link.href = downloadHref(image);
-    link.download = image.alt?.trim() || 'картинка';
+    link.download = image.alt?.trim() || t('image.fallback');
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -151,12 +153,26 @@ export function ImageViewer({
           className="fixed inset-0 flex flex-col outline-none"
         >
           <RadixDialog.Title className="sr-only">
-            {image.alt || 'Картинка'}
+            {image.alt || t('image.fallbackCap')}
           </RadixDialog.Title>
 
           {/* Клік по порожньому полю закриває — звичний жест для такого вікна. */}
           <div
             ref={scrollRef}
+            data-swipe-ignore
+            onPointerDown={(event) => {
+              if (!many || zoom > 0 || event.pointerType !== 'touch' || !event.isPrimary) return;
+              swipeRef.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+            }}
+            onPointerUp={(event) => {
+              const start = swipeRef.current;
+              swipeRef.current = null;
+              if (!start || start.id !== event.pointerId || zoom > 0) return;
+              const dx = event.clientX - start.x;
+              const dy = event.clientY - start.y;
+              if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.2) go(dx < 0 ? 1 : -1);
+            }}
+            onPointerCancel={() => { swipeRef.current = null; }}
             onClick={(event) => {
               if (event.target === event.currentTarget) onClose();
             }}
@@ -187,7 +203,7 @@ export function ImageViewer({
                   <div className="absolute inset-0 grid place-items-center">
                     <LatticeLoader
                       status="working"
-                      label="Вантажу"
+                      label={t('image.loading')}
                       cellSize={7}
                       gap={3}
                       color="var(--c-accent)"
@@ -245,7 +261,7 @@ export function ImageViewer({
 
             <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-line bg-surface/95 p-1 shadow-pop backdrop-blur">
               <Action
-                tip="Віддалити"
+                tip={t('image.zoomOut')}
                 shortcut="−"
                 onClick={() => setZoom((z) => Math.max(z - 1, 0))}
                 disabled={zoom === 0}
@@ -258,12 +274,12 @@ export function ImageViewer({
                 type="button"
                 onClick={() => setZoom(0)}
                 className="min-w-[3.4rem] rounded-full px-1 text-center font-mono text-[12px] text-ink-2 transition-colors hover:text-ink"
-                aria-label="Скинути масштаб"
+                aria-label={t('image.zoomReset')}
               >
                 <Morph mono>{`${Math.round(scale * 100)}%`}</Morph>
               </button>
               <Action
-                tip="Наблизити"
+                tip={t('image.zoomIn')}
                 shortcut="+"
                 onClick={() => setZoom((z) => Math.min(z + 1, ZOOM.length - 1))}
                 disabled={zoom === ZOOM.length - 1}
@@ -273,13 +289,13 @@ export function ImageViewer({
 
               <span className="mx-1 h-5 w-px bg-line" aria-hidden="true" />
 
-              <Action tip="Поділитись" onClick={share}>
+              <Action tip={t('image.share')} onClick={share}>
                 <Share2 />
               </Action>
-              <Action tip="Копіювати посилання" onClick={copyLink}>
+              <Action tip={t('image.copyLink')} onClick={copyLink}>
                 <Link2 />
               </Action>
-              <Action tip="Завантажити" onClick={download}>
+              <Action tip={t('image.download')} onClick={download}>
                 <Download />
               </Action>
 
@@ -289,7 +305,7 @@ export function ImageViewer({
                   <span className="px-1 font-mono text-[12px] text-ink-3">
                     <Morph mono>{`${index + 1}/${images.length}`}</Morph>
                   </span>
-                  <Action tip="Наступна" shortcut="→" onClick={() => go(1)}>
+                  <Action tip={t('image.next')} shortcut="→" onClick={() => go(1)}>
                     <ChevronRight />
                   </Action>
                 </>
@@ -300,8 +316,8 @@ export function ImageViewer({
           <RadixDialog.Close asChild>
             <button
               type="button"
-              aria-label="Закрити"
-              className="absolute right-4 top-4 grid size-9 place-items-center rounded-full border border-line bg-surface/95 text-ink-2 shadow-raise backdrop-blur transition-colors hover:text-ink"
+              aria-label={t('chat.close')}
+              className="absolute right-4 top-4 grid size-11 place-items-center rounded-full border border-line bg-surface/95 text-ink-2 shadow-raise backdrop-blur transition-colors hover:text-ink sm:size-9"
             >
               <X className="size-4" />
             </button>
@@ -333,7 +349,7 @@ function Action({
         onClick={onClick}
         disabled={disabled}
         aria-label={tip}
-        className="grid size-8 place-items-center rounded-full text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-35 [&_svg]:size-4"
+        className="grid size-11 place-items-center rounded-full text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink disabled:pointer-events-none disabled:opacity-35 sm:size-8 [&_svg]:size-4"
       >
         {children}
       </button>
@@ -347,7 +363,7 @@ function Edge({ side, onClick }: { side: 'left' | 'right'; onClick: () => void }
     <button
       type="button"
       onClick={onClick}
-      aria-label={side === 'left' ? 'Попередня' : 'Наступна'}
+      aria-label={side === 'left' ? t('image.prev') : t('image.next')}
       className={cn(
         'group absolute inset-y-0 w-[18%] max-w-[140px] outline-none',
         side === 'left' ? 'left-0' : 'right-0',

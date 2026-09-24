@@ -51,6 +51,10 @@ button { background: none; border: 0; padding: 0; cursor: pointer; }
 img, svg, video, canvas { display: block; max-width: 100%; }
 a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
 
+@media (pointer: coarse) {
+  button, [role='button'], a, select { -webkit-tap-highlight-color: transparent; }
+}
+
 /*
  * Кільце фокуса одне на всю панель. Живе в шарі base навмисно: так утиліта
  * Tailwind (`focus-visible:outline-none`) може його зняти там, де фокус
@@ -117,6 +121,21 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 /* Безпечні зони iOS: панель ставиться на домашній екран як PWA. */
 .u-safe-b { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .u-safe-t { padding-top: env(safe-area-inset-top, 0px); }
+.chat-composer { padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px)); }
+.markdown-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.bot-ui-overlay { bottom: max(5rem, calc(5rem + env(safe-area-inset-bottom, 0px))); }
+.toast-stack { bottom: max(0px, env(safe-area-inset-bottom, 0px)); }
+.pin-panel-action { flex: 0 0 auto; width: 32px; height: 32px; }
+@media (max-width: 759px) {
+  .bot-ui-overlay { bottom: calc(9rem + env(safe-area-inset-bottom, 0px)); }
+  .toast-stack { padding-bottom: calc(4.75rem + env(safe-area-inset-bottom, 0px)); }
+  .pin-panel-action { width: 44px; height: 44px; }
+}
 
 /* --- нотатки памʼяті -------------------------------------------------- *
  * Tiptap віддає голий ProseMirror без стилів. Ритм тут той самий, що в
@@ -179,23 +198,51 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 }
 
 @layer components {
-  /*
-   * Місце під плаваючий док — з того краю, де він зараз стоїть.
-   *
-   * Атрибут `data-dock` ставить хук useDockSide; типове значення (док ще не
-   * переносили) — низ, тому воно й записане без атрибута.
-   */
-  .u-under-dock { padding-bottom: 76px; }
-  @media (min-width: 640px) { .u-under-dock { padding-bottom: 84px; } }
+  /* Екранна клавіатура: --kb ставить useKeyboardOffset. Висота вікна на
+     телефоні під клавіатурою не змінюється, тож шел стискаємо вручну —
+     поле вводу лишається над клавіатурою, а не під нею. */
+  [data-kb] .app-shell { height: calc(100dvh - var(--kb, 0px)); }
 
-  /* Зверху док живе В ШАПЦІ, і місце під нього вже зайняте нею — окремий
-     відступ тут додав би порожню смугу над вмістом. */
+  /* Reserve resting dock size; magnification floats over content. */
+  .u-under-dock { padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)); }
   [data-dock='top'] .u-under-dock { padding-bottom: 0; }
-  [data-dock='left'] .u-under-dock { padding-bottom: 0; padding-left: 76px; }
-  [data-dock='right'] .u-under-dock { padding-bottom: 0; padding-right: 76px; }
-  @media (min-width: 640px) {
-    [data-dock='left'] .u-under-dock { padding-left: 84px; }
-    [data-dock='right'] .u-under-dock { padding-right: 84px; }
+  [data-dock='left'] .u-under-dock { padding-bottom: 0; padding-left: 72px; }
+  [data-dock='right'] .u-under-dock { padding-bottom: 0; padding-right: 72px; }
+
+  /* A continuous rail gives vertical navigation its own surface, not a gutter. */
+  [data-dock='left'] .u-under-dock::before,
+  [data-dock='right'] .u-under-dock::before {
+    content: '';
+    position: fixed;
+    top: 56px;
+    bottom: 0;
+    width: 72px;
+    background: var(--c-surface);
+    pointer-events: none;
+  }
+  [data-dock='left'] .u-under-dock::before { left: 0; border-right: 1px solid var(--c-border); }
+  [data-dock='right'] .u-under-dock::before { right: 0; border-left: 1px solid var(--c-border); }
+
+  /* Sidebars reach the bottom; only the composer sits above navigation. */
+  .u-under-dock[data-section='chat'] { padding-bottom: 0; }
+  .chat-conversation { padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); }
+  [data-dock='top'] .chat-conversation,
+  [data-dock='left'] .chat-conversation,
+  [data-dock='right'] .chat-conversation { padding-bottom: 0; }
+  /* Preserve the real 320x240 device viewport inside the compact sidebar. */
+  .pin-screen { width: 192px; height: 144px; }
+  .pin-screen-frame { width: 320px; height: 240px; max-width: none; transform: scale(0.6); transform-origin: top left; }
+  @media (max-width: 759px) {
+    /* На телефоні нижнього дока нема (навігація в шапці), тож запас під
+       нього — просто порожня смуга під композером. */
+    .chat-conversation { padding-bottom: 0; }
+    .chat-scroll-latest { bottom: 96px; }
+    [data-kb] .chat-scroll-latest { bottom: 96px; }
+    .chat-composer {
+      padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+      padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
+    }
+    .chat-layout, .chat-conversation { min-width: 0; }
   }
 }
 
@@ -218,8 +265,8 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
     transform-origin: var(--radix-popover-content-transform-origin, center);
     will-change: transform, opacity;
   }
-  .u-pop[data-state='open'] { animation: u-pop-in 260ms var(--e-spring) both; }
-  .u-pop[data-state='closed'] { animation: u-pop-out 150ms var(--e-out) both; }
+  .u-pop[data-state='open'] { animation: u-pop-in 300ms var(--e-spring) both; }
+  .u-pop[data-state='closed'] { animation: u-pop-out 180ms var(--e-out) both; }
 
   .u-veil[data-state='open'] { animation: u-veil-in 220ms var(--e-out) both; }
   .u-veil[data-state='closed'] { animation: u-veil-out 150ms var(--e-out) both; }
@@ -227,6 +274,9 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   /* Шухляда знизу — їде, а не масштабується: вона приїжджає з-за краю. */
   .u-sheet[data-state='open'] { animation: u-sheet-in 300ms var(--e-spring) both; }
   .u-sheet[data-state='closed'] { animation: u-sheet-out 180ms var(--e-out) both; }
+
+  /* Ліва шухляда (розмови, розділи на телефоні) — приїжджає зліва. */
+  .u-sheet-l { animation: u-sheet-l-in 280ms var(--e-spring) both; }
 
   /*
    * Сходинка для рядків усередині меню. Затримка — по порядку, не миттєво
@@ -246,23 +296,27 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 }
 
 @keyframes u-pop-in {
-  from { opacity: 0; transform: scale(0.94) translateY(6px); filter: blur(3px); }
-  60%  { opacity: 1; filter: blur(0); }
+  from { opacity: 0; transform: scale(0.88) translateY(10px); filter: blur(4px); }
+  55%  { opacity: 1; filter: blur(0); }
   to   { opacity: 1; transform: none; filter: blur(0); }
 }
 @keyframes u-pop-out {
-  from { opacity: 1; transform: none; }
-  to   { opacity: 0; transform: scale(0.97) translateY(3px); }
+  from { opacity: 1; transform: none; filter: blur(0); }
+  to   { opacity: 0; transform: scale(0.9) translateY(6px); filter: blur(2px); }
 }
 @keyframes u-veil-in  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes u-veil-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes u-sheet-in {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(22px) scale(0.98); }
   to   { opacity: 1; transform: none; }
 }
 @keyframes u-sheet-out {
   from { opacity: 1; transform: none; }
-  to   { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 0; transform: translateY(14px) scale(0.98); }
+}
+@keyframes u-sheet-l-in {
+  from { transform: translateX(-100%); }
+  to   { transform: none; }
 }
 @keyframes u-rise {
   from { opacity: 0; transform: translateY(5px); }

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { AnimatedList, PulseHeart, SwipeRow } from '@/vendor/reactbits';
+import { PulseHeart, SwipeRow } from '@/vendor/reactbits';
 import { cn } from '@/lib/cn';
 import { Button } from '@/components/ui/Button';
 import { Empty, SkeletonList } from '@/components/ui/Feedback';
@@ -9,6 +9,8 @@ import { useCssVar } from '@/hooks/useAccentRgb';
 import { del, post } from '@/lib/api';
 import { SessionCard } from './SessionCard';
 import type { SessionSummary } from './types';
+import { t } from '@/lib/i18n';
+import { t as chatT } from '@/locales/chat';
 
 /*
  * Список розмов.
@@ -24,13 +26,33 @@ import type { SessionSummary } from './types';
  * кнопок, а ховати все за «…» означає зробити зайвий клік обов'язковим.
  */
 
+type SessionGroup = 'today' | 'week' | 'month' | 'earlier';
+const GROUPS: SessionGroup[] = ['today', 'week', 'month', 'earlier'];
+
+function ageInDays(ts?: number): number {
+  if (!ts) return Number.POSITIVE_INFINITY;
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const date = new Date(ts * 1000);
+  const day = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  return Math.max(0, Math.round((start - day) / 86_400_000));
+}
+
+function groupOf(ts?: number): SessionGroup {
+  const days = ageInDays(ts);
+  if (days === 0) return 'today';
+  if (days <= 7) return 'week';
+  if (days <= 30) return 'month';
+  return 'earlier';
+}
+
 function when(ts?: number): string {
   if (!ts) return '';
   const date = new Date(ts * 1000);
-  const sameDay = date.toDateString() === new Date().toDateString();
-  return sameDay
-    ? date.toLocaleTimeString('uk', { hour: '2-digit', minute: '2-digit' })
-    : date.toLocaleDateString('uk', { day: '2-digit', month: '2-digit' });
+  const days = ageInDays(ts);
+  if (days === 0) return date.toLocaleTimeString('uk', { hour: '2-digit', minute: '2-digit' });
+  if (days <= 7) return t('sessions.daysAgo', { count: days });
+  return date.toLocaleDateString('uk', { day: '2-digit', month: '2-digit' });
 }
 
 export function SessionList({
@@ -64,7 +86,7 @@ export function SessionList({
       await post(`/api/sessions/${encodeURIComponent(session.id)}/pin`, { pinned: next });
       refresh();
     } catch (error) {
-      toast.error('Не вдалося закріпити', (error as Error).message);
+      toast.error(chatT('sessions.pinFailed'), (error as Error).message);
     }
   };
 
@@ -78,13 +100,13 @@ export function SessionList({
       await del(`/api/sessions/${encodeURIComponent(session.id)}`);
       refresh();
       if (session.id === current) onNew();
-      toast.toast('Розмову видалено');
+      toast.toast(chatT('sessions.deleted'));
     } catch (error) {
-      toast.error('Не вдалося видалити', (error as Error).message);
+      toast.error(chatT('sessions.deleteFailed'), (error as Error).message);
     }
   };
 
-  const items = sessions.map((session) => {
+  const item = (session: SessionSummary) => {
     const row = (
       <div
         className={cn(
@@ -92,7 +114,7 @@ export function SessionList({
           session.id === current ? 'bg-accent-soft text-ink' : 'text-ink-2 hover:bg-surface-2',
         )}
       >
-        <span className="min-w-0 flex-1 truncate text-[13px]">{session.title || 'Без назви'}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px]">{session.title || chatT('sessions.untitled')}</span>
         <span className="u-data shrink-0 text-[10px] text-ink-3">{when(session.updated)}</span>
         {/* Закріплення — окрема дія всередині рядка, тож клік по ній не має
             відкривати розмову. */}
@@ -112,7 +134,7 @@ export function SessionList({
             idleColor={faint}
             pillColor="transparent"
             textColor={ink}
-            label="Закріпити"
+            label={chatT('sessions.pin')}
           />
         </span>
       </div>
@@ -120,15 +142,15 @@ export function SessionList({
 
     return (
       <SessionCard
-        key={session.id}
         session={session}
+        onOpen={() => onOpen(session.id)}
         onDeleted={(id) => {
           if (id === current) onNew();
         }}
       >
         <SwipeRow
           className="session-swipe"
-          height={30}
+          height={44}
           radius={8}
           actionWidth={96}
           // Повний змах не видаляє: надто легко зробити випадково, а
@@ -138,10 +160,10 @@ export function SessionList({
           textColor={ink}
           drawerColor={surface3}
           actionColor={danger}
-          label={session.title || 'Розмова'}
+          label={session.title || chatT('sessions.conversation')}
           actions={[
-            { id: 'delete', label: 'Видалити' },
-            { id: 'pin', label: session.pinned ? 'Відкріпити' : 'Закріпити' },
+            { id: 'delete', label: chatT('sessions.delete') },
+            { id: 'pin', label: session.pinned ? chatT('sessions.unpin') : chatT('sessions.pin') },
           ]}
           onAction={(action) => {
             if (action.id === 'delete') void removeSession(session);
@@ -152,13 +174,18 @@ export function SessionList({
         </SwipeRow>
       </SessionCard>
     );
-  });
+  };
+
+  const grouped = GROUPS.map((group) => ({
+    group,
+    sessions: sessions.filter((session) => groupOf(session.updated) === group),
+  })).filter(({ sessions: items }) => items.length > 0);
 
   return (
-    <div className={cn('flex min-h-0 flex-col', className)}>
+    <div data-swipe-ignore className={cn('flex min-h-0 flex-col', className)}>
       <div className="flex items-center justify-between gap-2 px-3 py-3">
-        <span className="u-label">розмови</span>
-        <Button variant="ghost" size="icon-sm" onClick={onNew} aria-label="Нова розмова">
+        <span className="u-label">{chatT('sessions.title')}</span>
+        <Button variant="ghost" size="icon-sm" onClick={onNew} aria-label={chatT('chat.newSession')}>
           <Plus />
         </Button>
       </div>
@@ -167,27 +194,24 @@ export function SessionList({
         {loading ? (
           <SkeletonList rows={6} className="px-3" />
         ) : sessions.length === 0 ? (
-          <Empty title="Порожньо" hint="Напиши боту — розмова збережеться сама." />
+          <Empty title={chatT('sessions.empty')} hint={chatT('sessions.emptyHint')} />
         ) : (
-          <AnimatedList
-            items={items}
-            showGradients
-            /*
-             * Навігацію стрілками вимкнено свідомо. Вона вішає слухач на
-             * WINDOW і перехоплює Enter, Tab і стрілки по всій сторінці —
-             * тобто Enter у полі вводу чату «відкривав» виділену розмову й
-             * підміняв щойно надіслане повідомлення старою історією.
-             * У списку поруч із текстовим полем це неприйнятно.
-             */
-            enableArrowNavigation={false}
-            displayScrollbar
-            initialSelectedIndex={Math.max(0, sessions.findIndex((s) => s.id === current))}
-            onItemSelect={(_item, index) => {
-              const session = sessions[index];
-              if (session) onOpen(session.id);
-            }}
-            className="h-full"
-          />
+          <div className="h-full overflow-y-auto px-2 pb-3 [scrollbar-width:thin]">
+            {grouped.map(({ group, sessions: groupSessions }) => (
+              <section key={group} className="mb-3 last:mb-0">
+                <h2 className="u-label sticky top-0 z-10 bg-surface/95 px-2 py-1.5 backdrop-blur">
+                  {t(`sessions.${group}`)}
+                </h2>
+                <div className="space-y-1">
+                  {groupSessions.map((session) => (
+                    <div key={session.id}>
+                      {item(session)}
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         )}
       </div>
     </div>

@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AssistantRuntimeProvider } from '@assistant-ui/react';
-import { MessagesSquare, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { List, Plus, X } from 'lucide-react';
 import { Thread } from './Thread';
 import { Composer } from './Composer';
 import { SessionList } from './SessionList';
-import { Face } from './Face';
+import { PinnedPanels } from './PinnedPanels';
+import { ModelMenu } from './ModelMenu';
+import { SelectionActions } from './SelectionActions';
 import { useChatRuntime } from './useChatRuntime';
 import { useIsDesk, useIsPhone } from '@/hooks/useMediaQuery';
+import { useDrawer } from '@/hooks/useDrawer';
 import { useRouteParam } from '@/app/useRoute';
 import { useQuery } from '@tanstack/react-query';
 import { get } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
-import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/Dialog';
+import { Dialog, DialogContent } from '@/components/ui/Dialog';
+import { t as workspaceT } from '@/locales/workspace';
+import { t } from '@/lib/i18n';
 
 /*
  * Чат. Три колонки на столі: розмови | стрічка | обличчя.
@@ -27,7 +33,7 @@ function ProjectChip({ name }: { name: string }) {
       <span className="u-label truncate text-accent">{name}</span>
       <button
         type="button"
-        aria-label="Показати всі розмови"
+        aria-label={t('chat.showAll')}
         className="ml-auto rounded-xs p-0.5 text-ink-3 transition-colors hover:text-ink"
         onClick={() => {
           window.location.hash = '#/chat';
@@ -43,7 +49,22 @@ export default function ChatPanel() {
   const isPhone = useIsPhone();
   const isDesk = useIsDesk();
   const chat = useChatRuntime();
-  const [listOpen, setListOpen] = useState(false);
+  const listDrawer = useDrawer();
+  const [panelsOpen, setPanelsOpen] = useState(false);
+
+  useEffect(() => {
+    window.__vbotSendMessage = (text: string) => {
+      // UI questions can arrive while the originating tool turn is still
+      // winding down. Cancel that turn first so the selected answer is not
+      // silently rejected by the single-flight send guard.
+      if (chat.running) {
+        void chat.cancel().then(() => chat.send(text));
+      } else {
+        void chat.send(text);
+      }
+    };
+    return () => { delete window.__vbotSendMessage; };
+  }, [chat.send]);
 
   /*
    * Проєкт із адреси (`#/chat?project=cats`) — так тека проєктів з «Огляду»
@@ -64,6 +85,14 @@ export default function ChatPanel() {
     [chat.sessions, project],
   );
 
+  /*
+   * Which reply may be asked again: the last one, and only once it is
+   * finished. Retrying mid-stream would race the answer still arriving, and
+   * retrying an older reply would quietly replace a different question.
+   */
+  const last = chat.messages[chat.messages.length - 1];
+  const retryId = !chat.running && last?.role === 'assistant' ? last.id : '';
+
 
 
   // Відкриваємо найсвіжішу розмову при вході в розділ — повернутись до неї
@@ -82,53 +111,115 @@ export default function ChatPanel() {
       current={chat.sessionId}
       onOpen={(id) => {
         void chat.openSession(id);
-        setListOpen(false);
+        listDrawer.setOpen(false);
       }}
       onNew={() => {
         chat.newSession();
-        setListOpen(false);
+        listDrawer.setOpen(false);
       }}
     />
   );
 
   return (
     <AssistantRuntimeProvider runtime={chat.runtime}>
-      <div className="flex min-h-0 flex-1">
+      <div className="chat-layout flex min-h-0 flex-1">
         {isDesk ? (
-          <aside className="flex w-[220px] shrink-0 flex-col border-r border-line bg-surface">
+          <aside className="chat-sessions flex min-h-0 w-[220px] shrink-0 flex-col border-r border-line bg-surface">
             {project ? <ProjectChip name={projectName} /> : null}
             {list}
           </aside>
         ) : null}
 
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        {/*
+         * Планшет: колонка 220 px з'їдала б третину вузького вікна, тож
+         * список розмов — та сама ліва шухляда, що й на телефоні.
+         */}
+
+        <div className="chat-conversation relative flex min-h-0 min-w-0 flex-1 flex-col">
+          {/*
+           * Narrow header: conversations | model | new conversation.
+           *
+           * The model is the title because on a phone it is the setting you
+           * change most and the one the prompt bar has no room for. The
+           * conversation's own name is one tap away in the list, and the
+           * compact face that used to sit here is dropped: at this width it
+           * was a 64 px ornament competing with the model name.
+           */}
           {!isDesk ? (
-            <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
-              <Dialog open={listOpen} onOpenChange={setListOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="sm" aria-label="Розмови">
-                    <MessagesSquare />
-                    <span className="max-w-[150px] truncate">
-                      {chat.sessions.find((s) => s.id === chat.sessionId)?.title || 'Нова розмова'}
-                    </span>
-                  </Button>
-                </DialogTrigger>
-                <DialogContent title="Розмови" side={isPhone ? 'bottom' : 'center'} className="p-0">
-                  <div className="max-h-[60dvh]">{list}</div>
+            <div className="grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 border-b border-line px-2 py-1.5">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t('chat.sessions')}
+                aria-expanded={listDrawer.open}
+                onClick={() => listDrawer.setOpen(true)}
+              >
+                <List />
+              </Button>
+              <div className="flex min-w-0 justify-center">
+                <ModelMenu />
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t('chat.newSession')}
+                onClick={() => chat.newSession()}
+              >
+                <Plus />
+              </Button>
+              {listDrawer.open
+                ? createPortal(
+                    <>
+                      <div
+                        {...listDrawer.veilProps}
+                        className="u-veil fixed inset-0"
+                        style={{ background: 'var(--c-overlay)', zIndex: 'var(--z-drawer)' }}
+                      />
+                      <div
+                        {...listDrawer.panelProps}
+                        aria-label={t('chat.sessions')}
+                        className="u-sheet-l u-safe-t u-safe-b fixed inset-y-0 left-0 flex w-[300px] max-w-[85vw] flex-col border-r border-line bg-surface"
+                        style={{ zIndex: 'var(--z-drawer)' }}
+                      >
+                        <header className="flex items-center justify-between border-b border-line px-4 py-3">
+                          <span className="text-[15px] font-semibold text-ink">{t('chat.sessions')}</span>
+                          <button
+                            type="button"
+                            aria-label={t('chat.close')}
+                            onClick={() => listDrawer.setOpen(false)}
+                            className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-3"
+                          >
+                            <X size={18} />
+                          </button>
+                        </header>
+                        {project ? <ProjectChip name={projectName} /> : null}
+                        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{list}</div>
+                      </div>
+                    </>,
+                    document.body,
+                  )
+                : null}
+              <Dialog open={panelsOpen} onOpenChange={setPanelsOpen}>
+                <DialogContent
+                  title={workspaceT('pins.title')}
+                  side={isPhone ? 'bottom' : 'center'}
+                  className="h-[min(78dvh,680px)] p-0"
+                  bodyClassName="p-0 sm:p-0"
+                >
+                  <PinnedPanels embedded messages={chat.messages} />
                 </DialogContent>
               </Dialog>
-              <div className="flex-1" />
-              <Face compact className="h-9 w-16 shrink-0" />
             </div>
           ) : null}
 
           <Thread
-            steps={chat.steps}
-            running={chat.running}
-            answered={chat.answered}
             compactedFrom={chat.compactedFrom}
+            retryId={retryId}
+            onRetry={chat.retry}
             composer={
               <Composer
+                lean={!isDesk}
+                onOpenPanels={() => setPanelsOpen(true)}
                 busy={chat.running}
                 usedTokens={chat.usedTokens}
                 sessionId={chat.sessionId}
@@ -144,10 +235,11 @@ export default function ChatPanel() {
         </div>
 
         {isDesk ? (
-          <aside className="flex w-[240px] shrink-0 flex-col gap-3 border-l border-line bg-surface p-3">
-            <Face />
-          </aside>
+          <PinnedPanels messages={chat.messages} />
         ) : null}
+
+        {/* Selecting text in a reply turns it into the next question. */}
+        <SelectionActions onAsk={(text) => void chat.send(text)} />
       </div>
     </AssistantRuntimeProvider>
   );

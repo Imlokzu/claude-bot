@@ -1,0 +1,10 @@
+{
+  "name": "agent-mail-worker",
+  "version": "1.0.0",
+  "description": "Cloudflare Email Routing Worker for Agent Inboxes and OTP Extraction",
+  "main": "src/index.js",
+  "scripts": {
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {}
+}

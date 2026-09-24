@@ -20,7 +20,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import pathlib
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import time
 from typing import Any
 
@@ -517,15 +522,56 @@ async def transcript(video_id: str, languages: list[str] | None = None) -> list[
     закритий для IP — фолбек на Invidious-інстанси.
     """
     langs = [l for l in (languages or []) if isinstance(l, str) and l.strip()][:4]
+    if not langs:
+        langs = ["uk", "en"]
+
+    blocked = False   # YouTube refused us, rather than the video lacking subs
+    disabled = False  # the video itself carries no subtitles
+
     if YouTubeTranscriptApi is not None:
         try:
             return await asyncio.to_thread(_transcript_sync, video_id, langs)
-        except Exception as exc:  # noqa: BLE001 — далі пробуємо Invidious
-            log.warning("Прямий транскрайб %s не вдався (%s), пробую Invidious", video_id, type(exc).__name__)
-    if not langs:
-        langs = ["uk", "en"]
+        except Exception as exc:  # noqa: BLE001 — more sources below
+            name = type(exc).__name__
+            # Match by name, not by import: the library renames these between
+            # majors, and a missing symbol here would turn a bad network day
+            # into an ImportError on startup. The text is checked too, because
+            # the helper above re-raises as RuntimeError and the original class
+            # survives only inside the message.
+            marks = f"{name} {exc}"
+            if any(m in marks for m in ("IpBlocked", "RequestBlocked", "TooManyRequests", "429")):
+                blocked = True
+            elif any(m in marks for m in ("TranscriptsDisabled", "NoTranscriptFound")):
+                disabled = True
+            log.warning("Прямий транскрайб %s не вдався (%s)", video_id, name)
+
+    try:
+        return await asyncio.to_thread(_ytdlp_captions_sync, video_id, langs)
+    except Exception as exc:  # noqa: BLE001 — Invidious still to try
+        if "обмежує запити" in str(exc):
+            blocked = True
+        log.warning("yt-dlp транскрайб %s не вдався (%s)", video_id, type(exc).__name__)
+
     bases = await all_invidious_instances()
-    return await asyncio.to_thread(_invidious_captions_sync, video_id, langs + ["uk", "en"], bases)
+    try:
+        return await asyncio.to_thread(
+            _invidious_captions_sync, video_id, langs + ["uk", "en"], bases
+        )
+    except Exception as exc:  # noqa: BLE001 — last source, now explain honestly
+        log.warning("Invidious транскрайб %s не вдався (%s)", video_id, type(exc).__name__)
+
+    # Every source failed, so say WHY. Reporting "this video has no subtitles"
+    # when the real cause is a rate-limited address sends the user hunting for
+    # a different video, which cannot help — the block follows the address,
+    # not the clip.
+    if blocked:
+        raise RuntimeError(
+            "YouTube тимчасово обмежує запити з нашої адреси — це стосується "
+            "будь-якого відео, не цього конкретного. Варто спробувати пізніше."
+        )
+    if disabled:
+        raise RuntimeError("у цього відео вимкнені субтитри")
+    raise RuntimeError("жодне джерело субтитрів зараз не відповідає")
 
 
 def transcript_to_text(segments: list[dict[str, Any]], max_chars: int = 4000) -> str:
@@ -541,6 +587,50 @@ def transcript_to_text(segments: list[dict[str, Any]], max_chars: int = 4000) ->
         if total >= max_chars:
             break
     return " ".join(parts)[:max_chars].strip()
+
+
+def transcript_parts(
+    segments: list[dict[str, Any]], part_chars: int = 12000
+) -> list[dict[str, Any]]:
+    """Ріже транскрайб на частини, які влазять в один запит до моделі.
+
+    Чому не один суцільний текст: година розмови — це десятки тисяч
+    символів, і цілком вони з'їдають вікно моделі. Чому не просто обрізати
+    початок, як робили раніше: з 82 хвилин мозок бачив перші п'ять, чесно
+    казав «текст обрізаний» — і на цьому все закінчувалось, бо попросити
+    продовження було нічим.
+
+    Кожна частина несе свій відрізок часу, щоб мозок міг сказати не просто
+    «далі», а «на 40-й хвилині».
+    """
+    chunks: list[dict[str, Any]] = []
+    buffer: list[str] = []
+    size = 0
+    start = float(segments[0].get("start", 0) or 0) if segments else 0.0
+
+    def flush(end: float) -> None:
+        if not buffer:
+            return
+        chunks.append({
+            "text": " ".join(buffer).strip(),
+            "start_sec": int(start),
+            "end_sec": int(end),
+        })
+
+    for seg in segments:
+        text = seg.get("text", "")
+        if not text:
+            continue
+        if size and size + len(text) + 1 > part_chars:
+            flush(float(seg.get("start", 0) or 0))
+            start = float(seg.get("start", 0) or 0)
+            buffer, size = [], 0
+        buffer.append(text)
+        size += len(text) + 1
+
+    last = float(segments[-1].get("start", 0) or 0) if segments else 0.0
+    flush(last)
+    return chunks
 
 
 # --- Фолбек транскрайбу через Invidious: субтитри беремо з інстансу, якщо
@@ -574,6 +664,61 @@ def _vtt_to_segments(vtt: str) -> list[dict[str, Any]]:
     if current_start is not None and current_text:
         segments.append({"start": round(current_start, 2), "text": " ".join(current_text)})
     return segments[:_TRANSCRIPT_MAX_SEGMENTS]
+
+
+def _ytdlp_captions_sync(video_id: str, languages: list[str]) -> list[dict[str, Any]]:
+    """Subtitles via yt-dlp, as a second source when timedtext is closed.
+
+    Why a third path at all: the direct timedtext endpoint gets shut off per
+    IP, and the public Invidious instances this code falls back to are mostly
+    dead (530/502, or an HTML error page where JSON should be). yt-dlp goes
+    through YouTube's player API instead, is actively maintained against
+    exactly this kind of breakage, and is already installed here.
+
+    It is not a cure for an IP ban — a banned address gets HTTP 429 here too —
+    so the caller still has to tell the user the truth when every path fails.
+    """
+    # Prefer the copy installed beside our own interpreter: that one carries
+    # curl_cffi, so it can impersonate a browser's TLS fingerprint, which some
+    # of YouTube's responses now require. A system-wide yt-dlp usually cannot.
+    local = pathlib.Path(sys.executable).parent / "yt-dlp"
+    binary = str(local) if local.exists() else shutil.which("yt-dlp")
+    if not binary:
+        raise RuntimeError("yt-dlp не встановлено")
+
+    wanted = [code for code in (languages or []) if code] or ["uk", "en"]
+    with tempfile.TemporaryDirectory(prefix="vbot-subs-") as workdir:
+        done = subprocess.run(
+            [
+                binary, "--skip-download",
+                # Both flags: a video may carry human subtitles, automatic
+                # ones, or only one of the two.
+                "--write-subs", "--write-auto-subs",
+                "--sub-langs", ",".join(wanted + ["uk", "en"]),
+                "--sub-format", "vtt",
+                "--no-playlist", "--no-warnings", "--quiet",
+                "-o", f"{workdir}/%(id)s",
+                f"https://www.youtube.com/watch?v={video_id}",
+            ],
+            capture_output=True, text=True, timeout=90, check=False,
+        )
+        files = sorted(pathlib.Path(workdir).glob("*.vtt"))
+        if not files:
+            stderr = (done.stderr or "").strip()
+            if "429" in stderr or "Too Many Requests" in stderr:
+                raise RuntimeError("YouTube обмежує запити з нашої адреси")
+            raise RuntimeError("yt-dlp не віддав субтитрів")
+
+        # Prefer a file whose language suffix was actually asked for; the glob
+        # order otherwise depends on the filesystem.
+        def rank(path: pathlib.Path) -> int:
+            for index, code in enumerate(wanted):
+                if f".{code}." in path.name:
+                    return index
+            return len(wanted)
+
+        best = min(files, key=rank)
+        return _vtt_to_segments(best.read_text(encoding="utf-8", errors="replace"))
 
 
 def _invidious_captions_sync(video_id: str, languages: list[str], bases: list[str] | None = None) -> list[dict[str, Any]]:

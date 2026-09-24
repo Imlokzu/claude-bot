@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:browser": "node tests/workspace.browser.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
@@ -61,8 +63,10 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "remark-parse": "11.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
+    "unified": "11.0.5",
     "vite": "^8.3.0",
     "vite-plugin-pwa": "^1.3.0"
   }

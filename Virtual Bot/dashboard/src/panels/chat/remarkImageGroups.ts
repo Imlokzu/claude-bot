@@ -1,19 +1,8 @@
-/*
- * Склеювання сусідніх абзаців із картинок в один.
- *
- * Модель майже завжди ставить картинки через порожній рядок:
- *
- *     ![перша](…)
- *
- *     ![друга](…)
- *
- * Для markdown це ДВА абзаци, тож галерея бачила по одній картинці й
- * малювала два окремі кадри замість одного набору. Тут вони зводяться в
- * один абзац ще до рендера — далі перевизначення `p` (див. Markdown.tsx)
- * саме собою отримує повний список і показує гармошку.
- *
- * Абзац із текстом такий ланцюжок обриває: підпис між картинками означає,
- * що це різні речі, а не один набір.
+/**
+ * Render standalone images as one accordion, including older replies with
+ * prose captions between photographs. Preserve all prose and image metadata;
+ * move only image-only paragraphs to the first image's position. Code, tables,
+ * links and inline illustrations retain their original Markdown semantics.
  */
 
 interface Node {
@@ -22,12 +11,11 @@ interface Node {
   children?: Node[];
 }
 
-/** Абзац, у якому лише картинки (і пробіли з переносами між ними). */
-function onlyImages(node: Node | undefined): node is Node & { children: Node[] } {
-  if (!node || node.type !== 'paragraph' || !node.children?.length) return false;
+function onlyImages(node: Node): node is Node & { children: Node[] } {
+  if (node.type !== 'paragraph' || !node.children?.length) return false;
   let images = 0;
   for (const child of node.children) {
-    if (child.type === 'image') {
+    if (child.type === 'image' || child.type === 'imageReference') {
       images += 1;
       continue;
     }
@@ -39,19 +27,14 @@ function onlyImages(node: Node | undefined): node is Node & { children: Node[] }
 
 export function remarkImageGroups() {
   return (tree: Node) => {
-    const children = tree.children;
-    if (!children?.length) return;
-    const merged: Node[] = [];
-    for (const node of children) {
-      const previous = merged[merged.length - 1];
-      if (onlyImages(node) && onlyImages(previous)) {
-        // Порожній текстовий вузол між картинками лишаємо: у зібраному
-        // абзаці він тримає ті самі переноси, що були в розмітці.
-        previous.children.push({ type: 'text', value: '\n' }, ...node.children);
-        continue;
-      }
-      merged.push(node);
-    }
-    tree.children = merged;
+    if (!tree.children?.length) return;
+    const paragraphs = tree.children.filter(onlyImages);
+    if (paragraphs.length < 2) return;
+    const first = paragraphs[0];
+    const images = paragraphs.flatMap((paragraph) => paragraph.children.filter((node) => node.type !== 'text'));
+    const grouped: Node = { ...first, children: images };
+    const originals = new Set<Node>(paragraphs);
+    tree.children = tree.children.flatMap((node) =>
+      node === first ? [grouped] : originals.has(node) ? [] : [node]);
   };
 }

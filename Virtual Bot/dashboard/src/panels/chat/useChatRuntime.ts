@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useExternalStoreRuntime, type AppendMessage, type ThreadMessageLike } from '@assistant-ui/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { get } from '@/lib/api';
-import { streamChat } from '@/lib/chatStream';
+import { cleanEmotionTag, streamChat, type AgentStatus, type ChatAttachment } from '@/lib/chatStream';
+import { t } from '@/lib/i18n';
+import { updateActivity, finishActivity, restoreActivity } from './activity';
 import { useToast } from '@/components/ui/Toaster';
 import { estimateTokens } from './tokens';
 import type { ChatMessage, SessionDetail, SessionSummary, ToolStep } from './types';
@@ -29,13 +31,21 @@ export function useChatRuntime() {
   // на кожен чанк, а історія — ні.
   const [draft, setDraft] = useState<string | null>(null);
   const [steps, setSteps] = useState<ToolStep[]>([]);
-  // Чи була відповідь у цій розмові вже. Потрібно, щоб блок «Думаю…» після
-  // відповіді згорнувся в «Думав N с» і лишився, навіть коли інструментів не
-  // викликали: тривалість — теж відповідь на «що там відбувалось».
-  const [answered, setAnswered] = useState(false);
+  const stepsRef = useRef<ToolStep[]>([]);
+  const draftRef = useRef('');
+  const generation = useRef(0);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus>('connecting');
+  const [streamModel, setStreamModel] = useState('');
   // Скільки реплік сховано за переказом. 0 — розмову не стискали.
   const [compactedFrom, setCompactedFrom] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  // Only the request-scoped chat stream may contribute to this transcript.
+  // The global bot event bus also contains other sessions and background work.
+  useEffect(() => () => {
+    generation.current += 1;
+    abortRef.current?.abort();
+  }, []);
 
   const sessions = useQuery({
     queryKey: ['sessions'],
@@ -45,11 +55,14 @@ export function useChatRuntime() {
   /** Відкриває збережену розмову. */
   const openSession = useCallback(
     async (id: string) => {
+      const version = ++generation.current;
       abortRef.current?.abort();
+      abortRef.current = null;
       setSessionId(id);
       setDraft(null);
       setSteps([]);
-      setAnswered(false);
+      stepsRef.current = [];
+      draftRef.current = '';
       setCompactedFrom(0);
       if (!id) {
         setMessages([]);
@@ -57,6 +70,7 @@ export function useChatRuntime() {
       }
       try {
         const data = await get<SessionDetail>(`/api/sessions/${encodeURIComponent(id)}`);
+        if (version !== generation.current) return;
         // Переказ завжди стоїть першим і єдиним — саме так його пише
         // chat_store.compact.
         setCompactedFrom(Number(data.messages?.[0]?.compacted_from ?? 0));
@@ -64,47 +78,73 @@ export function useChatRuntime() {
           (data.messages ?? []).map((message, index) => ({
             id: `${id}-${index}`,
             role: message.role === 'assistant' ? 'assistant' : 'user',
-            content: message.content ?? '',
+            content: message.role === 'assistant' ? cleanEmotionTag(message.content ?? '') : message.content ?? '',
             ts: message.ts,
             attachments: message.attachments,
+            steps: restoreActivity(message.steps),
           })),
         );
       } catch (error) {
-        toast.error('Не вдалося відкрити розмову', (error as Error).message);
+        if (version === generation.current) toast.error(t('chat.openError'), (error as Error).message);
       }
     },
     [toast],
   );
 
   const newSession = useCallback(() => {
+    generation.current += 1;
     abortRef.current?.abort();
+    abortRef.current = null;
     setSessionId('');
     setMessages([]);
     setDraft(null);
     setSteps([]);
-    setAnswered(false);
+    stepsRef.current = [];
+    draftRef.current = '';
     setCompactedFrom(0);
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, attachments: unknown[] = []) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
+      if (!trimmed || abortRef.current) return;
 
       const controller = new AbortController();
       abortRef.current = controller;
+      const version = ++generation.current;
+      const isCurrent = () => version === generation.current && !controller.signal.aborted;
 
-      setMessages((current) => [...current, { id: nextId(), role: 'user', content: trimmed }]);
+      const safeAttachments = attachments.filter(
+        (item): item is ChatAttachment => Boolean(item && typeof item === 'object' && 'url' in item),
+      );
+      setMessages((current) => [...current, {
+        id: nextId(), role: 'user', content: trimmed, attachments: safeAttachments,
+      }]);
       setDraft('');
       setSteps([]);
-      setAnswered(false);
+      stepsRef.current = [];
+      draftRef.current = '';
+      setAgentStatus('connecting');
+      setStreamModel('');
 
       let accumulated = '';
+      let terminal = false;
+      const preserveInterrupted = () => {
+        if (!isCurrent() || terminal) return;
+        terminal = true;
+        const finished = finishActivity(stepsRef.current);
+        if (accumulated || finished.length) {
+          setMessages((current) => [...current, { id: nextId(), role: 'assistant', content: accumulated, steps: finished }]);
+        }
+        setDraft(null);
+        setSteps(finished);
+      };
 
       await streamChat(
         {
           message: trimmed,
           session_id: sessionId || undefined,
+          attachments: safeAttachments,
           // reasoning_effort тут більше не шлемо. Він діяв лише на прямий
           // виклик Omni (картинки), а в чаті відповідає OpenClaw, і глибину
           // думання йому задає власний конфіг — див. /api/brain/thinking.
@@ -113,83 +153,92 @@ export function useChatRuntime() {
         },
         {
           onDelta: (chunk) => {
+            if (!isCurrent() || terminal) return;
             accumulated += chunk;
+            draftRef.current = accumulated;
             setDraft(accumulated);
           },
           onTool: (event) => {
-            const tool = String(event.tool ?? 'тулз');
-            setSteps((current) => {
-              if (event.type === 'tool_start') {
-                return [
-                  ...current,
-                  {
-                    id: `${tool}-${current.length}`,
-                    label: tool,
-                    detail: String(event.detail ?? ''),
-                    status: 'active',
-                  },
-                ];
-              }
-              if (event.type === 'tool_done' || event.type === 'tool_result') {
-                // Закриваємо ОСТАННІЙ активний крок із цим іменем: той самий
-                // тулз може бути викликаний кілька разів за відповідь.
-                const index = current.map((s) => s.label === tool && s.status === 'active').lastIndexOf(true);
-                if (index === -1) return current;
-                const next = [...current];
-                next[index] = { ...next[index], status: 'done' };
-                return next;
-              }
-              return current;
-            });
+            if (!isCurrent() || terminal) return;
+            stepsRef.current = updateActivity(stepsRef.current, event);
+            setSteps(stepsRef.current);
+          },
+          onStatus: (status) => {
+            if (isCurrent() && !terminal) setAgentStatus(status);
+          },
+          onModel: (model) => {
+            if (isCurrent() && !terminal) setStreamModel(model);
+          },
+          onSession: (id) => {
+            if (isCurrent() && !terminal) setSessionId(id);
           },
           onDone: (result) => {
+            if (!isCurrent() || terminal) return;
+            terminal = true;
+            const finished = result.steps ?? finishActivity(stepsRef.current);
             setMessages((current) => [
               ...current,
-              { id: nextId(), role: 'assistant', content: result.reply },
+            { id: nextId(), role: 'assistant', content: result.reply, steps: finished,
+              model: result.model || streamModel },
             ]);
             setDraft(null);
-            // Кроки НЕ чистимо: блок «Думаю…» згортається в «Думав N с» і
-            // лишається біля відповіді, поки не почнеться наступна. Питання
-            // «а що він робив?» виникає саме тоді, коли відповідь уже є.
-            // Скидає їх `send` на початку наступного запиту.
-            setAnswered(true);
+            setSteps(finished);
+            if (result.model) setStreamModel(result.model);
+            // Each assistant message owns its activity, including saved history.
             // Бекенд міг створити нову розмову й дати їй назву у фоні.
             if (result.session_id && result.session_id !== sessionId) setSessionId(result.session_id);
             void client.invalidateQueries({ queryKey: ['sessions'] });
             void client.invalidateQueries({ queryKey: ['models'] });
           },
           onError: (message) => {
-            setDraft(null);
-            setSteps([]);
-            toast.error('Бот не відповів', message);
+            if (!isCurrent() || terminal) return;
+            preserveInterrupted();
+            toast.error(t('chat.replyError'), message);
           },
         },
         controller.signal,
       ).catch((error: unknown) => {
-        setDraft(null);
-        setSteps([]);
-        // Перерване користувачем — не помилка, повідомляти нема про що.
-        if ((error as Error)?.name === 'AbortError') return;
-        toast.error('Збій звʼязку', (error as Error).message);
+        if (!isCurrent() || terminal) return;
+        preserveInterrupted();
+        if ((error as Error)?.name !== 'AbortError') toast.error(t('chat.connectionError'), (error as Error).message);
       });
 
-      abortRef.current = null;
+      if (abortRef.current === controller) abortRef.current = null;
     },
     [client, sessionId, toast],
   );
 
+  /**
+   * Ask the last question again.
+   *
+   * The failed or unwanted reply is dropped along with the question that
+   * produced it, and the question is sent afresh — otherwise the model would
+   * see its own rejected answer in the context and tend to repeat it. The
+   * attachments go back with it: a retry without the picture is a different
+   * question.
+   */
+  const retry = useCallback(() => {
+    if (abortRef.current) return;
+    const lastUser = messages.map((item) => item.role).lastIndexOf('user');
+    if (lastUser === -1) return;
+    const question = messages[lastUser];
+    setMessages(messages.slice(0, lastUser));
+    setSteps([]);
+    stepsRef.current = [];
+    void send(question.content, question.attachments ?? []);
+  }, [messages, send]);
+
   const cancel = useCallback(async () => {
+    generation.current += 1;
     abortRef.current?.abort();
     abortRef.current = null;
-    // Те, що встигло надійти, лишаємо в історії: викидати половину відповіді
-    // після натиску «стоп» — втрата, а не охайність.
-    setDraft((current) => {
-      if (current) {
-        setMessages((list) => [...list, { id: nextId(), role: 'assistant', content: current }]);
-      }
-      return null;
-    });
-    setSteps([]);
+    const finished = finishActivity(stepsRef.current);
+    const content = draftRef.current;
+    if (content || finished.length) {
+      setMessages((list) => [...list, { id: nextId(), role: 'assistant', content, steps: finished }]);
+    }
+    setDraft(null);
+    setSteps(finished);
   }, []);
 
   // Скільки контексту зʼїла розмова. Рахуємо по видимій історії плюс те,
@@ -200,8 +249,8 @@ export function useChatRuntime() {
   );
 
   const visible = useMemo<ChatMessage[]>(
-    () => (draft !== null ? [...messages, { id: 'draft', role: 'assistant', content: draft }] : messages),
-    [messages, draft],
+    () => (draft !== null ? [...messages, { id: 'draft', role: 'assistant', content: draft, steps }] : messages),
+    [messages, draft, steps],
   );
 
   const runtime = useExternalStoreRuntime<ChatMessage>({
@@ -212,6 +261,9 @@ export function useChatRuntime() {
       id: message.id,
       role: message.role,
       content: [{ type: 'text', text: message.content }],
+      metadata: { custom: { steps: message.steps ?? [], running: message.id === 'draft',
+        agentStatus: message.id === 'draft' ? agentStatus : undefined,
+        model: message.model || (message.id === 'draft' ? streamModel : undefined) } },
     }),
     onNew: async (message: AppendMessage) => {
       const text = message.content
@@ -232,12 +284,14 @@ export function useChatRuntime() {
     newSession,
     steps,
     running: draft !== null,
-    answered,
     compactedFrom,
     usedTokens,
+    // Сира історія — для панелі витрат (вхідні/вихідні рахуються окремо).
+    messages,
     // PromptBar володіє власним текстом, тож надсилання й зупинка потрібні
     // назовні напряму, повз композер assistant-ui.
     send,
     cancel,
+    retry,
   };
 }

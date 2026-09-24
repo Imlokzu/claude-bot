@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Claude Bot — Datacenter Controller</title>
+  <style>
+    :root {
+      --bg: #030712;
+      --card-bg: #0b0f19;
+      --card-border: #1e293b;
+      --accent-cyan: #38bdf8;
+      --accent-green: #10b981;
+      --accent-orange: #f59e0b;
+      --accent-purple: #8b5cf6;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      min-height: 100vh;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      user-select: none;
+    }
+
+    /* Top Bar */
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 12px 20px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.4);
+    }
+
+    .brand-text h1 {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .brand-text span {
+      font-size: 11px;
+      color: var(--accent-cyan);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-green);
+    }
+
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent-green);
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.5; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.15); }
+      100% { opacity: 0.5; transform: scale(0.9); }
+    }
+
+    /* Grid Layout */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge {
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .badge-cyan { background: rgba(56, 189, 248, 0.15); color: var(--accent-cyan); border: 1px solid rgba(56, 189, 248, 0.3); }
+    .badge-green { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-purple { background: rgba(139, 92, 246, 0.15); color: var(--accent-purple); border: 1px solid rgba(139, 92, 246, 0.3); }
+
+    /* OTP Alert Widget */
+    .otp-box {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.9));
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+    }
+
+    .otp-label {
+      font-size: 11px;
+      color: var(--accent-cyan);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .otp-value {
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: 6px;
+      color: #ffffff;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      text-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+    }
+
+    .otp-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* Node List */
+    .node-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .node-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(30, 41, 59, 0.4);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+      border-radius: 10px;
+      padding: 10px 14px;
+    }
+
+    .node-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .node-spec {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    .node-val {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      text-align: right;
+    }
+
+    /* Meter Bar */
+    .meter-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .meter-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .meter-bar {
+      height: 10px;
+      background: #1e293b;
+      border-radius: 6px;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .meter-fill-used {
+      width: 24%;
+      background: linear-gradient(90deg, #0284c7, #38bdf8);
+      border-radius: 6px 0 0 6px;
+    }
+
+    .meter-fill-system {
+      width: 22%;
+      background: #64748b;
+    }
+
+    .meter-fill-free {
+      width: 54%;
+      background: rgba(16, 185, 129, 0.3);
+    }
+
+    /* Action Buttons */
+    .btn-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .btn {
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 12px;
+      color: var(--text-main);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+      background: rgba(56, 189, 248, 0.2);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      border: none;
+      color: #ffffff;
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.3);
+    }
+
+    /* Live Activity Feed */
+    .feed {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .feed-item {
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 8px;
+      border-left: 3px solid var(--accent-cyan);
+      display: flex;
+      justify-content: space-between;
+      color: #cbd5e1;
+    }
+
+    .feed-item.success { border-left-color: var(--accent-green); }
+    .feed-item.warning { border-left-color: var(--accent-orange); }
+
+    .feed-time {
+      color: var(--text-dim);
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Status Bar -->
+  <div class="top-bar">
+    <div class="brand">
+      <div class="brand-icon">🤖</div>
+      <div class="brand-text">
+        <h1>Claude Bot</h1>
+        <span>Cluster Datacenter Controller</span>
+      </div>
+    </div>
+    <div class="status-pill">
+      <div class="pulse-dot"></div>
+      <span>CLUSTER ONLINE</span>
+    </div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="grid">
+
+    <!-- Card 1: 34 GB Hardware Cluster -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🖥️</span> Апаратний кластер
+        </div>
+        <span class="badge badge-cyan">34 GB RAM • 576 GB</span>
+      </div>
+
+      <!-- RAM Meter -->
+      <div class="meter-container">
+        <div class="meter-labels">
+          <span style="color: var(--text-muted)">Оперативна пам'ять</span>
+          <span style="color: var(--accent-cyan)">8.2 GB / 34 GB (25.8 GB вільно)</span>
+        </div>
+        <div class="meter-bar">
+          <div class="meter-fill-used" title="Bot & Agent Memory"></div>
+          <div class="meter-fill-system" title="Android OS & Host"></div>
+          <div class="meter-fill-free" title="Available"></div>
+        </div>
+      </div>
+
+      <!-- Node list -->
+      <div class="node-list">
+        <div class="node-item">
+          <div>
+            <div class="node-name">Головний вузол (Mini PC)</div>
+            <div class="node-spec">Intel Core i5-8500T • 6 Cores • 35W TDP</div>
+          </div>
+          <div class="node-val">16 GB / 256 GB<br><small style="color: var(--accent-green)">Primary Host</small></div>
+        </div>
+
+        <div class="node-item">
+          <div>
+            <div class="node-name">Вузол 1 — Samsung S10</div>
+            <div class="node-spec">Worker Node • Docker / Termux</div>
+          </div>
+          <div class="node-val">8 GB / 128 GB<br><small style="color: var(--accent-green)">Active</small></div>
+        </div>
+
+        <div class="node-item">
+          <div>
+            <div class="node-name">Вузол 2 — Samsung S10e</div>
+            <div class="node-spec">Master Controller • AMOLED Display</div>
+          </div>
+          <div class="node-val">6 GB / 128 GB<br><small style="color: var(--accent-cyan)">This Screen</small></div>
+        </div>
+
+        <div class="node-item">
+          <div>
+            <div class="node-name">Вузол 3 — Redmi Note 10</div>
+            <div class="node-spec">Background Tasks & Audio/Cam Bridge</div>
+          </div>
+          <div class="node-val">4 GB / 128 GB<br><small style="color: var(--accent-green)">Active</small></div>
+        </div>
+      </div>
+
+      <!-- Budget Tracker -->
+      <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 12px; color: #a7f3d0; font-weight: 600;">💰 Бюджет на Mini PC i5:</span>
+        <span style="font-size: 13px; font-weight: 800; color: var(--accent-green);">105$ / 105$ (100% Назбирано! 🎉)</span>
+      </div>
+    </div>
+
+    <!-- Card 2: Agent Mailbox & OTP Interceptor -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>📬</span> Пошта агента
+        </div>
+        <span class="badge badge-green">lokzu@ag.waveio.me</span>
+      </div>
+
+      <!-- Live OTP Widget -->
+      <div class="otp-box">
+        <div class="otp-label">⚡ Останній розпізнаний OTP-код</div>
+        <div class="otp-value" id="otpDisplay">731 902</div>
+        <div class="otp-meta">
+          <span>Від: <b style="color: #ffffff;">support@stepfun.ai</b></span>
+          <span style="color: var(--accent-green)">Авто-витяг: 0.8s</span>
+        </div>
+      </div>
+
+      <!-- Mail Gateway Status -->
+      <div style="display: flex; flex-direction: column; gap: 8px; font-size: 12px;">
+        <div style="display: flex; justify-content: space-between; color: var(--text-muted);">
+          <span>Вхідний сервер (Inbound):</span>
+          <span style="color: #ffffff; font-weight: 600;">Cloudflare MX (ag.waveio.me)</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; color: var(--text-muted);">
+          <span>Вихідний шлюз (Outbound):</span>
+          <span style="color: var(--accent-cyan); font-weight: 600;">send.waveio.me (Go MCP)</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; color: var(--text-muted);">
+          <span>Безпека ключів:</span>
+          <span style="color: var(--accent-green); font-weight: 600;">Ізольовано (0 витоків)</span>
+        </div>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="copyOtp()">
+          <span>📋</span> Скопіювати код
+        </button>
+        <button class="btn" onclick="triggerTestEmail()">
+          <span>✉️</span> Тест відправки
+        </button>
+      </div>
+    </div>
+
+    <!-- Card 3: AI Models & Voice Engine -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🧠</span> ШІ Моделі та Голос
+        </div>
+        <span class="badge badge-purple">Multi-Brain Stack</span>
+      </div>
+
+      <div class="node-list">
+        <div class="node-item">
+          <div>
+            <div class="node-name">Дейлі агент (Кодинг / Задачі)</div>
+            <div class="node-spec">Qwen 3.8 Flash / GLM 5.3 Flash</div>
+          </div>
+          <div class="node-val" style="color: var(--accent-green);">$10/міс Go<br><small>Active Slot</small></div>
+        </div>
+
+        <div class="node-item">
+          <div>
+            <div class="node-name">Важкі міркування (Reasoning)</div>
+            <div class="node-spec">Step-5 / Kimi K3</div>
+          </div>
+          <div class="node-val" style="color: var(--accent-cyan);">$9.99 Step Plan<br><small>Fast Solver</small></div>
+        </div>
+
+        <div class="node-item">
+          <div>
+            <div class="node-name">Розпізнавання мови (ASR)</div>
+            <div class="node-spec">Whisper Large v3 Turbo (Локально)</div>
+          </div>
+          <div class="node-val" style="color: var(--accent-green);">0$ / Безліміт<br><small>CPU 0.4s</small></div>
+        </div>
+
+        <div class="node-item">
+          <div>
+            <div class="node-name">Синтез голосу (TTS)</div>
+            <div class="node-spec">Kokoro-82M (82 MB) + Piper</div>
+          </div>
+          <div class="node-val" style="color: var(--accent-orange);">Studio Grade<br><small>Natural UA</small></div>
+        </div>
+      </div>
+
+      <!-- ChatGPT Plus Quota Indicator -->
+      <div style="background: rgba(30, 41, 59, 0.5); border-radius: 10px; padding: 10px 14px; font-size: 12px; display: flex; justify-content: space-between;">
+        <span style="color: var(--text-muted);">ChatGPT Plus (Ліміти):</span>
+        <span style="color: #ffffff;"><b>4o:</b> 80/3h • <b>o1:</b> 50/тиждень</span>
+      </div>
+    </div>
+
+    <!-- Card 4: Live Activity & System Toggles -->
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">
+          <span>⚡</span> Лог активності та дії
+        </div>
+        <span class="badge badge-cyan">Realtime</span>
+      </div>
+
+      <div class="feed">
+        <div class="feed-item success">
+          <span>Поштовий шлюз send.waveio.me перевірено</span>
+          <span class="feed-time">17:58</span>
+        </div>
+        <div class="feed-item">
+          <span>Отримано тестовий код від StepFun (731902)</span>
+          <span class="feed-time">18:13</span>
+        </div>
+        <div class="feed-item">
+          <span>Скомпільовано бінарник agent-mail-mcp (Go)</span>
+          <span class="feed-time">18:01</span>
+        </div>
+        <div class="feed-item success">
+          <span>Кластерний лінк активний: 4 ноди онлайн</span>
+          <span class="feed-time">18:40</span>
+        </div>
+      </div>
+
+      <!-- Bottom Controls -->
+      <div class="btn-row" style="margin-top: auto;">
+        <button class="btn" onclick="toggleFullscreen()">
+          <span>📱</span> Повноекранний Kiosk
+        </button>
+        <button class="btn" onclick="location.reload()">
+          <span>🔄</span> Оновити стан
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    function copyOtp() {
+      const code = document.getElementById("otpDisplay").innerText.replace(/\s+/g, "");
+      navigator.clipboard.writeText(code).then(() => {
+        alert("Код " + code + " скопійовано в буфер обміну!");
+      });
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          alert("Повноекранний режим не підтримується цим браузером");
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    function triggerTestEmail() {
+      fetch("/api/email/test-send", { method: "POST" })
+        .then(r => r.json())
+        .then(d => alert("Лист відправлено!"))
+        .catch(e => {
+          // If standalone fallback
+          window.open("https://mail.waveio.me/api/health", "_blank");
+        });
+    }
+
+    // Keep screen awake if supported (for phone controller mount)
+    if ("wakeLock" in navigator) {
+      navigator.wakeLock.request("screen").catch(() => {});
+    }
+  </script>
+</body>
+</html>

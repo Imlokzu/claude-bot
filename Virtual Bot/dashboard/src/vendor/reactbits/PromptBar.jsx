@@ -22,6 +22,20 @@ import './PromptBar.css';
  * ПРАВКИ в цьому файлі (дві, обидві позначені тут, щоб не загубились при
  * оновленні з reactbits.dev):
  *
+ * 6) `modelSlot` — what to render in place of the model and effort
+ *    pickers. The vendor list has no search and keeps the catalog's own
+ *    order, which stopped working at sixty models; our ModelMenu (search,
+ *    makers, recent picks, thinking level) takes the spot instead. Pass
+ *    `models={[]}` and `efforts={[]}` with it so the vendor pickers stay
+ *    hidden.
+ *
+ * 5) `controlRef` — a way to add attachments from outside the bar. On a
+ *    phone the "+" opens our own sheet (camera, photos, files) instead of
+ *    the vendor's source list, and the files it picks must land in the
+ *    same chip row the bar sends with. The attachment list is internal
+ *    state with no prop for it, so the bar hands out an `addAttachments`
+ *    function through this ref.
+ *
  * 4) `onDictateStop` — людина натиснула мікрофон удруге, тобто договорила.
  *    Свого «стоп» компонент не мав узагалі: повторний натиск просто кидав
  *    обіцянку, мікрофон лишався відкритим до кінця фрази, а сказане
@@ -101,6 +115,9 @@ const parseToken = draft => {
 const renderIcon = (icon, size) =>
   isValidElement(icon) ? icon : <HugeiconsIcon icon={icon} size={size} strokeWidth={1.8} />;
 
+const attachmentName = file =>
+  typeof file === 'string' ? file : String(file?.name || file?.filename || 'Вкладення');
+
 function SendGlyph({ busy, morphDuration, squash, tilt }) {
   const reduce = useReducedMotion();
   const svgRef = useRef(null);
@@ -156,6 +173,8 @@ export default function PromptBar({
   onEffortChange,
   onModelChange,
   plusSlot,
+  modelSlot,
+  controlRef,
   labels,
   onDictateStop,
   busy = false,
@@ -198,13 +217,57 @@ export default function PromptBar({
     return i >= 0 ? i : Math.max(0, Math.floor((efforts.length - 1) / 2));
   });
   const [dismissed, setDismissed] = useState(false);
+  const menuOpenRef = useRef(false);
+  /* На тачі меню відкриваємо на pointerdown (до того, як blur клавіатури
+     може проковтнути click). Click одразу після того самого дотику треба
+     пропустити — інакше меню відкриється й одразу закриється. */
+  const touchOpenedRef = useRef(0);
   const [active, setActive] = useState(0);
   const [listening, setListening] = useState(false);
   const [pressed, setPressed] = useState(false);
 
+  /* Edit 5: see the header. Assigned during render so the handle exists
+     before any parent effect can call it. */
+  if (controlRef) {
+    controlRef.current = {
+      addAttachments: files => {
+        const list = Array.isArray(files) ? files : [files];
+        if (list.length) setAttachments(a => [...a, ...list]);
+      }
+    };
+  }
+
   const model = models.find(m => m.key === modelKey) ?? models[0];
   const token = dismissed ? null : parseToken(draft);
   const open = plusOpen ? 'at' : (token?.kind ?? (modelOpen ? 'model' : effortOpen ? 'effort' : null));
+  menuOpenRef.current = open !== null;
+
+  /* Закриття з рухом: компонент раніше знімав меню з DOM тієї ж миті, і
+     анімувати зникнення було нічим. Тепер, коли `open` стає null, меню
+     лишається змонтованим ще 180 мс у стані `closing` — CSS дограє
+     scale-down, і лише тоді воно зникає. Під час closing меню не реагує
+     на вказівник. */
+  const [closing, setClosing] = useState(null);
+  const closeTimer = useRef(0);
+  const prevOpen = useRef(null);
+  useEffect(() => {
+    if (open) {
+      clearTimeout(closeTimer.current);
+      prevOpen.current = open;
+      setClosing(null);
+      return undefined;
+    }
+    if (prevOpen.current) {
+      const kind = prevOpen.current;
+      prevOpen.current = null;
+      setClosing(kind);
+      clearTimeout(closeTimer.current);
+      closeTimer.current = setTimeout(() => setClosing(null), 180);
+    }
+    return undefined;
+  }, [open]);
+  useEffect(() => () => clearTimeout(closeTimer.current), []);
+  const shown = open ?? closing;
   const query = plusOpen ? '' : (token?.query ?? '');
   const list = useMemo(() => {
     if (open === 'at') return sources.filter(s => s.name.toLowerCase().includes(query));
@@ -218,7 +281,22 @@ export default function PromptBar({
   const level = efforts[effortIndex] ?? '';
   const maxed = efforts.length > 1 && effortIndex === efforts.length - 1;
 
+  const [coarse, setCoarse] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches,
+  );
+  useEffect(() => {
+    const media = window.matchMedia('(pointer: coarse)');
+    const update = () => setCoarse(media.matches);
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
   const focusInput = () => inputRef.current?.focus({ preventScroll: true });
+  /* На тачі меню відкриваємо без фокуса — клавіатура не потрібна для
+     вибору пункту й лише перекриває список. На десктопі фокус лишається:
+     стрілки/Enter одразу працюють. */
+  const focusInputKeysOnly = () => {
+    if (!coarse) focusInput();
+  };
   const closeMenus = useCallback(() => {
     setPlusOpen(false);
     setModelOpen(false);
@@ -382,7 +460,7 @@ export default function PromptBar({
       setModelKey(row.key);
       setModelOpen(false);
       if (row.key !== modelKey) latest.current.onModelChange?.(row.key);
-      focusInput();
+      focusInputKeysOnly();
       return;
     }
     const head = token ? draft.slice(0, token.start) : draft;
@@ -399,7 +477,7 @@ export default function PromptBar({
     }
     setPlusOpen(false);
     setDismissed(false);
-    focusInput();
+    focusInputKeysOnly();
   };
 
   const send = () => {
@@ -409,7 +487,7 @@ export default function PromptBar({
     setAttachments([]);
     setDismissed(false);
     closeMenus();
-    focusInput();
+    focusInputKeysOnly();
   };
 
   const toggleListen = () => {
@@ -485,22 +563,23 @@ export default function PromptBar({
         '--pb-press': pressScale
       }}
     >
-      {open ? (
+      {shown ? (
         <div
-          className="prompt-bar__menu"
-          role={open === 'effort' ? 'dialog' : 'listbox'}
+          className={`prompt-bar__menu${coarse ? ' prompt-bar__menu--vv' : ''}`}
+          role={shown === 'effort' ? 'dialog' : 'listbox'}
           aria-label={
-            open === 'at'
+            shown === 'at'
               ? (labels?.sources ?? 'Sources')
-              : open === 'slash'
+              : shown === 'slash'
                 ? (labels?.commands ?? 'Commands')
-                : open === 'model'
+                : shown === 'model'
                   ? (labels?.models ?? 'Models')
                   : (labels?.effort ?? 'Effort')
           }
-          data-kind={open}
+          data-kind={shown}
+          data-state={open ? 'open' : 'closed'}
         >
-          {open === 'effort' ? (
+          {shown === 'effort' ? (
             <>
               <div className="prompt-bar__effort-head">
                 <span className="prompt-bar__effort-title">{labels?.effort ?? 'Effort'}</span>
@@ -556,14 +635,19 @@ export default function PromptBar({
                   role="option"
                   aria-selected={i === cursor}
                   className="prompt-bar__row"
-                  onMouseDown={e => e.preventDefault()}
+                  onMouseDown={e => { if (!coarse) e.preventDefault(); }}
                   onPointerEnter={() => setActive(i)}
-                  onClick={() => pick(row)}
+                  onClick={() => {
+                    /* Той самий дотик, що відкрив меню, не повинен одразу
+                       вибирати пункт під пальцем. */
+                    if (Date.now() - touchOpenedRef.current < 500) return;
+                    pick(row);
+                  }}
                 >
-                  {open === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
+                  {shown === 'at' ? <span className="prompt-bar__row-icon">{renderIcon(row.icon, 15)}</span> : null}
                   <span className="prompt-bar__row-name">{row.name}</span>
                   {row.description ? <span className="prompt-bar__row-desc">{row.description}</span> : null}
-                  {open === 'model' ? (
+                  {shown === 'model' ? (
                     <>
                       <span className="prompt-bar__row-tag">{row.tag}</span>
                       <span className="prompt-bar__row-check" data-on={row.key === model?.key ? '' : undefined}>
@@ -586,25 +670,33 @@ export default function PromptBar({
         onPointerDown={e => {
           if (e.target === e.currentTarget || e.target === inputRef.current) closeMenus();
         }}
-        onClick={focusInput}
+        onClick={e => {
+          /* Клавіатуру піднімає лише дотик по самому текстовому полю —
+             клік по пустій зоні навколо рядка кнопок не повинен її
+             відкривати, інакше кожен промах перетворювався на клаву. */
+          if (e.target === e.currentTarget || e.target === inputRef.current) focusInput();
+        }}
       >
         <canvas ref={sparkRef} className="prompt-bar__sparks" aria-hidden="true" />
         {attachments.length > 0 ? (
           <div className="prompt-bar__chips">
-            {attachments.map((file, i) => (
-              <span key={`${file}-${i}`} className="prompt-bar__chip">
+            {attachments.map((file, i) => {
+              const name = attachmentName(file);
+              return (
+              <span key={`${name}-${i}`} className="prompt-bar__chip">
                 <HugeiconsIcon icon={File02Icon} size={12} strokeWidth={2} />
-                <span className="prompt-bar__chip-name">{file}</span>
+                <span className="prompt-bar__chip-name">{name}</span>
                 <button
                   type="button"
                   className="prompt-bar__chip-x"
-                  aria-label={`Remove ${file}`}
+                  aria-label={`Remove ${name}`}
                   onClick={() => setAttachments(a => a.filter((_, j) => j !== i))}
                 >
                   <HugeiconsIcon icon={Cancel01Icon} size={10} strokeWidth={2.5} />
                 </button>
               </span>
-            ))}
+              );
+            })}
           </div>
         ) : null}
 
@@ -633,18 +725,28 @@ export default function PromptBar({
             aria-label={labels?.add ?? 'Add files and sources'}
             aria-expanded={plusOpen}
             data-on={plusOpen ? '' : undefined}
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => {
+            onMouseDown={e => { if (!coarse) e.preventDefault(); }}
+            onPointerDown={e => {
+              if (e.pointerType !== 'touch') return;
+              touchOpenedRef.current = Date.now();
               setModelOpen(false);
               setEffortOpen(false);
               setActive(0);
               setPlusOpen(v => !v);
-              focusInput();
+            }}
+            onClick={() => {
+              if (Date.now() - touchOpenedRef.current < 500) return;
+              setModelOpen(false);
+              setEffortOpen(false);
+              setActive(0);
+              setPlusOpen(v => !v);
+              focusInputKeysOnly();
             }}
           >
             <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2} />
           </button>
           )}
+          {modelSlot}
           {models.length > 0 ? (
             <button
               type="button"
@@ -652,13 +754,22 @@ export default function PromptBar({
               aria-label={labels?.chooseModel ?? 'Choose model'}
               aria-expanded={modelOpen}
               data-on={modelOpen ? '' : undefined}
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => {
+              onMouseDown={e => { if (!coarse) e.preventDefault(); }}
+              onPointerDown={e => {
+                if (e.pointerType !== 'touch') return;
+                touchOpenedRef.current = Date.now();
                 setPlusOpen(false);
                 setEffortOpen(false);
                 setActive(Math.max(0, models.indexOf(model)));
                 setModelOpen(v => !v);
-                focusInput();
+              }}
+              onClick={() => {
+                if (Date.now() - touchOpenedRef.current < 500) return;
+                setPlusOpen(false);
+                setEffortOpen(false);
+                setActive(Math.max(0, models.indexOf(model)));
+                setModelOpen(v => !v);
+                focusInputKeysOnly();
               }}
             >
               <span>{model.name}</span>
@@ -673,12 +784,20 @@ export default function PromptBar({
               aria-expanded={effortOpen}
               data-on={effortOpen ? '' : undefined}
               data-max={maxed ? '' : undefined}
-              onMouseDown={e => e.preventDefault()}
-              onClick={() => {
+              onMouseDown={e => { if (!coarse) e.preventDefault(); }}
+              onPointerDown={e => {
+                if (e.pointerType !== 'touch') return;
+                touchOpenedRef.current = Date.now();
                 setPlusOpen(false);
                 setModelOpen(false);
                 setEffortOpen(v => !v);
-                focusInput();
+              }}
+              onClick={() => {
+                if (Date.now() - touchOpenedRef.current < 500) return;
+                setPlusOpen(false);
+                setModelOpen(false);
+                setEffortOpen(v => !v);
+                focusInputKeysOnly();
               }}
             >
               <HugeiconsIcon icon={SparklesIcon} size={13} strokeWidth={2} />
@@ -693,7 +812,7 @@ export default function PromptBar({
               aria-label={listening ? (labels?.stopDictation ?? 'Stop dictation') : (labels?.dictate ?? 'Dictate')}
               aria-pressed={listening}
               data-on={listening ? '' : undefined}
-              onMouseDown={e => e.preventDefault()}
+              onMouseDown={e => { if (!coarse) e.preventDefault(); }}
               onClick={toggleListen}
             >
               {listening ? (
@@ -714,7 +833,7 @@ export default function PromptBar({
             aria-label={busy ? (labels?.stop ?? 'Stop') : (labels?.send ?? 'Send')}
             data-armed={armed ? '' : undefined}
             data-pressed={pressed ? '' : undefined}
-            onMouseDown={e => e.preventDefault()}
+            onMouseDown={e => { if (!coarse) e.preventDefault(); }}
             onPointerDown={down}
             onPointerUp={up}
             onPointerCancel={up}

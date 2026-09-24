@@ -88,26 +88,87 @@ class ChatImageTests(unittest.TestCase):
         self.assertEqual(observed["images"][0]["mime"], "image/png")
         self.assertTrue(observed["images"][0]["data"])
 
-    def test_image_request_skips_openclaw_and_uses_vision_capable_omni(self) -> None:
+    def test_image_request_stays_inside_openclaw_gateway(self) -> None:
         image = {"mime": "image/png", "data": "YWJj"}
 
-        async def fake_omni(message, system_prompt, history, emit=None, **kwargs):
+        async def fake_openclaw(message, system_prompt, history, emit=None, **kwargs):
             self.assertEqual(kwargs["images"], [image])
             return "[емоція:happy] Бачу", []
 
         with (
             patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
-            patch.object(brains.cfg, "get_omni_key", return_value="key"),
-            patch.object(brains, "chat_openclaw") as openclaw,
-            patch.object(brains, "chat_omni", side_effect=fake_omni),
+            patch.object(brains, "chat_openclaw", side_effect=fake_openclaw) as openclaw,
+            patch.object(brains, "chat_omni") as omni,
         ):
             reply, _emotion, mode, _tools = asyncio.run(
                 brains.chat("Що тут?", [], images=[image])
             )
 
-        openclaw.assert_not_called()
+        openclaw.assert_called_once()
+        omni.assert_not_called()
         self.assertEqual(reply, "Бачу")
-        self.assertEqual(mode, "omni")
+        self.assertEqual(mode, "openclaw")
+
+    def test_openclaw_session_key_is_forwarded(self) -> None:
+        captured = {}
+
+        async def fake_call(*args, **kwargs):
+            captured.update(args[1])
+            return "[емоція:idle] ok", []
+
+        with (
+            patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
+            patch.object(brains, "_call_openai_compatible_with_tools", side_effect=fake_call),
+        ):
+            result, _tools, _model = asyncio.run(
+                brains.chat_openclaw("Привіт", "system", [], session_key="virtual-bot:stable")
+            )
+
+        self.assertEqual(result, "[емоція:idle] ok")
+        self.assertEqual(captured["x-openclaw-session-key"], "virtual-bot:stable")
+
+    def test_chat_remembers_actual_gateway_fallback_model(self) -> None:
+        async def fake_openclaw(*args, **kwargs):
+            return "[емоція:idle] ok", [], "nvidia/openai/gpt-oss-20b"
+
+        with (
+            patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
+            patch.object(brains, "chat_openclaw", side_effect=fake_openclaw),
+        ):
+            _reply, _emotion, _mode, _tools = asyncio.run(brains.chat("ping", []))
+
+        self.assertEqual(brains.get_last_model(), "nvidia/openai/gpt-oss-20b · OpenClaw")
+
+    def test_openclaw_session_key_is_stable_and_non_identifying(self) -> None:
+        first = main._openclaw_session_key("chat-1", "user-1")
+        self.assertEqual(first, main._openclaw_session_key("chat-1", "user-1"))
+        self.assertNotEqual(first, main._openclaw_session_key("chat-2", "user-1"))
+        self.assertTrue(first.startswith("virtual-bot-v2:"))
+        self.assertNotIn("chat-1", first)
+        self.assertNotIn("user-1", first)
+
+    def test_stable_openclaw_session_omits_duplicate_application_history(self) -> None:
+        captured = {}
+
+        async def fake_call(*args, **kwargs):
+            captured["payload"] = args[2]
+            return "[емоція:idle] ok", []
+
+        with (
+            patch.object(brains.cfg, "get_openclaw_token", return_value="token"),
+            patch.object(brains, "_call_openai_compatible_with_tools", side_effect=fake_call),
+        ):
+            asyncio.run(brains.chat_openclaw(
+                "Нове питання",
+                "system",
+                [{"role": "user", "content": "Попереднє"}, {"role": "assistant", "content": "Відповідь"}],
+                session_key="virtual-bot-v2:stable",
+            ))
+
+        self.assertEqual(
+            captured["payload"]["messages"],
+            [{"role": "system", "content": "system"}, {"role": "user", "content": "Нове питання"}],
+        )
 
     def test_image_goes_straight_to_vision_model(self) -> None:
         """

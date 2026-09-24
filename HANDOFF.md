@@ -222,3 +222,175 @@ Remote Control і Setup Wizard верифікацію пройшли повні�
   → **17 passed**; `node --check` для обох JS-контурів чистий; живий smoke
   на `8100`: `/screen`, статика застосунку, `/api/system/status` → 200,
   спроба `static/../main.py` → 404.
+
+## 11. Session 2026-09-20: chat workspace and quick launchers
+
+- Fixed the radial plus menu: repeat click/tap closes it, keyboard activation
+  retains focus, and cancelled pointer capture cannot leave a stuck gesture.
+- Chat sidebars now extend to the window bottom. The conversation alone clears
+  the compact bottom dock; left/right docks have a continuous navigation rail.
+- Desktop chat has a bottom-right pin picker for Projects, Vision, and the real
+  `/screen` iframe. Choice and order persist in `claudeBotChatPins`. Vision is
+  opt-in; removing a pin unmounts its iframe/stream. Pins are desktop-only.
+- Legacy standalone images separated by prose now share the existing React Bits
+  accordion. Prose/captions remain. Inline images, links, code and tables are not
+  regrouped. Dashboard production assets were rebuilt.
+- Added `Launch Bot.command` (macOS), `Launch Bot.cmd` (Windows), and
+  `launch-bot.sh` (Linux). Native pickers select Dashboard, Screen, OpenClaw,
+  Vision, Display backend, or Dashboard + OpenClaw. No Electron or auto-installs;
+  module environments must already exist. See `launcher/README.md`.
+- Launchers reuse healthy services and refuse occupied ports; failed new launches
+  clean up their own process trees. They never reset OpenClaw config or copy keys.
+- Independent adversarial review covered radial input, layout/pins/gallery, and
+  launcher process handling. Fable was unavailable, so an available reviewer
+  agent was used. Native Windows/Linux execution remains unverified.
+- Validation: dashboard unit tests, typecheck, build and browser regression
+  (mouse/keyboard menu, gallery, persisted pins, all dock sides, mobile width).
+  Python suite: 409 passed, excluding the opt-in external Regolo ASR live test.
+  Frontend: 5 unit tests passed. The macOS native picker compiled successfully;
+  `Launch Bot.command --start pair` reused the live dashboard and OpenClaw.
+  HTTP smoke: dashboard/screen/OpenClaw health 200; memory path traversal 400 in
+  an isolated loopback server with lifespan disabled. That test server and the
+  test browser were stopped; requested production services remain running.
+
+### Native launcher window follow-up
+
+- Replaced the macOS no-argument launcher entry with a persistent AppKit window:
+  six service buttons, asynchronous launch feedback, visible errors and Logs.
+- The direct `launcher/build/Claude Bot Launcher.app` opens without Terminal.
+  `Launch Bot.command` builds/opens it; existing CLI arguments remain unchanged.
+  Windows/Linux pickers are unchanged. The native binary is local build output,
+  not a standalone distribution of the repository or its Python environments.
+- Shared Ukrainian/English locale keys drive the GUI. Minimal native typography
+  and flat warm surfaces follow the minimalist-ui direction, with no animation.
+- Independent review fixed deployment-target/cache invalidation and screenshot
+  false positives. Build explicitly targets macOS 11.0 on the build host's arch.
+- Validation: 415 Python tests passed with opt-in native GUI checks enabled,
+  excluding the external Regolo ASR live test. GUI tests exercise both locales,
+  real button-to-helper success/error paths, busy guards, and screenshot failures.
+  Native screenshots were inspected; isolated HTTP smoke returned 200 for app
+  and assets, 400 for memory traversal. The smoke server was shut down.
+
+### Launcher/auth repair follow-up
+
+- Fixed a GUI-only hang where the helper waited forever after opening a browser:
+  URL opens are now detached with standard streams redirected away from the GUI
+  pipe. The actual `.app --smoke-test --test-action pair` now exits successfully
+  after starting the web backend.
+- Clerk JWKS retrieval now uses an existing `httpx` client with
+  `trust_env=False`, avoiding stale desktop proxy failures. Launcher-created
+  service environments drop unreachable loopback proxy variables while retaining
+  reachable or remote proxies for external API traffic.
+- Restarted only the launcher-owned web backend; OpenClaw was left running.
+  Live checks: dashboard `200`, OpenClaw health `200`, direct Clerk JWKS fetch
+  returned one key. Python suite: **414 passed, 6 skipped** (external live ASR
+  test excluded). Targeted auth/launcher tests: 29 passed.
+
+### OpenClaw routing migration follow-up
+
+- Removed the unstable Omni route from the active OpenClaw config. The gateway
+  now prefers direct `opencode-go/kimi-k3`, then the free NVIDIA NIM
+  `nvidia/openai/gpt-oss-20b` endpoint, and finally the custom
+  OpenAI-compatible `regolo/gpt-oss-120b` provider. NVIDIA auth is stored in
+  the user's ignored OpenClaw auth store; no key is stored in the repository.
+  `regolo/qwen3.5-122b` remains the authored image model. Existing
+  OpenCode/Omni config backups remain under the user's ignored `~/.openclaw`
+  directory.
+- The app backend now routes both text and image turns through OpenClaw. Vision
+  sends an explicit `x-openclaw-model` for the configured image model; no
+  `20128` Omni request is made.
+- Gateway lifecycle `phase=model` events are now captured for each streamed
+  turn, so the topbar reports the effective provider/model after fallback
+  (for example `nvidia/openai/gpt-oss-20b · OpenClaw`) instead of the primary
+  model that failed before the fallback ran. The composer remains the model
+  choice for the next request and is intentionally separate from last-run
+  telemetry.
+- Virtual Bot chat requests now derive a stable, non-identifying
+  `virtual-bot-v2:<hash>` Gateway session key from the user and chat id.
+  Previously every streamed turn used a random key, which prevented OpenClaw
+  from keeping one cache lineage and created unnecessary short-lived sessions.
+  Stable-key requests no longer resend the application history: OpenClaw owns
+  that transcript, preventing the duplicate `[Chat messages since your last
+  reply]` block visible in the Control UI. The v2 namespace isolates new turns
+  from sessions created by the old duplicate-history behavior.
+- OpenClaw was updated from 2026.9.1 to 2026.9.5. OpenCode Go now reaches its
+  provider, which returns HTTP 403 because this account has no active Go
+  subscription; OpenClaw correctly falls back to Regolo. With an active Go
+  subscription, the same primary route will be used without config changes.
+- Live verification: `openclaw agent` through the gateway completed via the
+  NVIDIA fallback in about 5 seconds for the full agent cycle. Direct NIM
+  probes measured `openai/gpt-oss-20b` at roughly 0.37–0.86 seconds,
+  `nemotron-3-super-120b-a12b` at 0.50–4.88 seconds, and
+  `nemotron-3-ultra-550b-a55b` at about 1.03 seconds. Several older catalog
+  IDs returned 404/410 and were not selected. Direct Regolo text and Qwen
+  vision endpoint probes returned 200. Gateway, dashboard, and OpenClaw
+  remain loopback-only. The Omni shim is no longer required for chat.
+
+### Dashboard loading and bot identity follow-up (2026-09-21)
+
+- The dashboard header and assistant messages now share the static pixel-crab
+  mark from the device face; locale keys keep the wordmark translatable.
+- Fixed a race in the dashboard event bus: simultaneous widget mounts could
+  each open an SSE stream while the Clerk token was loading. Browsers cap
+  HTTP/1.1 SSE connections per origin at six, so the leaked streams could
+  leave sessions and model queries in a permanent skeleton state. Opening is
+  now single-flight, and a regression test covers sharing and cleanup.
+- Validation: dashboard build, typecheck, 12 unit tests, browser regression,
+  and live loopback checks for `/dash/`, referenced bundles, and `/api/status`
+  passed. Existing tabs with old streams should be hard-refreshed once after
+  the deployment so the service worker picks up the new bundle.
+- The macOS/local launcher now starts the loopback dashboard with
+  `CLERK_DISABLED=1` by default (an explicit environment value still wins),
+  because Clerk is an unnecessary second login for a single-user local bot.
+  OpenClaw remains separately token-protected and loopback-only.
+- The chat model catalog is browser-cacheable for 30 seconds, the `+` menu now
+  uploads real attachments through `/api/chat/upload`, and gateway model events
+  are rendered as the first OpenClaw status line while a response streams.
+- `workspace_show` now opens a temporary right-side dock over the chat instead
+  of navigating away. Text and Markdown files reuse CodeMirror for inline edits
+  and save back to workspace; images and HTML render as previews. Closing the
+  dock leaves the conversation untouched.
+- Chat tables now establish a real minimum width and scroll inside the message;
+  the scroll-to-current control sits above the composer as a labelled pill.
+  Conversations are grouped into Today / This week / This month / Earlier,
+  with day-relative timestamps for the last week. Global `ask_question` and
+  `show_choice` UI events now render an actionable overlay that sends the
+  selected or custom answer back through the active chat runtime.
+- Internal `[емоція:…]` markers are stripped from streamed `done` frames and
+  loaded assistant history; the crab still receives the emotion separately, so
+  the marker cannot leak into visible chat text.
+- Dashboard startup no longer blocks the composer on the slow OpenClaw model
+  catalog CLI: it shows a local fallback immediately, caches the last catalog
+  in browser storage, and defers the SSE connection briefly so critical queries
+  win the browser connection pool. UI question events are scoped to the Clerk
+  user when auth is enabled, and selecting an answer cancels the originating
+  tool turn before sending the new message.
+
+### Touch and mobile dashboard follow-up (2026-09-22)
+
+- The dashboard now keeps the existing desktop components and switches to a
+  touch-first shell below 760px: bottom navigation is fixed to the safe area,
+  dock controls have 44px hit targets, and dock relocation stays a desktop
+  gesture so one-finger taps do not move the navigation.
+- Chat sessions and pinned Projects/Vision/Mini-screen panels are available in
+  bottom sheets on phones and tablets; the same `PinnedPanels` component is
+  reused instead of maintaining a second mobile implementation. Composer,
+  menus, session rows, image controls and bot-question actions grow their hit
+  targets only for coarse pointers.
+- Horizontal section swipes work on touch/coarse pointers with a 48px threshold,
+  axis lock, browser edge guard and exclusions for controls, editors, galleries,
+  tables, session swipes and FolderFloat gestures. Image viewing also supports
+  left/right swipes when not zoomed.
+- Mobile overlays reserve space above the composer and bottom dock; markdown
+  tables keep an inner horizontal scroll surface and no page-level horizontal
+  overflow was observed at 320, 390, 768, 1024 and 1180px widths.
+- Validation: dashboard tests 18 passed, typecheck and production build passed;
+  browser smoke verified 390px pins sheet, 320/390/768/1024/1180px overflow and
+  a real touch swipe from chat to memory. Generated `static/dash` assets were
+  rebuilt after each UI change.
+- Final touch review also covers the 320px toolbar shrink case, 44px pin
+  actions/footer controls, and keyboard focus containment in Command Palette;
+  the independent reviewer’s initial P1 findings were fixed and rechecked.
+- Command Palette now captures the element focused before opening, traps Tab
+  inside the dialog, and restores that element after Escape (verified with the
+  chat composer focused first).

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Brain, Palette, Puzzle, Sparkles, User } from 'lucide-react';
+import { AudioLines, Brain, Palette, Puzzle, Sparkles, User, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Panel, PanelHead } from '@/components/ui/Panel';
 import { Button } from '@/components/ui/Button';
@@ -13,9 +13,11 @@ import { get, post } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { glue } from '@/lib/glue';
 import { ACCENTS, THEMES, useTheme } from '@/hooks/useTheme';
+import { useLanguage } from '@/hooks/useLanguage';
 import { JellyRadio } from '@/vendor/reactbits';
 import { useCssVar } from '@/hooks/useAccentRgb';
 import { StoreSection } from './StoreSection';
+import { ToolsSection } from './ToolsSection';
 import { FirstRun } from './FirstRun';
 import { VoiceSection } from './VoiceSection';
 import { SectionHeader } from '@/components/shell/SectionHeader';
@@ -36,6 +38,7 @@ const SECTIONS: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'voice', label: 'Голос', icon: AudioLines },
   { id: 'brain', label: 'Мозок і ключі', icon: Brain },
   { id: 'skills', label: 'Уміння', icon: Puzzle },
+  { id: 'tools', label: 'Інструменти', icon: Wrench },
 ];
 
 export default function SettingsPanel() {
@@ -225,6 +228,7 @@ export default function SettingsPanel() {
               {section === 'voice' ? <VoiceSection /> : null}
               {section === 'brain' ? <BrainSection setup={setup.data!} /> : null}
               {section === 'skills' ? <StoreSection /> : null}
+              {section === 'tools' ? <ToolsSection /> : null}
             </>
           )}
         </div>
@@ -250,6 +254,7 @@ function SaveBar({ saving, onSave }: { saving: boolean; onSave: () => void }) {
  */
 function LookSection() {
   const { theme, accent, setTheme, setAccent } = useTheme();
+  const [lang, setLang] = useLanguage();
   const accentColor = useCssVar('--c-accent', '#b95f3d');
   const accentInk = useCssVar('--c-accent-ink', '#fff');
   const surface2 = useCssVar('--c-surface-2', '#efe9df');
@@ -265,6 +270,23 @@ function LookSection() {
           value={theme}
           onChange={(next) => setTheme(next as typeof theme)}
           items={THEMES.map((item) => ({ value: item.id, label: item.label }))}
+          radius={999}
+          chipColor={surface2}
+          activeColor={accentColor}
+          textColor={ink}
+          activeTextColor={accentInk}
+        />
+      </Field>
+
+      <Field label="Мова">
+        <JellyRadio
+          ariaLabel="Мова"
+          value={lang}
+          onChange={(next) => setLang(next as typeof lang)}
+          items={[
+            { value: 'uk', label: 'Українська' },
+            { value: 'en', label: 'English' },
+          ]}
           radius={999}
           chipColor={surface2}
           activeColor={accentColor}
