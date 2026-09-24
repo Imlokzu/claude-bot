@@ -33,8 +33,8 @@ same element, or the fill hides the blur.
 
 ```css
 .liquid-glass {
-  background: rgba(28, 24, 20, 0.72);
-  background: color-mix(in srgb, var(--c-surface) 62%, transparent);
+  background: rgba(28, 24, 20, 0.38);
+  background: color-mix(in srgb, var(--c-surface) 34%, transparent);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
   box-shadow:

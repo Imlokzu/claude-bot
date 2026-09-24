@@ -516,8 +516,8 @@
    Android, Windows and Linux. backdrop-filter blurs what is behind the
    element; the text inside stays sharp. */
 .liquid-glass {
-  background: rgba(28, 24, 20, 0.72);
-  background: color-mix(in srgb, var(--c-surface) 62%, transparent);
+  background: rgba(28, 24, 20, 0.38);
+  background: color-mix(in srgb, var(--c-surface) 34%, transparent);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
   box-shadow:
@@ -530,8 +530,8 @@
   margin-top: -1.15rem;
 }
 .chat-composer .prompt-bar__field {
-  background: rgba(28, 24, 20, 0.62);
-  background: color-mix(in srgb, var(--c-surface) 58%, transparent);
+  background: rgba(28, 24, 20, 0.34);
+  background: color-mix(in srgb, var(--c-surface) 30%, transparent);
   -webkit-backdrop-filter: blur(22px) saturate(1.6);
   backdrop-filter: blur(22px) saturate(1.6);
   box-shadow:
