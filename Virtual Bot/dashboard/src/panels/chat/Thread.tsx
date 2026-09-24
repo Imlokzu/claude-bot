@@ -115,8 +115,9 @@ function UserMessage() {
     }
     const box = bubble.current.getBoundingClientRect();
     const typing = document.querySelector('[data-typing]');
-    const from = typing?.getBoundingClientRect() ?? new DOMRect(box.left - 48, box.top, 36, 28);
-    setFlying(flyEmoji(launch, emoji, from, reactionTarget(box, 'end')) ? emoji : null);
+    const lift = typing?.closest('.chat-bubble-in') ?? typing;
+    const from = lift?.getBoundingClientRect() ?? new DOMRect(box.left - 48, box.top, 36, 28);
+    setFlying(flyEmoji(launch, emoji, from, reactionTarget(box, 'end'), lift) ? emoji : null);
   }, [meta.reaction, launch]);
   return (
     <MessagePrimitive.Root className={cn('mb-4 flex justify-end', meta.reaction && 'mb-7')}>

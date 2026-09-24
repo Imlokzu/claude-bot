@@ -329,17 +329,17 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
    carried drift together and fade, and the words come in after them.
    Durations match TYPING_LEAVE_MS / FLIGHT_MS in Bubbles.tsx. */
 .chat-bubble-in.chat-bubble-open {
-  animation: chat-bubble-open 560ms var(--e-out) both;
+  animation: chat-bubble-open 780ms var(--e-out) both;
   transform-origin: left center;
 }
 @keyframes chat-bubble-open {
-  0%   { transform: translateY(8px) scale(0.42, 0.86); }
+  0%   { transform: translateY(18px) scale(0.46, 0.88); }
   100% { transform: none; }
 }
-.chat-text-in { animation: chat-text-in 420ms var(--e-out) 180ms both; }
-@keyframes chat-text-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.chat-text-in { animation: chat-text-in 520ms var(--e-out) 240ms both; }
+@keyframes chat-text-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .chat-dots-leave {
-  animation: chat-dots-leave 480ms var(--e-out) both;
+  animation: chat-dots-leave 640ms var(--e-out) both;
   transform-origin: left center;
 }
 @keyframes chat-dots-leave {
@@ -350,7 +350,7 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 /* The pill itself, when nothing takes its place: the dots draw together
    inside it, then the bubble eases shut. */
 .chat-bubble-in.chat-typing-out {
-  animation: chat-typing-out 560ms var(--e-out) forwards;
+  animation: chat-typing-out 780ms var(--e-out) forwards;
   transform-origin: left center;
   overflow: hidden;
   pointer-events: none;
@@ -360,9 +360,72 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   58%  { height: 2.25rem; opacity: 1; transform: scaleX(0.9); }
   100% { height: 0; opacity: 0; margin-top: -0.375rem; margin-bottom: -0.375rem; padding-top: 0; padding-bottom: 0; transform: scale(0.7); }
 }
-.chat-typing-out .chat-dot { animation: chat-dot-collapse 400ms var(--e-out) both; }
+.chat-typing-out .chat-dot { animation: chat-dot-collapse 520ms var(--e-out) both; }
 .chat-typing-out .chat-dot:nth-child(1) { animation-name: chat-dot-collapse-l; }
-.chat-typing-out .chat-dot:nth-child(3) { animation-name: chat-dot-collapse-r; animation-delay: 70ms; }
+.chat-typing-out .chat-dot:nth-child(3) { animation-name: chat-dot-collapse-r; animation-delay: 80ms; }
+/* Before a reaction leaves, the text bubble rises, takes one slow circle,
+   and blurs. The emoji appears out of that blur and only then flies.
+   Duration matches SENDOFF_MS; the flight starts at FLY_DELAY_MS. */
+.chat-bubble-sendoff,
+.chat-bubble-in.chat-bubble-sendoff,
+.chat-typing-out.chat-bubble-sendoff {
+  animation: chat-bubble-sendoff 1600ms cubic-bezier(0.45, 0.02, 0.25, 1) both;
+  transform-origin: center center;
+  overflow: visible;
+  pointer-events: none;
+}
+@keyframes chat-bubble-sendoff {
+  0%   { transform: none; filter: blur(0); }
+  20%  { transform: translateY(-28px); filter: blur(0); }
+  36%  { transform: translate(22px, -28px); filter: blur(2px); }
+  52%  { transform: translate(0, -6px); filter: blur(5px); }
+  68%  { transform: translate(-22px, -28px); filter: blur(8px); }
+  82%  { transform: translateY(-46px); filter: blur(3px); }
+  100% { transform: none; filter: blur(0); }
+}
+.chat-reaction-in { animation: chat-reaction-pop 260ms var(--e-spring) both; }
+/* Held back until the flying emoji arrives, then the same pop.
+   The inline delay matches LAND_DELAY_MS. */
+.chat-reaction-land { animation: chat-reaction-pop 280ms var(--e-spring) 1820ms both; }
+@keyframes chat-reaction-pop {
+  from { opacity: 0; transform: scale(0.4); }
+  to   { opacity: 1; transform: none; }
+}
+.chat-emoji-flight {
+  position: fixed;
+  z-index: 40;
+  left: 0;
+  top: 0;
+  font-size: 34px;
+  line-height: 1;
+  pointer-events: none;
+  animation: chat-emoji-flight 1100ms var(--e-out) both;
+}
+@keyframes chat-emoji-flight {
+  0% {
+    filter: blur(8px);
+    opacity: 0.65;
+    transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px)) translate(-50%, -50%) scale(0.35);
+  }
+  18% {
+    filter: blur(0);
+    opacity: 1;
+    transform: translate(calc(var(--x) * 1px), calc((var(--y) - 18) * 1px)) translate(-50%, -50%) scale(1.7);
+  }
+  46% {
+    filter: blur(0);
+    transform: translate(calc((var(--x) + var(--mx)) * 1px), calc((var(--y) + var(--my)) * 1px)) translate(-50%, -50%) scale(1.45);
+  }
+  76% {
+    filter: blur(0);
+    transform: translate(calc((var(--x) + var(--mx) * 0.22 + var(--dx) * 0.78) * 1px), calc((var(--y) + var(--my) * 0.22 + var(--dy) * 0.78) * 1px)) translate(-50%, -50%) scale(0.95);
+  }
+  100% {
+    filter: blur(0);
+    opacity: 1;
+    transform: translate(calc((var(--x) + var(--dx)) * 1px), calc((var(--y) + var(--dy)) * 1px)) translate(-50%, -50%) scale(0.42);
+  }
+}
 @keyframes chat-dot-collapse {
   0%   { opacity: 1; transform: none; }
   40%  { opacity: 1; transform: scale(0.85); }
@@ -377,37 +440,6 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   0%   { opacity: 1; transform: none; }
   50%  { opacity: 1; transform: translateX(-8px) scale(0.8); }
   100% { opacity: 0; transform: translateX(-11px) scale(0.15); }
-}
-.chat-reaction-in { animation: chat-reaction-pop 260ms var(--e-spring) both; }
-/* Held back until the flying emoji arrives, then the same pop. */
-.chat-reaction-land { animation: chat-reaction-pop 220ms var(--e-spring) 480ms both; }
-@keyframes chat-reaction-pop {
-  from { opacity: 0; transform: scale(0.4); }
-  to   { opacity: 1; transform: none; }
-}
-.chat-emoji-flight {
-  position: fixed;
-  z-index: 40;
-  left: 0;
-  top: 0;
-  font-size: 32px;
-  line-height: 1;
-  pointer-events: none;
-  animation: chat-emoji-flight 680ms var(--e-out) both;
-}
-@keyframes chat-emoji-flight {
-  0% {
-    transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px)) translate(-50%, -50%) scale(1.65);
-  }
-  42% {
-    transform: translate(calc((var(--x) + var(--mx)) * 1px), calc((var(--y) + var(--my)) * 1px)) translate(-50%, -50%) scale(1.4);
-  }
-  78% {
-    transform: translate(calc((var(--x) + var(--mx) * 0.28 + var(--dx) * 0.72) * 1px), calc((var(--y) + var(--my) * 0.28 + var(--dy) * 0.72) * 1px)) translate(-50%, -50%) scale(0.9);
-  }
-  100% {
-    transform: translate(calc((var(--x) + var(--dx)) * 1px), calc((var(--y) + var(--dy)) * 1px)) translate(-50%, -50%) scale(0.42);
-  }
 }
 /* Typing dots and the live "what I'm doing now" line: opacity and a 2px
    lift only — they run for as long as the bot works. */
@@ -437,7 +469,8 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .chat-typing-out,
   .chat-reaction-in,
   .chat-reaction-land,
-  .chat-emoji-flight {
+  .chat-emoji-flight,
+  .chat-bubble-sendoff {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
   }

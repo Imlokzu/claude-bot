@@ -27,10 +27,17 @@ import type { ToolStep } from './types';
 /** How long the typing bubble takes to collapse. The runtime holds a
  *  reaction-only draft at least this long, so the collapse is not cut off.
  *  Kept in step with `chat-typing-out` in base.css. */
-export const TYPING_LEAVE_MS = 560;
+export const TYPING_LEAVE_MS = 780;
 
+/** The text bubble rises, circles and blurs before the emoji leaves.
+ *  Kept in step with `chat-bubble-sendoff` in base.css. */
+const SENDOFF_MS = 1600;
+/** When, during the sendoff, the emoji appears and starts flying. */
+const FLY_DELAY_MS = 960;
 /** Kept in step with `chat-emoji-flight` in base.css. */
-const FLIGHT_MS = 680;
+const FLIGHT_MS = 1100;
+/** Chip stays hidden until the emoji is about to land. */
+export const LAND_DELAY_MS = FLY_DELAY_MS + 860;
 
 export function typingLeaveMs(): number {
   if (typeof window === 'undefined') return TYPING_LEAVE_MS;
@@ -215,29 +222,44 @@ export function reactionTarget(bubble: DOMRect, align: 'start' | 'end') {
   };
 }
 
-/** Bow the path sideways so the emoji arcs instead of sliding in a straight line. */
+/** Bow the path sideways so the emoji arcs instead of sliding in a straight line.
+ *  `lift` is the text bubble: it rises, circles and blurs, and only then
+ *  does the emoji appear and fly. The flight is measured again at that
+ *  moment so it leaves from where the bubble actually is. */
 export function flyEmoji(
   launch: (spec: FlightSpec) => boolean,
   emoji: string,
   from: DOMRect,
   to: { x: number; y: number },
+  lift?: Element | null,
 ): boolean {
-  const start = centerOf(from);
-  const dx = to.x - start.x;
-  const dy = to.y - start.y;
-  const len = Math.hypot(dx, dy) || 1;
-  // A short hop (picker to the corner) still needs a visible arc, and a
-  // long one (typing pill across to the person's message) should bowl.
-  const bow = Math.max(56, Math.min(108, len * 0.62));
-  return launch({
-    emoji,
-    x: start.x,
-    y: start.y,
-    dx,
-    dy,
-    mx: dx * 0.5 + (-dy / len) * bow,
-    my: dy * 0.5 + (dx / len) * bow,
-  });
+  if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return false;
+  }
+  const send = (origin: DOMRect) => {
+    const start = centerOf(origin);
+    const dx = to.x - start.x;
+    const dy = to.y - start.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const bow = Math.max(64, Math.min(120, len * 0.62));
+    return launch({
+      emoji,
+      x: start.x,
+      y: start.y,
+      dx,
+      dy,
+      mx: dx * 0.5 + (-dy / len) * bow,
+      my: dy * 0.5 + (dx / len) * bow,
+    });
+  };
+  if (!lift) return send(from);
+  lift.classList.add('chat-bubble-sendoff');
+  window.setTimeout(() => lift.classList.remove('chat-bubble-sendoff'), SENDOFF_MS);
+  window.setTimeout(() => {
+    const origin = lift.isConnected ? lift.getBoundingClientRect() : from;
+    send(origin);
+  }, FLY_DELAY_MS);
+  return true;
 }
 
 /** The small emoji badge hanging off a bubble's lower edge. */
@@ -251,9 +273,10 @@ export function ReactionChip({ emoji, label, onClick, align, landing }: {
     landing ? 'chat-reaction-land' : 'chat-reaction-in',
     align === 'start' ? 'left-2.5' : 'right-2.5',
   );
-  if (!onClick) return <span role="img" aria-label={label} className={className}>{emoji}</span>;
+  if (!onClick) return <span role="img" aria-label={label} className={className} style={landing ? { animationDelay: `${LAND_DELAY_MS}ms` } : undefined}>{emoji}</span>;
   return (
     <button type="button" aria-label={label} onClick={onClick}
+      style={landing ? { animationDelay: `${LAND_DELAY_MS}ms` } : undefined}
       className={cn(className, 'transition-transform hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent')}>
       {emoji}
     </button>
@@ -334,7 +357,7 @@ export function BotBubble({ text, note, running, reaction, onReact, fromTyping }
   }, [fromTyping]);
   const pick = (emoji: string | null, source?: HTMLElement) => {
     if (emoji && source && bubble.current
-      && flyEmoji(launch, emoji, source.getBoundingClientRect(), reactionTarget(bubble.current.getBoundingClientRect(), 'start'))) {
+      && flyEmoji(launch, emoji, source.getBoundingClientRect(), reactionTarget(bubble.current.getBoundingClientRect(), 'start'), bubble.current)) {
       setFlying(emoji);
     } else {
       setFlying(null);
