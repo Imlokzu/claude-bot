@@ -43,6 +43,10 @@ THINKING_LEVELS: tuple[str, ...] = (
     "off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max", "ultra",
 )
 
+# The picker only offers providers that actually answer. OpenCode Go, NVIDIA
+# and the local Omni shim stay out: they were in the catalog and failed.
+CHAT_PROVIDERS = frozenset({"openai", "regolo"})
+
 _CLI_TIMEOUT_S = 20.0
 # Каталог моделей міняється рідко (правка конфіга або `models refresh`), а
 # кожен виклик CLI — це запуск node на ~1 с. Тому тримаємо кеш.
@@ -148,7 +152,10 @@ async def catalog(force: bool = False) -> list[dict]:
             log.warning("openclaw models list віддав не-JSON")
             return list(_catalog or [])
         models = [_normalize(m) for m in data.get("models", []) if m.get("key")]
-        _catalog = [m for m in models if m["id"]]
+        _catalog = [
+            m for m in models
+            if m["id"] and str(m.get("provider") or "") in CHAT_PROVIDERS
+        ]
         _catalog_at = time.monotonic()
         return list(_catalog)
 

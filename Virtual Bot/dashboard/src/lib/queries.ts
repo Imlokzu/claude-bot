@@ -115,14 +115,22 @@ export interface BrainModelsResponse {
   available: boolean;
 }
 
-const BRAIN_MODELS_CACHE_KEY = 'claude-bot:brain-models:v1';
+const BRAIN_MODELS_CACHE_KEY = 'claude-bot:brain-models:v2';
+const CHAT_PROVIDERS = new Set(['openai', 'regolo']);
+
+function keptModels(data: BrainModelsResponse): BrainModelsResponse {
+  return {
+    ...data,
+    models: data.models.filter((model) => CHAT_PROVIDERS.has(model.id.split('/')[0] ?? '')),
+  };
+}
 
 function readBrainModelsCache(): { data: BrainModelsResponse; savedAt: number } | undefined {
   if (typeof localStorage === 'undefined') return undefined;
   try {
     const parsed = JSON.parse(localStorage.getItem(BRAIN_MODELS_CACHE_KEY) || '');
     if (!parsed?.data?.models || !Number.isFinite(parsed.savedAt)) return undefined;
-    return { data: parsed.data as BrainModelsResponse, savedAt: Number(parsed.savedAt) };
+    return { data: keptModels(parsed.data as BrainModelsResponse), savedAt: Number(parsed.savedAt) };
   } catch {
     return undefined;
   }
@@ -132,7 +140,7 @@ export function useBrainModels() {
   return useQuery({
     queryKey: ['brain-models'],
     queryFn: async () => {
-      const data = await get<BrainModelsResponse>('/api/brain/models');
+      const data = keptModels(await get<BrainModelsResponse>('/api/brain/models'));
       try {
         localStorage.setItem(BRAIN_MODELS_CACHE_KEY, JSON.stringify({ data, savedAt: Date.now() }));
       } catch { /* Browser storage is an optimization, never a requirement. */ }
