@@ -6,16 +6,17 @@ import type { HyaliteOptions } from '@/vendor/hyalite/hyalite.js';
  * Popups keep their solid plate. Glass is a second material, switched in
  * Look, and it only paints while html[data-popup="glass"] is set.
  *
- * The lens is a plate behind the menu, same as the composer: the filter
- * clips whatever element it is attached to, and a menu's own text has to
- * stay outside that element.
+ * Radix positions a menu by transforming an outer wrapper. A lens inside
+ * that wrapper cannot see the page, so the card stays dark. The lens goes
+ * on the wrapper. Menus with no transformed parent (the command palette,
+ * the prompt bar) carry the lens themselves.
  */
 const lens: HyaliteOptions = {
   bevel: 10,
   thickness: 46,
   slope: 1.4,
   shape: 'squircle',
-  blur: 0,
+  blur: 6,
   dispersion: 0.4,
   shade: 0.34,
   rim: 2.2,
@@ -31,22 +32,35 @@ function glassOn(): boolean {
   return document.documentElement.dataset.popup === 'glass';
 }
 
+function armShell(shell: Element) {
+  const wrap = shell.closest('[data-radix-popper-content-wrapper]');
+  const target = (wrap ?? shell) as HTMLElement;
+  if (wrap) {
+    const radius = getComputedStyle(shell).borderRadius;
+    if (radius) target.style.borderRadius = radius;
+  }
+  target.classList.add('popup-lens');
+}
+
 function armMenu(menu: Element) {
-  if (menu.querySelector(':scope > .popup-plate')) return;
   menu.classList.add('popup-shell');
   menu.setAttribute('data-popup-armed', '');
-  const plate = document.createElement('div');
-  plate.className = 'popup-plate liquid-glass';
-  plate.setAttribute('aria-hidden', 'true');
-  plate.setAttribute('data-injected', '');
-  menu.prepend(plate);
+  menu.querySelector(':scope > .popup-plate[data-injected]')?.remove();
+  armShell(menu);
 }
 
-function armMenus(root: ParentNode) {
+function armTree(root: ParentNode) {
   root.querySelectorAll('.prompt-bar__menu').forEach(armMenu);
+  root.querySelectorAll('.popup-shell').forEach(armShell);
 }
 
-function disarmMenus() {
+function disarm() {
+  document.querySelectorAll('.popup-lens').forEach((node) => {
+    node.classList.remove('popup-lens');
+    if (node instanceof HTMLElement && node.hasAttribute('data-radix-popper-content-wrapper')) {
+      node.style.borderRadius = '';
+    }
+  });
   document.querySelectorAll('.prompt-bar__menu[data-popup-armed]').forEach((menu) => {
     menu.querySelector(':scope > .popup-plate[data-injected]')?.remove();
     menu.classList.remove('popup-shell');
@@ -64,7 +78,7 @@ export function usePopupGlass() {
       watcher = null;
       observer?.disconnect();
       observer = null;
-      disarmMenus();
+      disarm();
     };
 
     const start = () => {
@@ -73,18 +87,22 @@ export function usePopupGlass() {
       if (window.matchMedia('(prefers-reduced-transparency: reduce)').matches) return;
       const Hyalite = window.Hyalite;
       if (!Hyalite?.supported()) return;
-      armMenus(document.body);
+      const armNode = (node: Element) => {
+        if (node.matches('.prompt-bar__menu')) armMenu(node);
+        else if (node.matches('.popup-shell')) armShell(node);
+        node.querySelectorAll('.prompt-bar__menu').forEach(armMenu);
+        node.querySelectorAll('.popup-shell').forEach(armShell);
+      };
+      armTree(document.body);
       observer = new MutationObserver((records) => {
         for (const record of records) {
           record.addedNodes.forEach((node) => {
-            if (!(node instanceof Element)) return;
-            if (node.matches('.prompt-bar__menu')) armMenu(node);
-            else node.querySelectorAll('.prompt-bar__menu').forEach(armMenu);
+            if (node instanceof Element) armNode(node);
           });
         }
       });
       observer.observe(document.body, { childList: true, subtree: true });
-      watcher = Hyalite.watch(document.body, '.popup-plate', lens);
+      watcher = Hyalite.watch(document.body, '.popup-lens', lens);
     };
 
     start();

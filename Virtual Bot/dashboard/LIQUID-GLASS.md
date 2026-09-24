@@ -17,6 +17,19 @@ menu, and the reaction picker. Do not put the lens on more surfaces, and
 do not remove the solid classes from these: standard has to stay one
 switch away. Do not invent a second recipe.
 
+Radix menus are positioned by a transformed wrapper
+(`[data-radix-popper-content-wrapper]`). The lens has to sit on that
+wrapper. A plate inside it only refracts the empty wrapper, and the menu
+stays a dark card. `usePopupGlass` adds `popup-lens` to the wrapper and
+copies the menu's corner radius onto it. Menus that are not inside that
+wrapper carry `popup-lens` themselves. The inner `.popup-plate` stays
+hidden so two filters never stack.
+
+A menu sits on top of sentences, so its lens is not the composer's clear
+centre. It keeps the same rim and adds a 6px centre blur plus a 64%
+surface wash, or the label and the line behind it become the same words.
+Do not copy that wash onto the composer.
+
 ## The lens
 
 `src/vendor/hyalite/hyalite.js` is [Hyalite](https://github.com/VII-Cae/hyalite--liquid-glass)

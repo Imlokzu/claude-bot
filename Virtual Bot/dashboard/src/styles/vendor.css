@@ -545,25 +545,31 @@
   z-index: 2;
 }
 /* Popup glass is opt-in (Look → Popups). The solid fill stays in the
-   markup; this only paints while data-popup="glass". The plate sits behind
-   the menu so the filter does not clip its text. */
+   markup and paints until .popup-lens is added.
+   Radix draws the menu inside a wrapper that is positioned with
+   transform. A lens on a child of that wrapper only sees the empty
+   wrapper, so the menu stays a dark card. The lens class goes on the
+   wrapper (or on the menu itself when nothing transformed wraps it).
+   The inner plate stays hidden: a second filter would stack. */
 .popup-plate { display: none; }
-html[data-popup="glass"] .popup-shell {
-  background-color: transparent;
+html[data-popup="glass"] .popup-lens {
+  background: transparent;
+  -webkit-backdrop-filter: var(--hyalite, blur(6px) saturate(1.8));
+  backdrop-filter: var(--hyalite, blur(6px) saturate(1.8));
+  box-shadow: var(--hyalite-edge,
+    inset 0 1px 0 rgba(255, 255, 255, 0.55),
+    inset 1px 0 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.22));
+}
+html[data-popup="glass"] .popup-lens .popup-shell,
+html[data-popup="glass"] .popup-shell.popup-lens {
+  /* A clear centre over a sentence makes the label unreadable. The wash
+     stays light enough that the page still shows through the rim. */
+  background-color: color-mix(in srgb, var(--c-surface) 64%, transparent);
   border-color: transparent;
   box-shadow: none;
-}
-html[data-popup="glass"] .popup-plate {
-  display: block;
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: inherit;
-  pointer-events: none;
-}
-html[data-popup="glass"] .popup-shell > :not(.popup-plate) {
-  position: relative;
-  z-index: 1;
+  will-change: auto;
 }
 .chat-composer {
   position: relative;
@@ -571,17 +577,28 @@ html[data-popup="glass"] .popup-shell > :not(.popup-plate) {
   margin-top: -1.15rem;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .liquid-glass {
+  .liquid-glass,
+  .popup-lens {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: color-mix(in srgb, var(--c-surface) 92%, transparent);
   }
+  html[data-popup="glass"] .popup-lens .popup-shell,
+  html[data-popup="glass"] .popup-shell.popup-lens {
+    background-color: transparent;
+  }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .liquid-glass {
+  .liquid-glass,
+  .popup-lens {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: var(--c-surface-2);
     box-shadow: inset 0 0 0 1px var(--c-border);
+  }
+  html[data-popup="glass"] .popup-lens .popup-shell,
+  html[data-popup="glass"] .popup-shell.popup-lens {
+    background-color: var(--c-surface);
+    border-color: var(--c-border);
   }
 }
