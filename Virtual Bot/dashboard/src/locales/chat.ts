@@ -18,7 +18,6 @@ const uk = {
   'thread.prompt2': 'Що зробити?',
   'thread.prompt3': 'Чим зайнятись?',
   'thread.compacted': 'нижче переказ {count} реплік',
-  'thread.toLatest': 'До актуального',
   'thread.toLatestAria': 'До актуальної відповіді',
 
   // Композер
@@ -234,7 +233,6 @@ const en: Record<keyof typeof uk, string> = {
   'thread.prompt2': 'What should we do?',
   'thread.prompt3': 'What to work on?',
   'thread.compacted': 'summary of {count} messages below',
-  'thread.toLatest': 'Back to latest',
   'thread.toLatestAria': 'Jump to the latest reply',
 
   'composer.placeholder': 'Write to the bot…',

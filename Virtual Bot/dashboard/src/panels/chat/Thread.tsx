@@ -291,14 +291,13 @@ export function Thread({
       <ThreadPrimitive.ScrollToBottom asChild>
         <Button
           variant="quiet"
-          size="sm"
+          size="icon-sm"
           aria-label={t('thread.toLatestAria')}
-          // Внизу стрічки примітив вимикає кнопку — ховаємо її, а не лишаємо
-          // блідою: кружечок без діла посеред розмови тільки відволікає.
-          className="chat-scroll-latest absolute bottom-[118px] left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-surface/95 shadow-raise backdrop-blur transition-opacity disabled:pointer-events-none disabled:opacity-0"
+          // At the bottom of the thread the primitive disables the button.
+          // Hide it: a circle with nothing to do only distracts.
+          className="chat-scroll-latest liquid-glass absolute bottom-[118px] left-1/2 z-10 size-9 -translate-x-1/2 rounded-full p-0 shadow-raise transition-opacity disabled:pointer-events-none disabled:opacity-0 max-[759px]:size-11"
         >
           <ArrowDown />
-          <span>{t('thread.toLatest')}</span>
         </Button>
       </ThreadPrimitive.ScrollToBottom>
 
