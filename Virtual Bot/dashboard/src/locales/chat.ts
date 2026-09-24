@@ -71,6 +71,18 @@ const uk = {
   'sheet.tools': 'Інструменти',
   'sheet.panels': 'Панелі',
 
+  // Вибір моделі
+  'models.search': 'Пошук моделі…',
+  'models.clear': 'Очистити пошук',
+  'models.sort': 'Сортування моделей',
+  'models.sortMaker': 'Виробник',
+  'models.sortName': 'А–Я',
+  'models.sortContext': 'Контекст',
+  'models.recent': 'нещодавні',
+  'models.other': 'інші',
+  'models.all': 'усі',
+  'models.none': 'Нічого не знайшлось за «{query}»',
+
   // Рівні думання
   'effort.off': 'Без думання',
   'effort.minimal': 'Мінімально',
@@ -243,6 +255,17 @@ const en: Record<keyof typeof uk, string> = {
   'sheet.files': 'files',
   'sheet.tools': 'Tools',
   'sheet.panels': 'Panels',
+
+  'models.search': 'Search models…',
+  'models.clear': 'Clear search',
+  'models.sort': 'Sort models',
+  'models.sortMaker': 'Maker',
+  'models.sortName': 'A–Z',
+  'models.sortContext': 'Context',
+  'models.recent': 'recent',
+  'models.other': 'other',
+  'models.all': 'all',
+  'models.none': 'Nothing matches “{query}”',
 
   'effort.off': 'No thinking',
   'effort.minimal': 'Minimal',

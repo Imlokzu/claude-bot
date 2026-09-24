@@ -1,17 +1,17 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Brain, Eye, FileText, Globe, LifeBuoy, Paperclip, Plus, Zap } from 'lucide-react';
+import { useCallback, useRef, useState } from 'react';
+import { FileText, Globe, Paperclip, Plus } from 'lucide-react';
 import VoiceBeam from 'voice-glow';
 import { PromptBar, type PromptBarControl } from '@/vendor/reactbits';
 import { useToast } from '@/components/ui/Toaster';
 import { Dialog, DialogContent } from '@/components/ui/Dialog';
 import { post } from '@/lib/api';
-import type { BrainModel } from '@/lib/queries';
 import { useCssVar } from '@/hooks/useAccentRgb';
 import { useDictation } from '@/hooks/useDictation';
 import { ToolsSection } from '@/panels/settings/ToolsSection';
 import { ContextMeter } from './ContextMeter';
 import { AttachSheet } from './AttachSheet';
-import { thinkingLabel, useBrainChoice } from './useBrainChoice';
+import { useBrainChoice } from './useBrainChoice';
+import { ModelMenu } from './ModelMenu';
 import { t } from '@/locales/chat';
 import { t as appT } from '@/lib/i18n';
 
@@ -29,44 +29,17 @@ import { t as appT } from '@/lib/i18n';
  * (`openclaw models list`) and the choice travels as `x-openclaw-model` — it
  * picks what it shows.
  *
- * Two layouts:
+ * Model and thinking level are picked in ModelMenu — searchable and grouped
+ * by maker, because the catalog outgrew a plain dropdown. Where it sits
+ * depends on the layout:
  *
- *   desk — the pickers live inside the bar and the meter sits under it;
- *          there is width for all of it.
- *   lean — phone and tablet. Model and thinking move to the chat header
- *          (ModelMenu), the meter and tools move into the "+" sheet, and the
- *          bar keeps only what you type with. On a phone the two pickers
- *          squeezed the field down to a few words.
+ *   desk — inside the bar, in the slot the vendor pickers used to fill,
+ *          with the context meter under the bar.
+ *   lean — phone and tablet. The menu is the chat header's title, the meter
+ *          and tools move into the "+" sheet, and the bar keeps only what you
+ *          type with. On a phone the pickers squeezed the field to a few
+ *          words.
  */
-
-/*
- * Model traits as icons, not text.
- *
- * The OpenClaw catalog names them in the label itself: "GLM-5.3 Flash (sees
- * images, ~2.5 s)". In the composer row that label was cut off right at the
- * useful part, so the backend splits the tail into traits (see
- * openclaw_models._normalize) and here they become two icons.
- *
- * Beside the name only the two that matter for choosing right now: will it
- * see an attached picture, and will it answer quickly. Which one is default
- * and which is the fallback shows only in the open list: in the row it is
- * noise.
- */
-const TRAITS = [
-  { key: 'vision', Icon: Eye, title: () => t('trait.vision') },
-  {
-    key: 'fast',
-    Icon: Zap,
-    title: (model: BrainModel) =>
-      model.seconds ? t('trait.fastSeconds', { seconds: model.seconds }) : t('trait.fast'),
-  },
-] as const;
-
-/** Second-row icons: the model's role in the OpenClaw chain. */
-const ROLES = [
-  { key: 'is_default', Icon: Brain, title: t('role.default') },
-  { key: 'fallback', Icon: LifeBuoy, title: t('role.fallback') },
-] as const;
 
 export function Composer({
   busy,
@@ -120,64 +93,6 @@ export function Composer({
   const ink = useCssVar('--c-text', '#231e19');
   const accent = useCssVar('--c-accent', '#b95f3d');
 
-  const modelList = useMemo(
-    () =>
-      brain.models.map((model) => ({
-        key: model.id,
-        // The name as a node, not a string: PromptBar draws it both in the
-        // collapsed row and in the list, and the icons belong in both.
-        name: (
-          <span className="inline-flex items-center gap-1.5">
-            {model.label}
-            {TRAITS.filter(({ key }) => Boolean(model[key])).map(({ key, Icon, title }) => (
-              <Icon key={key} className="size-3.5 opacity-75">
-                <title>{title(model)}</title>
-              </Icon>
-            ))}
-          </span>
-        ),
-        tag: (
-          <>
-            {ROLES.filter(({ key }) => Boolean(model[key])).map(({ key, Icon, title }) => (
-              <Icon key={key} className="size-3.5">
-                <title>{title}</title>
-              </Icon>
-            ))}
-          </>
-        ),
-      })),
-    [brain.models],
-  );
-
-  const pickerModels = brain.models.length > 0 ? modelList : [{
-    key: '__openclaw-loading__',
-    name: <span className="text-ink-3">OpenClaw</span>,
-    tag: <span className="text-[10px] text-ink-3">{t('composer.loading')}</span>,
-  }];
-
-  /*
-   * Levels come from the backend, not from our own idea of them: OpenClaw's
-   * HTTP gateway has no reasoning field at all, and the only live lever is
-   * its config, which knows exactly this list.
-   *
-   * The first stop is "as in OpenClaw": the level may be UNSET, and then a
-   * built-in default applies that the CLI does not name. Showing "off" there
-   * would name an unknown as a known — they are different states, and there
-   * would be no way back from "off" to "unset".
-   */
-  const AS_CONFIGURED = t('composer.asConfigured');
-  const efforts = useMemo(
-    () => [AS_CONFIGURED, ...brain.levels.map((level) => thinkingLabel(level))],
-    [AS_CONFIGURED, brain.levels],
-  );
-  const effortByLabel = useMemo<Record<string, string>>(
-    () => ({
-      [AS_CONFIGURED]: '',
-      ...Object.fromEntries(brain.levels.map((level) => [thinkingLabel(level), level])),
-    }),
-    [AS_CONFIGURED, brain.levels],
-  );
-
   const context = {
     sessionId,
     contextSize: brain.contextSize,
@@ -185,16 +100,6 @@ export function Composer({
     onCompacted,
   };
 
-  /*
-   * The model catalog may run the OpenClaw CLI and take a few seconds to
-   * answer. The input must not hide because of that: show a stable fallback
-   * and let the picker switch to the real list once the catalog answers.
-   *
-   * PromptBar reads `defaultModel` ONLY on mount. Mounted before the backend
-   * answers, it would settle on an empty key and show the first model of the
-   * list forever — again not the one answering. The catalog is cached for two
-   * minutes, so this placeholder is visible once.
-   */
   return (
     <div className="chat-composer u-safe-b shrink-0 px-4 pb-3 pt-2 sm:px-6">
       <div className="mx-auto flex w-full max-w-[760px] flex-col items-stretch gap-1.5">
@@ -257,10 +162,11 @@ export function Composer({
             menuBackground={surface3}
             sparkColor={accent}
             controlRef={bar}
-            // Empty lists hide the pickers: in the lean layout they live in
-            // the chat header instead.
-            models={lean ? [] : pickerModels}
-            efforts={lean ? [] : efforts}
+            // Empty lists hide the vendor pickers; ModelMenu replaces them —
+            // in the bar on the desk, in the chat header on a phone.
+            models={[]}
+            efforts={[]}
+            modelSlot={lean ? undefined : <ModelMenu variant="bar" />}
             plusSlot={lean ? (
               <button
                 ref={plus}
@@ -282,15 +188,6 @@ export function Composer({
               { key: 'web', name: t('composer.srcWeb'), description: t('composer.srcWebDesc'), icon: Globe },
               { key: 'memory', name: t('composer.srcMemory'), description: t('composer.srcMemoryDesc'), icon: FileText },
             ]}
-            defaultModel={brain.current || '__openclaw-loading__'}
-            defaultEffort={brain.thinking ? thinkingLabel(brain.thinking) : AS_CONFIGURED}
-            onEffortChange={(label) => {
-              const level = effortByLabel[label];
-              if (level !== undefined) brain.pickThinking(level);
-            }}
-            onModelChange={(key) => {
-              if (key !== '__openclaw-loading__') brain.pickModel(key);
-            }}
             onAttach={() => new Promise((resolve) => {
               const input = fileInput.current;
               if (!input) return resolve([]);

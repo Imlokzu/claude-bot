@@ -762,6 +762,8 @@ export interface PromptBarProps extends Common {
   onModelChange?: (key: string) => void;
   /** Чим замінити кнопку «+» (у нас — радіальне меню). */
   plusSlot?: ReactNode;
+  /** Our edit: rendered where the model and effort pickers go. */
+  modelSlot?: ReactNode;
   /** Our edit: lets a sheet outside the bar add attachments to it. */
   controlRef?: { current: PromptBarControl | null };
   /** Підписи компонента — у вендора вони зашиті англійською. */

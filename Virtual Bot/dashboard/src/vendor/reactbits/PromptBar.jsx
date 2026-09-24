@@ -22,6 +22,13 @@ import './PromptBar.css';
  * ПРАВКИ в цьому файлі (дві, обидві позначені тут, щоб не загубились при
  * оновленні з reactbits.dev):
  *
+ * 6) `modelSlot` — what to render in place of the model and effort
+ *    pickers. The vendor list has no search and keeps the catalog's own
+ *    order, which stopped working at sixty models; our ModelMenu (search,
+ *    makers, recent picks, thinking level) takes the spot instead. Pass
+ *    `models={[]}` and `efforts={[]}` with it so the vendor pickers stay
+ *    hidden.
+ *
  * 5) `controlRef` — a way to add attachments from outside the bar. On a
  *    phone the "+" opens our own sheet (camera, photos, files) instead of
  *    the vendor's source list, and the files it picks must land in the
@@ -166,6 +173,7 @@ export default function PromptBar({
   onEffortChange,
   onModelChange,
   plusSlot,
+  modelSlot,
   controlRef,
   labels,
   onDictateStop,
@@ -738,6 +746,7 @@ export default function PromptBar({
             <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={2} />
           </button>
           )}
+          {modelSlot}
           {models.length > 0 ? (
             <button
               type="button"

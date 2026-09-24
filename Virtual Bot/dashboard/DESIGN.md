@@ -183,3 +183,26 @@ owner's sketch:
 - Escape peels one layer at a time; a tap inside the context popover does not
   count as a tap outside the sheet.
 - The desktop layout is unchanged.
+
+## Model picker (2026-09-24)
+
+One `ModelMenu` for every layout — the phone chat header's title, and on the
+desk the slot in the prompt bar where the vendor pickers were (PromptBar
+edit 6, `modelSlot`). The catalog grew to ~60 models with the same model
+often listed under three hosts, and a plain dropdown in catalog order meant
+scrolling past all of it.
+
+- **Maker logos** from lobe-icons (`src/vendor/lobe-icons/`, MIT), copied
+  rather than installed: ~15 of the package's 950 icons. Monochrome, filled
+  with `currentColor` — they take the text colour and follow both themes; a
+  column of brand colours would break rule 3. The maker comes from the model
+  part of the id, never the host (`regolo/gpt-oss-120b` is OpenAI's). Unknown
+  makers get a neutral mark rather than a guessed logo.
+- **Search** matches the start of any word, in any order, ignoring the
+  catalog's punctuation ("gpt6", "qwen 3.8", "regolo qwen", "xai").
+- **Sort**: by maker (grouped, sticky headings), A–Z, or by context window.
+  The choice persists in `localStorage.claudeBotModelSort`.
+- **Recent**: the last three picks lead the list while nothing is typed.
+- The host is shown under each name, so the copies of one model can be told
+  apart.
+
