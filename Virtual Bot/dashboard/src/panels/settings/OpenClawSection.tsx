@@ -5,6 +5,7 @@ import { SkeletonList } from '@/components/ui/Feedback';
 import { Switch } from '@/components/ui/Switch';
 import { useToast } from '@/components/ui/Toaster';
 import { get, post } from '@/lib/api';
+import { useBrainModels } from '@/lib/queries';
 import { groupLabel, ocText, t } from '@/locales/settings';
 import { SettingGroup, SettingRow } from './SettingRow';
 
@@ -19,7 +20,7 @@ export interface OcField {
   path: string;
   section: string;
   group: string;
-  kind: 'bool' | 'int' | 'enum' | 'string';
+  kind: 'bool' | 'int' | 'enum' | 'string' | 'model';
   options: string[];
   value: boolean | number | string | null;
   unset: boolean;
@@ -31,6 +32,7 @@ interface OcSettings {
 }
 
 const control = 'h-8 w-[180px] text-[13px]';
+const modelControl = 'h-8 w-[220px] text-[13px]';
 
 export function useOpenClawSettings() {
   return useQuery({
@@ -49,10 +51,21 @@ export function fieldMatches(field: OcField, needle: string): boolean {
  * Gateway rows for one settings tab. Local rows of that tab stay in
  * SettingsPanel; this only fills the categories that belong to OpenClaw.
  */
-export function OpenClawFields({ section, query }: { section: string; query: string }) {
+export function OpenClawFields({
+  section,
+  query,
+  group,
+  skipGroups = [],
+}: {
+  section: string;
+  query: string;
+  group?: string;
+  skipGroups?: string[];
+}) {
   const toast = useToast();
   const client = useQueryClient();
   const settings = useOpenClawSettings();
+  const brain = useBrainModels();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<string | null>(null);
 
@@ -62,28 +75,33 @@ export function OpenClawFields({ section, query }: { section: string; query: str
     onSuccess: () => {
       toast.ok(t('settings.saved'));
       void client.invalidateQueries({ queryKey: ['openclaw-settings'] });
+      void client.invalidateQueries({ queryKey: ['brain-models'] });
     },
     onError: (error: Error) => toast.error(t('settings.failed'), error.message),
     onSettled: () => setPending(null),
   });
 
   if (settings.isPending) {
+    if (skipGroups.length > 0) return null;
     return (
       <SettingGroup>
-        <div className="p-4"><SkeletonList rows={6} /></div>
+        <div className="p-4"><SkeletonList rows={4} /></div>
       </SettingGroup>
     );
   }
 
   if (!settings.data?.available) {
-    if (section !== 'brain') return null;
+    if (section !== 'brain' || group) return null;
     return <p className="px-1 text-[13px] text-ink-3">{t('settings.unavailable')}</p>;
   }
 
   const needle = query.trim().toLowerCase();
-  const fields = settings.data.fields.filter(
-    (field) => field.section === section && fieldMatches(field, needle),
-  );
+  const fields = settings.data.fields.filter((field) => {
+    if (field.section !== section || !fieldMatches(field, needle)) return false;
+    if (group && field.group !== group) return false;
+    if (skipGroups.includes(field.group)) return false;
+    return true;
+  });
 
   if (fields.length === 0) return null;
 
@@ -122,7 +140,12 @@ export function OpenClawFields({ section, query }: { section: string; query: str
       {groups.map((group) => (
         <SettingGroup key={group.id} label={groupLabel(group.id)}>
           {group.fields.map((field) => {
-            const shown = drafts[field.path] ?? (field.unset || field.value == null ? '' : String(field.value));
+            const stored = field.unset || field.value == null ? '' : String(field.value);
+            const shown = drafts[field.path] ?? stored;
+            const liveModel = field.path === 'agents.defaults.model.primary'
+              ? (brain.data?.selected || stored || brain.data?.default || '')
+              : stored;
+            const modelOptions = brain.data?.models ?? [];
             return (
               <SettingRow
                 key={field.path}
@@ -138,6 +161,22 @@ export function OpenClawFields({ section, query }: { section: string; query: str
                     label={ocText(field.path)}
                     onChange={(next) => write(field, next)}
                   />
+                ) : field.kind === 'model' ? (
+                  <Select
+                    id={field.path}
+                    className={modelControl}
+                    disabled={pending === field.path}
+                    value={liveModel}
+                    onChange={(event) => write(field, event.target.value)}
+                  >
+                    <option value="">{t('settings.inherit')}</option>
+                    {liveModel && !modelOptions.some((model) => model.id === liveModel) ? (
+                      <option value={liveModel}>{liveModel}</option>
+                    ) : null}
+                    {modelOptions.map((model) => (
+                      <option key={model.id} value={model.id}>{model.label}</option>
+                    ))}
+                  </Select>
                 ) : field.kind === 'enum' ? (
                   <Select
                     id={field.path}

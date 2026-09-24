@@ -271,8 +271,9 @@ export default function SettingsPanel() {
               ) : null}
               {current?.id === 'brain' ? (
                 <div className="space-y-6">
+                  <OpenClawFields section="brain" group="models" query={narrowed('brain') ? needle : ''} />
                   {narrowed('brain') ? null : <BrainSection setup={setup.data!} />}
-                  <OpenClawFields section="brain" query={narrowed('brain') ? needle : ''} />
+                  <OpenClawFields section="brain" skipGroups={['models']} query={narrowed('brain') ? needle : ''} />
                 </div>
               ) : null}
               {current?.id === 'skills' ? <StoreSection /> : null}
@@ -394,7 +395,6 @@ function LookSection() {
 function BrainSection({ setup }: { setup: SetupData }) {
   const toast = useToast();
   const client = useQueryClient();
-  const [model, setModel] = useState(setup.selected_model);
   const [omni, setOmni] = useState('');
   const [openclaw, setOpenclaw] = useState('');
   const [busy, setBusy] = useState(false);
@@ -417,26 +417,8 @@ function BrainSection({ setup }: { setup: SetupData }) {
     }
   };
 
-  const saveModel = async (next: string) => {
-    setModel(next);
-    try {
-      await post('/api/model', { model: next });
-      void client.invalidateQueries({ queryKey: ['models'] });
-      toast.ok('Модель змінено');
-    } catch (error) {
-      toast.error('Модель не прийнялась', (error as Error).message);
-    }
-  };
-
   return (
-    <SettingGroup label={t('settings.group.model')}>
-      <SettingRow label="Модель" hint={glue('Картинки й прямий виклик. Чат відповідає моделлю OpenClaw.')}>
-        <Select className={fieldControl} value={model} onChange={(event) => void saveModel(event.target.value)}>
-          {setup.models.map((item) => (
-            <option key={item.id} value={item.id}>{item.label || item.id}</option>
-          ))}
-        </Select>
-      </SettingRow>
+    <SettingGroup label={t('settings.group.keys')}>
       <SettingRow
         label="Omni API-ключ"
         hint={setup.keys_set.omni ? 'Уже заданий — залиш порожнім, щоб не міняти' : 'Не заданий'}

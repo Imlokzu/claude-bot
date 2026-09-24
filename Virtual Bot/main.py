@@ -684,17 +684,22 @@ async def api_brain_models(request: Request, refresh: bool = Query(default=False
 @app.post("/api/brain/model")
 async def api_brain_model_select(req: BrainModelRequest, request: Request) -> dict:
     """
-    Перекриває модель OpenClaw для наступних реплік (заголовок x-openclaw-model).
+    Sets the model OpenClaw itself answers with (`agents.defaults.model.primary`).
 
-    Перевіряємо за каталогом: невідомий рядок поїхав би заголовком і кожна
-    репліка падала б з 400 уже в шлюзі — там, де причину не видно з панелі.
+    The same write updates the in-process chat header, so the next reply does
+    not keep the previous override. An id outside the live catalog is refused
+    before the CLI runs: a bad header would fail every reply inside the gateway.
     """
     await _require_user(request)
     models = await openclaw_models.catalog()
-    # Порожній рядок — «повернути типову модель агента».
     if req.model and req.model not in {str(m["id"]) for m in models}:
         raise HTTPException(status_code=400, detail="OpenClaw не знає такої моделі")
-    openclaw_models.set_selected(req.model)
+    try:
+        ok = await openclaw_settings.apply("agents.defaults.model.primary", req.model)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="OpenClaw не знає такої моделі") from None
+    if not ok:
+        raise HTTPException(status_code=502, detail="OpenClaw не прийняв модель")
     return {"ok": True, "selected": openclaw_models.get_selected()}
 
 

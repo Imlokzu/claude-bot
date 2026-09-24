@@ -27,7 +27,7 @@ _MISSING = object()
 class Spec:
     path: str
     group: str
-    kind: str  # bool | int | enum | string
+    kind: str  # bool | int | enum | string | model
     options: tuple[str, ...] = ()
     default: object = None
     minimum: int | None = None
@@ -59,6 +59,14 @@ CATALOG: tuple[Spec, ...] = (
     Spec("commands.text", "messages", "bool", default=True, section="style"),
     Spec("tts.enabled", "gateway", "bool", default=False, section="voice"),
     Spec("tts.auto", "gateway", "enum", ("off", "always", "inbound", "tagged"), default="off", section="voice"),
+    # Chat model is the gateway's own primary. The old panel list was Omni,
+    # and picking it never changed what answered. A model id is accepted
+    # only when `openclaw models list` still has it.
+    Spec("agents.defaults.model.primary", "models", "model", max_length=160, section="brain"),
+    Spec("agents.defaults.imageModel.primary", "models", "model", max_length=160, section="brain"),
+    Spec("agents.defaults.utilityModel", "models", "model", max_length=160, section="brain"),
+    Spec("agents.defaults.voiceModel.primary", "models", "model", max_length=160, section="brain"),
+    Spec("agents.defaults.pdfModel.primary", "models", "model", max_length=160, section="brain"),
     Spec("agents.defaults.userTimezone", "agent", "string", max_length=64, section="brain"),
     Spec("agents.defaults.maxConcurrent", "agent", "int", minimum=1, maximum=32, section="brain"),
     Spec("agents.defaults.imageQuality", "agent", "enum",
@@ -177,6 +185,8 @@ def coerce(spec: Spec, value: object) -> object | None:
     text = str(value).strip()
     if not text or len(text) > spec.max_length:
         raise ValueError(spec.path)
+    if spec.kind == "model" and "/" not in text:
+        raise ValueError(spec.path)
     return text
 
 
@@ -186,6 +196,10 @@ async def apply(path: str, value: object) -> bool:
     if spec is None:
         raise ValueError(path)
     stored = coerce(spec, value)
+    if spec.kind == "model" and stored is not None:
+        known = {str(model["id"]) for model in await openclaw_models.catalog()}
+        if stored not in known:
+            raise ValueError(path)
     if stored is None:
         args = ("config", "unset", path)
     else:
@@ -193,4 +207,9 @@ async def apply(path: str, value: object) -> bool:
     code, _out, err = await openclaw_models._run_cli(*args)
     if code != 0:
         log.warning("openclaw config %s %s: code %d (%s)", args[1], path, code, err.strip()[:160])
-    return code == 0
+        return False
+    # The chat header overrides the config for this process. Keep them the
+    # same, or the picker and the next reply would name two different models.
+    if path == "agents.defaults.model.primary":
+        openclaw_models.set_selected("" if stored is None else str(stored))
+    return True

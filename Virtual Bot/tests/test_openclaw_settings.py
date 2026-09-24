@@ -31,6 +31,9 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(by_path["agents.defaults.thinkingDefault"]["value"], "high")
         self.assertEqual(by_path["agents.defaults.thinkingDefault"]["section"], "style")
         self.assertEqual(by_path["tools.web.search.enabled"]["section"], "tools")
+        self.assertEqual(by_path["agents.defaults.model.primary"]["section"], "brain")
+        self.assertEqual(by_path["agents.defaults.model.primary"]["kind"], "model")
+        self.assertTrue(by_path["agents.defaults.model.primary"]["unset"])
         self.assertTrue(all(field["section"] != "openclaw" for field in body["fields"]))
         self.assertFalse(by_path["agents.defaults.thinkingDefault"]["unset"])
         self.assertEqual(by_path["agents.defaults.timeoutSeconds"]["value"], 90)
@@ -78,6 +81,34 @@ class ApplyTests(unittest.TestCase):
         ) as run:
             self.assertTrue(self._apply("agents.defaults.thinkingDefault", ""))
         self.assertEqual(run.await_args.args[:3], ("config", "unset", "agents.defaults.thinkingDefault"))
+
+    def test_model_outside_the_catalog_never_writes(self) -> None:
+        catalog = AsyncMock(return_value=[{"id": "omni/opencode-go/minimax-m3"}])
+        with (
+            patch.object(openclaw_settings.openclaw_models, "catalog", catalog),
+            patch.object(openclaw_settings.openclaw_models, "_run_cli", AsyncMock()) as run,
+        ):
+            with self.assertRaises(ValueError):
+                self._apply("agents.defaults.model.primary", "no/such-model")
+        run.assert_not_awaited()
+
+    def test_chat_model_is_stored_and_used_for_the_next_reply(self) -> None:
+        catalog = AsyncMock(return_value=[{"id": "omni/opencode-go/minimax-m3"}])
+        with (
+            patch.object(openclaw_settings.openclaw_models, "catalog", catalog),
+            patch.object(
+                openclaw_settings.openclaw_models, "_run_cli", AsyncMock(return_value=(0, "", ""))
+            ) as run,
+        ):
+            self.assertTrue(self._apply(
+                "agents.defaults.model.primary", "omni/opencode-go/minimax-m3"
+            ))
+        self.assertEqual(
+            run.await_args.args,
+            ("config", "set", "agents.defaults.model.primary", '"omni/opencode-go/minimax-m3"', "--strict-json"),
+        )
+        self.assertEqual(openclaw_settings.openclaw_models.get_selected(), "omni/opencode-go/minimax-m3")
+        openclaw_settings.openclaw_models.set_selected("")
 
     def test_integer_out_of_range_is_refused(self) -> None:
         with self.assertRaises(ValueError):
