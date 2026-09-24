@@ -51,13 +51,10 @@ class CatalogTests(unittest.TestCase):
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, CATALOG, ""))):
             models = asyncio.run(openclaw_models.catalog(force=True))
 
-        self.assertEqual(len(models), 2)
+        self.assertEqual([m["id"] for m in models], ["regolo/gpt-oss-120b"])
         self.assertEqual(openclaw_models.default_model(models), "regolo/gpt-oss-120b")
-        vision = next(m for m in models if m["id"] == "openai/gpt-6-luna")
-        self.assertTrue(vision["vision"])
-        self.assertEqual(vision["fallback"], "fallback#1")
-        self.assertEqual(vision["context"], 200000)
-        self.assertEqual(vision["provider"], "openai")
+        self.assertEqual(models[0]["context"], 200000)
+        self.assertEqual(models[0]["provider"], "regolo")
 
     def test_hides_providers_other_than_regolo_and_chatgpt(self) -> None:
         raw = json.dumps({"models": [
@@ -65,15 +62,12 @@ class CatalogTests(unittest.TestCase):
             {"key": "nvidia/nemotron", "name": "Nemotron"},
             {"key": "regolo/gpt-oss-120b", "name": "GPT-OSS 120B"},
             {"key": "openai/gpt-6-sol", "name": "GPT-6 Sol"},
-            {"key": "openai/gpt-6-luna", "name": "GPT-6 Luna"},
+            {"key": "openai/gpt-6-luna", "name": "GPT-6 Luna", "tags": ["default"]},
             {"key": "openai/gpt-5.6-luna", "name": "GPT-5.6-Luna"},
         ]})
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, raw, ""))):
             models = asyncio.run(openclaw_models.catalog(force=True))
-        self.assertEqual(
-            [m["id"] for m in models],
-            ["regolo/gpt-oss-120b", "openai/gpt-6-luna", "openai/gpt-5.6-luna"],
-        )
+        self.assertEqual([m["id"] for m in models], ["openai/gpt-6-luna"])
 
     def test_broken_cli_keeps_the_previous_catalog(self) -> None:
         """Збій CLI не має спорожняти список: порожній вибір гірший за старий."""
@@ -81,7 +75,7 @@ class CatalogTests(unittest.TestCase):
             asyncio.run(openclaw_models.catalog(force=True))
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(1, "", "boom"))):
             models = asyncio.run(openclaw_models.catalog(force=True))
-        self.assertEqual(len(models), 2)
+        self.assertEqual(len(models), 1)
 
 
 class NameTailTests(unittest.TestCase):
@@ -202,10 +196,10 @@ class BrainEndpointTests(unittest.TestCase):
     def test_accepts_a_real_model(self) -> None:
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, CATALOG, ""))):
             response = self.client.post(
-                "/api/brain/model", json={"model": "openai/gpt-6-luna"}
+                "/api/brain/model", json={"model": "regolo/gpt-oss-120b"}
             )
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(openclaw_models.get_selected(), "openai/gpt-6-luna")
+        self.assertEqual(openclaw_models.get_selected(), "regolo/gpt-oss-120b")
 
     def test_rejects_an_unknown_thinking_level(self) -> None:
         response = self.client.post("/api/brain/thinking", json={"level": "вигаданий"})

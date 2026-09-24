@@ -43,9 +43,8 @@ THINKING_LEVELS: tuple[str, ...] = (
     "off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max", "ultra",
 )
 
-# The picker offers Regolo, and from OpenAI only the Luna models.
-# The rest of the OpenAI catalog (Sol, Astra, Terra, …) stays out.
-CHAT_PROVIDERS = frozenset({"openai", "regolo"})
+# The picker offers the model OpenClaw itself treats as the default.
+# Everything else stays out of the menu.
 
 _CLI_TIMEOUT_S = 20.0
 # Каталог моделей міняється рідко (правка конфіга або `models refresh`), а
@@ -158,16 +157,8 @@ async def catalog(force: bool = False) -> list[dict]:
 
 
 def _shown(model: dict) -> bool:
-    """Regolo stays whole. OpenAI is Luna only."""
-    if not model.get("id"):
-        return False
-    provider = str(model.get("provider") or "")
-    if provider == "regolo":
-        return True
-    if provider != "openai":
-        return False
-    haystack = f"{model.get('id') or ''} {model.get('label') or ''}".casefold()
-    return "luna" in haystack
+    """Only the catalog default. Other names are not a choice."""
+    return bool(model.get("id")) and bool(model.get("is_default"))
 
 
 def default_model(models: list[dict]) -> str:

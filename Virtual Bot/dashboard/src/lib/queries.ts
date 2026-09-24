@@ -115,13 +115,10 @@ export interface BrainModelsResponse {
   available: boolean;
 }
 
-const BRAIN_MODELS_CACHE_KEY = 'claude-bot:brain-models:v3';
+const BRAIN_MODELS_CACHE_KEY = 'claude-bot:brain-models:v4';
 
 function keptModel(model: BrainModel): boolean {
-  const provider = model.id.split('/')[0] ?? '';
-  if (provider === 'regolo') return true;
-  if (provider !== 'openai') return false;
-  return `${model.id} ${model.label}`.toLowerCase().includes('luna');
+  return model.is_default === true;
 }
 
 function keptModels(data: BrainModelsResponse): BrainModelsResponse {
