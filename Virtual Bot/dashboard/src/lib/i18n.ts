@@ -65,6 +65,10 @@ const uk = {
   'tools.serverTools': 'Інструменти панелі',
   'tools.serverWorkspace': 'Робоча тека',
   'tools.serverEmotions': 'Емоції',
+  'look.popups': 'Попапи',
+  'look.popupsAria': 'Вигляд попапів',
+  'look.popupStandard': 'Стандарт',
+  'look.popupGlass': 'Скло',
 } as const;
 
 const en: Record<keyof typeof uk, string> = {
@@ -133,6 +137,10 @@ const en: Record<keyof typeof uk, string> = {
   'tools.serverTools': 'Panel tools',
   'tools.serverWorkspace': 'Workspace',
   'tools.serverEmotions': 'Emotions',
+  'look.popups': 'Popups',
+  'look.popupsAria': 'Popup material',
+  'look.popupStandard': 'Standard',
+  'look.popupGlass': 'Glass',
 };
 
 export function t(key: keyof typeof uk, values: Record<string, string | number> = {}): string {

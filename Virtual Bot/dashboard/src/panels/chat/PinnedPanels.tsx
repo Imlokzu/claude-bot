@@ -190,7 +190,8 @@ export function PinnedPanels({ embedded = false, messages = [] }: { embedded?: b
           </Popover.Trigger>
           <Popover.Portal>
             <Popover.Content side="top" align="end" sideOffset={10} collisionPadding={12}
-              className="u-pop z-50 w-56 rounded-md border border-line bg-surface p-1.5 shadow-pop">
+              className="popup-shell u-pop z-50 w-56 rounded-md border border-line bg-surface p-1.5 shadow-pop">
+              <div className="popup-plate liquid-glass" aria-hidden="true" />
               {PIN_IDS.map((id) => {
                 const Icon = ICONS[id];
                 return (

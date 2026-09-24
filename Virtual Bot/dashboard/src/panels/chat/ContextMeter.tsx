@@ -174,8 +174,9 @@ export function ContextMeter({
           sideOffset={8}
           collisionPadding={12}
           style={{ zIndex: 'var(--z-pop)' }}
-          className="u-pop w-[min(340px,calc(100vw-24px))] rounded-lg border border-line bg-surface p-3 shadow-pop"
+          className="popup-shell u-pop w-[min(340px,calc(100vw-24px))] rounded-lg border border-line bg-surface p-3 shadow-pop"
         >
+          <div className="popup-plate liquid-glass" aria-hidden="true" />
           <p className="u-label mb-2.5">{t('context.title')}</p>
 
           {breakdown.isPending ? (

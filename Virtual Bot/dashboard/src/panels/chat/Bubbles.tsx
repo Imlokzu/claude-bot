@@ -431,7 +431,8 @@ function ReactionPicker({ current, onPick, onClose, boundary }: {
 
   return (
     <div ref={ref} role="menu" aria-label={t('reaction.pick')} data-state="open"
-      className="u-pop absolute bottom-full left-0 z-20 mb-1.5 flex gap-0.5 rounded-full border border-line bg-surface p-1 shadow-pop">
+      className="popup-shell u-pop absolute bottom-full left-0 z-20 mb-1.5 flex gap-0.5 rounded-full border border-line bg-surface p-1 shadow-pop">
+      <div className="popup-plate liquid-glass" aria-hidden="true" />
       {QUICK_REACTIONS.map((emoji) => (
         <button key={emoji} type="button" role="menuitem"
           aria-label={emoji === current ? t('reaction.remove', { emoji }) : emoji}

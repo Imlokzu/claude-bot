@@ -14,6 +14,7 @@ import { WorkspacePreviewDock } from '@/components/shell/WorkspacePreviewDock';
 import { BotUiOverlay } from '@/components/shell/BotUiOverlay';
 import { SECTION_IDS } from './sections';
 import { useSwipeNavigation } from '@/hooks/useSwipeNavigation';
+import { usePopupGlass } from '@/hooks/usePopupGlass';
 
 /*
  * Розділи вантажаться ліниво. Це не мікрооптимізація: чат тягне за собою
@@ -41,6 +42,7 @@ export function App() {
     () => window.dispatchEvent(new Event('vbot:close-drawer')),
   );
   const accent = useAccentColor();
+  usePopupGlass();
   const reduced = useMediaQuery('(prefers-reduced-motion: reduce)');
   const swipeHandlers = useSwipeNavigation({
     current: section,

@@ -213,9 +213,10 @@ export function SessionCard({
         // забирати в людини каретку з поля вводу вона не мусить.
         onOpenAutoFocus={(event) => event.preventDefault()}
         style={{ zIndex: 'var(--z-pop)' }}
-        className="u-pop w-[min(268px,calc(100vw-24px))] rounded-md border border-line bg-surface p-3 shadow-pop outline-none"
+        className="popup-shell u-pop w-[min(268px,calc(100vw-24px))] rounded-md border border-line bg-surface p-3 shadow-pop outline-none"
         {...(isPhone ? {} : hover)}
       >
+        <div className="popup-plate liquid-glass" aria-hidden="true" />
         {picking ? (
           <>
             <button

@@ -301,7 +301,7 @@ export function ModelMenu({ variant = 'header' }: {
           sideOffset={6}
           collisionPadding={12}
           style={{ zIndex: 'var(--z-pop)' }}
-          className="u-pop flex max-h-[min(78dvh,620px)] w-[min(360px,calc(100vw-24px))] flex-col rounded-lg border border-line bg-surface shadow-pop"
+          className="popup-shell u-pop flex max-h-[min(78dvh,620px)] w-[min(360px,calc(100vw-24px))] flex-col rounded-lg border border-line bg-surface shadow-pop"
           // On touch the keyboard would cover half the list the moment the
           // menu opens; there the search waits for a tap.
           // First Escape clears the search, the second closes the menu.
@@ -317,6 +317,7 @@ export function ModelMenu({ variant = 'header' }: {
             if (!window.matchMedia('(pointer: coarse)').matches) input.current?.focus();
           }}
         >
+          <div className="popup-plate liquid-glass" aria-hidden="true" />
           <div className="space-y-2 border-b border-line p-2.5">
             <label className="flex h-9 items-center gap-2 rounded-md bg-surface-2 px-2.5 focus-within:ring-2 focus-within:ring-accent max-[759px]:h-11">
               <Search className="size-4 shrink-0 text-ink-3" />

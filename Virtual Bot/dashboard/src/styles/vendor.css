@@ -544,6 +544,27 @@
 .chat-composer .prompt-bar-glow {
   z-index: 2;
 }
+/* Popup glass is opt-in (Look → Popups). The solid fill stays in the
+   markup; this only paints while data-popup="glass". The plate sits behind
+   the menu so the filter does not clip its text. */
+.popup-plate { display: none; }
+html[data-popup="glass"] .popup-shell {
+  background-color: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+html[data-popup="glass"] .popup-plate {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+html[data-popup="glass"] .popup-shell > :not(.popup-plate) {
+  position: relative;
+  z-index: 1;
+}
 .chat-composer {
   position: relative;
   z-index: 3;

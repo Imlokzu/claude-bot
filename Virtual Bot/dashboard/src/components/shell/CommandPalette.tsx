@@ -162,7 +162,7 @@ export function CommandPalette() {
 
           <motion.div
             ref={dialogRef}
-            className="relative flex w-full max-w-[560px] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-pop"
+            className="popup-shell relative flex w-full max-w-[560px] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-pop"
             initial={{ opacity: 0, y: -8, scale: 0.985 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.985, transition: { duration: 0.1 } }}
@@ -171,6 +171,7 @@ export function CommandPalette() {
             aria-modal="true"
             aria-label="Команди"
           >
+            <div className="popup-plate liquid-glass" aria-hidden="true" />
             <div className="flex items-center gap-2.5 border-b border-line px-4">
               <Search className="size-4 shrink-0 text-ink-3" />
               <input

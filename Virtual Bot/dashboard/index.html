@@ -24,6 +24,7 @@
           r.dataset.theme = dark ? 'dark' : 'light';
           r.dataset.accent = a;
           r.lang = localStorage.getItem('claudeBotLang') === 'uk' ? 'uk' : 'en';
+          if (localStorage.getItem('claudeBotPopup') === 'glass') r.dataset.popup = 'glass';
         } catch (e) {}
       })();
     </script>

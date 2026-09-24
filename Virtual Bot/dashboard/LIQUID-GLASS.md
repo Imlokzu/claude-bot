@@ -7,12 +7,15 @@ reads as a solid fill, so the plate has no fill of its own.
 
 The sample is on the composer, as a plate behind the field, and on the
 jump-to-latest circle. Bot replies stay a solid surface: nothing sits
-behind them, so a lens there is only a rim around the words. Nothing else
-uses it yet.
+behind them, so a lens there is only a rim around the words.
 
-Do not put this on more surfaces until the owner says the sample looks
-right. When they do, add the class and let the existing watcher pick the
-element up. Do not invent a second recipe.
+Popups keep that solid plate. Glass is a second material, off until the
+owner turns it on in Look → Popups (`claudeBotPopup` = `glass` on
+`<html data-popup="glass">`). It covers the model menu, the prompt-bar
+menus, the command palette, the session card, the context meter, the pin
+menu, and the reaction picker. Do not put the lens on more surfaces, and
+do not remove the solid classes from these: standard has to stay one
+switch away. Do not invent a second recipe.
 
 ## The lens
 

@@ -10,9 +10,11 @@ import { useCallback, useEffect, useState } from 'react';
 
 export type ThemeChoice = 'light' | 'dark' | 'system';
 export type AccentId = 'terracotta' | 'sage' | 'teal' | 'amber';
+export type PopupMaterial = 'solid' | 'glass';
 
 const THEME_KEY = 'claudeBotTheme';
 const ACCENT_KEY = 'claudeBotAccent';
+const POPUP_KEY = 'claudeBotPopup';
 
 export const THEMES: { id: ThemeChoice; label: string }[] = [
   { id: 'light', label: 'Світла пустеля' },
@@ -47,12 +49,20 @@ function write(key: string, value: string): void {
 
 const THEME_IDS = THEMES.map((t) => t.id);
 const ACCENT_IDS = ACCENTS.map((a) => a.id);
+const POPUP_IDS: readonly PopupMaterial[] = ['solid', 'glass'];
+
+function applyPopup(value: PopupMaterial) {
+  if (value === 'glass') document.documentElement.dataset.popup = 'glass';
+  else delete document.documentElement.dataset.popup;
+  window.dispatchEvent(new Event('vbot:popup'));
+}
 
 export function useTheme() {
   const [theme, setThemeState] = useState<ThemeChoice>(() => read(THEME_KEY, 'system', THEME_IDS));
   const [accent, setAccentState] = useState<AccentId>(() =>
     read(ACCENT_KEY, 'terracotta', ACCENT_IDS),
   );
+  const [popup, setPopupState] = useState<PopupMaterial>(() => read(POPUP_KEY, 'solid', POPUP_IDS));
 
   // Обчислена тема — те, що реально на екрані (system уже розгорнуто).
   const [resolved, setResolved] = useState<'light' | 'dark'>(
@@ -77,6 +87,10 @@ export function useTheme() {
     document.documentElement.dataset.accent = accent;
   }, [accent]);
 
+  useEffect(() => {
+    applyPopup(popup);
+  }, [popup]);
+
   const setTheme = useCallback((value: ThemeChoice) => {
     write(THEME_KEY, value);
     setThemeState(value);
@@ -87,5 +101,10 @@ export function useTheme() {
     setAccentState(value);
   }, []);
 
-  return { theme, accent, resolved, setTheme, setAccent };
+  const setPopup = useCallback((value: PopupMaterial) => {
+    write(POPUP_KEY, value);
+    setPopupState(value);
+  }, []);
+
+  return { theme, accent, popup, resolved, setTheme, setAccent, setPopup };
 }

@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/Toaster';
 import { get, post } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { glue } from '@/lib/glue';
+import { t } from '@/lib/i18n';
 import { ACCENTS, THEMES, useTheme } from '@/hooks/useTheme';
 import { useLanguage } from '@/hooks/useLanguage';
 import { JellyRadio } from '@/vendor/reactbits';
@@ -253,7 +254,7 @@ function SaveBar({ saving, onSave }: { saving: boolean; onSave: () => void }) {
  * цілком може хотіти різні теми.
  */
 function LookSection() {
-  const { theme, accent, setTheme, setAccent } = useTheme();
+  const { theme, accent, popup, setTheme, setAccent, setPopup } = useTheme();
   const [lang, setLang] = useLanguage();
   const accentColor = useCssVar('--c-accent', '#b95f3d');
   const accentInk = useCssVar('--c-accent-ink', '#fff');
@@ -270,6 +271,23 @@ function LookSection() {
           value={theme}
           onChange={(next) => setTheme(next as typeof theme)}
           items={THEMES.map((item) => ({ value: item.id, label: item.label }))}
+          radius={999}
+          chipColor={surface2}
+          activeColor={accentColor}
+          textColor={ink}
+          activeTextColor={accentInk}
+        />
+      </Field>
+
+      <Field label={t('look.popups')}>
+        <JellyRadio
+          ariaLabel={t('look.popupsAria')}
+          value={popup}
+          onChange={(next) => setPopup(next as typeof popup)}
+          items={[
+            { value: 'solid', label: t('look.popupStandard') },
+            { value: 'glass', label: t('look.popupGlass') },
+          ]}
           radius={999}
           chipColor={surface2}
           activeColor={accentColor}
