@@ -470,6 +470,24 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.55; }
 }
+/* Logs under a tool card. A grid row can ease to zero, so the panel
+   folds both ways; the text fades and rises those few pixels with it. */
+.chat-log {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 260ms var(--e-spring);
+}
+.chat-log[data-open] { grid-template-rows: 1fr; }
+.chat-log-clip { min-height: 0; overflow: hidden; }
+.chat-log-panel {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 180ms var(--e-out), transform 260ms var(--e-spring);
+}
+.chat-log[data-open] .chat-log-panel {
+  opacity: 1;
+  transform: none;
+}
 
 /* Рух — прикраса, а не зміст: кому він заважає, той бачить усе одразу. */
 @media (prefers-reduced-motion: reduce) {
@@ -489,6 +507,10 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   .chat-morph-emoji {
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
+  }
+  .chat-log,
+  .chat-log-panel {
+    transition-duration: 1ms !important;
   }
   .chat-dot, .chat-live,
   .chat-typing-out .chat-dot,

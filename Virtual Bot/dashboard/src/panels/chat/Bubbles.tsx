@@ -120,6 +120,30 @@ function Payload({ value }: { value: unknown }) {
   }</pre>;
 }
 
+/** The raw call, folded under the card. Height eases open and the text rises in. */
+function ToolLogs({ step }: { step: ToolStep }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-1">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}
+        className="flex items-center gap-1 text-[11px] text-ink-3 outline-none hover:text-ink-2 focus-visible:ring-2 focus-visible:ring-accent">
+        <ChevronRight className={cn('size-3 transition-transform duration-200 motion-reduce:transition-none', open && 'rotate-90')} />
+        {t('tool.logs')}
+      </button>
+      <div className="chat-log" data-open={open ? '' : undefined}>
+        <div className="chat-log-clip">
+          <div className="chat-log-panel space-y-2 pt-1.5">
+            {step.input !== undefined && <section><p className="mb-1 text-[11px] text-ink-3">{activityT('activity.input')}</p><Payload value={step.input} /></section>}
+            {step.result !== undefined
+              ? <section><p className="mb-1 text-[11px] text-ink-3">{activityT(step.status === 'active' ? 'activity.partial' : 'activity.result')}</p><Payload value={step.result} /></section>
+              : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * One tool, the way a person reads it: an icon, a name, what it was asked,
  * and whether it worked. The raw call stays behind Logs.
@@ -142,20 +166,7 @@ function ToolCard({ step }: { step: ToolStep }) {
           {activityT(`activity.${step.status}`)}
           {signedOut ? ` · ${t('tool.signIn')}` : ''}
         </p>
-        {hasLog ? (
-          <details className="group/log mt-1">
-            <summary className="flex cursor-pointer list-none items-center gap-1 text-[11px] text-ink-3 outline-none hover:text-ink-2 focus-visible:ring-2 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
-              <ChevronRight className="size-3 transition-transform group-open/log:rotate-90 motion-reduce:transition-none" />
-              {t('tool.logs')}
-            </summary>
-            <div className="mt-1.5 space-y-2">
-              {step.input !== undefined && <section><p className="mb-1 text-[11px] text-ink-3">{activityT('activity.input')}</p><Payload value={step.input} /></section>}
-              {step.result !== undefined
-                ? <section><p className="mb-1 text-[11px] text-ink-3">{activityT(step.status === 'active' ? 'activity.partial' : 'activity.result')}</p><Payload value={step.result} /></section>
-                : null}
-            </div>
-          </details>
-        ) : null}
+        {hasLog ? <ToolLogs step={step} /> : null}
       </div>
     </div>
   );
