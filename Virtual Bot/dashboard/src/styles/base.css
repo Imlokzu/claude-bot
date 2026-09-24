@@ -325,46 +325,62 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
 
 /* Chat bubbles arrive like messages, not like a page repainting. */
 .chat-bubble-in { animation: u-rise 240ms var(--e-spring) both; transform-origin: left bottom; }
-/* A reply that replaces the typing pill grows out of it, and the dots
-   it carried fade out inside the bubble while the words fade in. */
+/* A reply that replaces the typing pill grows out of it. The dots it
+   carried drift together and fade, and the words come in after them.
+   Durations match TYPING_LEAVE_MS / FLIGHT_MS in Bubbles.tsx. */
 .chat-bubble-in.chat-bubble-open {
-  animation: chat-bubble-open 240ms var(--e-spring) both;
+  animation: chat-bubble-open 560ms var(--e-out) both;
   transform-origin: left center;
 }
 @keyframes chat-bubble-open {
-  from { transform: scale(0.58, 0.92); }
-  to   { transform: none; }
+  0%   { transform: translateY(8px) scale(0.42, 0.86); }
+  100% { transform: none; }
 }
-.chat-text-in { animation: chat-text-in 180ms var(--e-out) 40ms both; }
-@keyframes chat-text-in { from { opacity: 0; } to { opacity: 1; } }
+.chat-text-in { animation: chat-text-in 420ms var(--e-out) 180ms both; }
+@keyframes chat-text-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .chat-dots-leave {
-  animation: chat-dots-leave 200ms var(--e-out) both;
+  animation: chat-dots-leave 480ms var(--e-out) both;
   transform-origin: left center;
 }
 @keyframes chat-dots-leave {
-  from { opacity: 1; transform: none; }
-  to   { opacity: 0; transform: scale(0.35); }
+  0%   { opacity: 1; transform: none; }
+  45%  { opacity: 1; transform: scale(0.8); }
+  100% { opacity: 0; transform: scale(0.25); }
 }
-/* The pill itself, when nothing takes its place: the dots shrink inside
-   it, then the bubble collapses. */
+/* The pill itself, when nothing takes its place: the dots draw together
+   inside it, then the bubble eases shut. */
 .chat-bubble-in.chat-typing-out {
-  animation: chat-typing-out 220ms var(--e-out) forwards;
+  animation: chat-typing-out 560ms var(--e-out) forwards;
   transform-origin: left center;
   overflow: hidden;
   pointer-events: none;
 }
 @keyframes chat-typing-out {
   0%   { height: 2.25rem; opacity: 1; transform: none; }
-  50%  { height: 2.25rem; opacity: 1; transform: scale(0.96); }
-  100% { height: 0; opacity: 0; margin-top: -0.375rem; margin-bottom: -0.375rem; padding-top: 0; padding-bottom: 0; transform: scale(0.8); }
+  58%  { height: 2.25rem; opacity: 1; transform: scaleX(0.9); }
+  100% { height: 0; opacity: 0; margin-top: -0.375rem; margin-bottom: -0.375rem; padding-top: 0; padding-bottom: 0; transform: scale(0.7); }
 }
-.chat-typing-out .chat-dot { animation: chat-dot-collapse 140ms var(--e-out) both; }
+.chat-typing-out .chat-dot { animation: chat-dot-collapse 400ms var(--e-out) both; }
+.chat-typing-out .chat-dot:nth-child(1) { animation-name: chat-dot-collapse-l; }
+.chat-typing-out .chat-dot:nth-child(3) { animation-name: chat-dot-collapse-r; animation-delay: 70ms; }
 @keyframes chat-dot-collapse {
-  to { opacity: 0; transform: scale(0.15); }
+  0%   { opacity: 1; transform: none; }
+  40%  { opacity: 1; transform: scale(0.85); }
+  100% { opacity: 0; transform: scale(0.15); }
+}
+@keyframes chat-dot-collapse-l {
+  0%   { opacity: 1; transform: none; }
+  50%  { opacity: 1; transform: translateX(8px) scale(0.8); }
+  100% { opacity: 0; transform: translateX(11px) scale(0.15); }
+}
+@keyframes chat-dot-collapse-r {
+  0%   { opacity: 1; transform: none; }
+  50%  { opacity: 1; transform: translateX(-8px) scale(0.8); }
+  100% { opacity: 0; transform: translateX(-11px) scale(0.15); }
 }
 .chat-reaction-in { animation: chat-reaction-pop 260ms var(--e-spring) both; }
 /* Held back until the flying emoji arrives, then the same pop. */
-.chat-reaction-land { animation: chat-reaction-pop 150ms var(--e-spring) 120ms both; }
+.chat-reaction-land { animation: chat-reaction-pop 220ms var(--e-spring) 480ms both; }
 @keyframes chat-reaction-pop {
   from { opacity: 0; transform: scale(0.4); }
   to   { opacity: 1; transform: none; }
@@ -374,20 +390,23 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
   z-index: 40;
   left: 0;
   top: 0;
-  font-size: 28px;
+  font-size: 32px;
   line-height: 1;
   pointer-events: none;
-  animation: chat-emoji-flight 240ms var(--e-spring) both;
+  animation: chat-emoji-flight 680ms var(--e-out) both;
 }
 @keyframes chat-emoji-flight {
   0% {
-    transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px)) translate(-50%, -50%) scale(1.35);
+    transform: translate(calc(var(--x) * 1px), calc(var(--y) * 1px)) translate(-50%, -50%) scale(1.65);
   }
-  55% {
-    transform: translate(calc((var(--x) + var(--mx)) * 1px), calc((var(--y) + var(--my)) * 1px)) translate(-50%, -50%) scale(1.12);
+  42% {
+    transform: translate(calc((var(--x) + var(--mx)) * 1px), calc((var(--y) + var(--my)) * 1px)) translate(-50%, -50%) scale(1.4);
+  }
+  78% {
+    transform: translate(calc((var(--x) + var(--mx) * 0.28 + var(--dx) * 0.72) * 1px), calc((var(--y) + var(--my) * 0.28 + var(--dy) * 0.72) * 1px)) translate(-50%, -50%) scale(0.9);
   }
   100% {
-    transform: translate(calc((var(--x) + var(--dx)) * 1px), calc((var(--y) + var(--dy)) * 1px)) translate(-50%, -50%) scale(0.45);
+    transform: translate(calc((var(--x) + var(--dx)) * 1px), calc((var(--y) + var(--dy)) * 1px)) translate(-50%, -50%) scale(0.42);
   }
 }
 /* Typing dots and the live "what I'm doing now" line: opacity and a 2px
@@ -422,5 +441,8 @@ a { color: var(--c-accent); text-decoration-thickness: 1px; text-underline-offse
     animation-duration: 1ms !important;
     animation-delay: 0ms !important;
   }
-  .chat-dot, .chat-live, .chat-typing-out .chat-dot { animation: none; }
+  .chat-dot, .chat-live,
+  .chat-typing-out .chat-dot,
+  .chat-typing-out .chat-dot:nth-child(1),
+  .chat-typing-out .chat-dot:nth-child(3) { animation: none; }
 }

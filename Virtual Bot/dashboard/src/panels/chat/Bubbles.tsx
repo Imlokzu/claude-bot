@@ -25,10 +25,12 @@ import type { ToolStep } from './types';
  */
 
 /** How long the typing bubble takes to collapse. The runtime holds a
- *  reaction-only draft at least this long, so the collapse is not cut off. */
-export const TYPING_LEAVE_MS = 220;
+ *  reaction-only draft at least this long, so the collapse is not cut off.
+ *  Kept in step with `chat-typing-out` in base.css. */
+export const TYPING_LEAVE_MS = 560;
 
-const FLIGHT_MS = 240;
+/** Kept in step with `chat-emoji-flight` in base.css. */
+const FLIGHT_MS = 680;
 
 export function typingLeaveMs(): number {
   if (typeof window === 'undefined') return TYPING_LEAVE_MS;
@@ -224,7 +226,9 @@ export function flyEmoji(
   const dx = to.x - start.x;
   const dy = to.y - start.y;
   const len = Math.hypot(dx, dy) || 1;
-  const bow = Math.min(28, len * 0.22);
+  // A short hop (picker to the corner) still needs a visible arc, and a
+  // long one (typing pill across to the person's message) should bowl.
+  const bow = Math.max(56, Math.min(108, len * 0.62));
   return launch({
     emoji,
     x: start.x,
