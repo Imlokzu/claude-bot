@@ -15,8 +15,9 @@ import { SettingGroup, SettingRow } from './SettingRow';
  * field clears the path so the gateway default returns.
  */
 
-interface OcField {
+export interface OcField {
   path: string;
+  section: string;
   group: string;
   kind: 'bool' | 'int' | 'enum' | 'string';
   options: string[];
@@ -31,13 +32,27 @@ interface OcSettings {
 
 const control = 'h-8 w-[180px] text-[13px]';
 
-export function OpenClawSection({ query }: { query: string }) {
-  const toast = useToast();
-  const client = useQueryClient();
-  const settings = useQuery({
+export function useOpenClawSettings() {
+  return useQuery({
     queryKey: ['openclaw-settings'],
     queryFn: () => get<OcSettings>('/api/openclaw/settings'),
   });
+}
+
+export function fieldMatches(field: OcField, needle: string): boolean {
+  if (!needle) return true;
+  const haystack = `${ocText(field.path)} ${ocText(field.path, true)} openclaw`.toLowerCase();
+  return haystack.includes(needle);
+}
+
+/*
+ * Gateway rows for one settings tab. Local rows of that tab stay in
+ * SettingsPanel; this only fills the categories that belong to OpenClaw.
+ */
+export function OpenClawFields({ section, query }: { section: string; query: string }) {
+  const toast = useToast();
+  const client = useQueryClient();
+  const settings = useOpenClawSettings();
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<string | null>(null);
 
@@ -61,18 +76,16 @@ export function OpenClawSection({ query }: { query: string }) {
   }
 
   if (!settings.data?.available) {
+    if (section !== 'brain') return null;
     return <p className="px-1 text-[13px] text-ink-3">{t('settings.unavailable')}</p>;
   }
 
   const needle = query.trim().toLowerCase();
-  const fields = settings.data.fields.filter((field) => {
-    if (!needle) return true;
-    return `${ocText(field.path)} ${ocText(field.path, true)}`.toLowerCase().includes(needle);
-  });
+  const fields = settings.data.fields.filter(
+    (field) => field.section === section && fieldMatches(field, needle),
+  );
 
-  if (fields.length === 0) {
-    return <p className="px-1 text-[13px] text-ink-3">{t('settings.empty')}</p>;
-  }
+  if (fields.length === 0) return null;
 
   const groups: { id: string; fields: OcField[] }[] = [];
   for (const field of fields) {
@@ -111,7 +124,13 @@ export function OpenClawSection({ query }: { query: string }) {
           {group.fields.map((field) => {
             const shown = drafts[field.path] ?? (field.unset || field.value == null ? '' : String(field.value));
             return (
-              <SettingRow key={field.path} label={ocText(field.path)} hint={ocText(field.path, true)} htmlFor={field.path}>
+              <SettingRow
+                key={field.path}
+                label={ocText(field.path)}
+                hint={ocText(field.path, true)}
+                htmlFor={field.path}
+                mark={t('settings.source.openclaw')}
+              >
                 {field.kind === 'bool' ? (
                   <Switch
                     checked={field.value === true}

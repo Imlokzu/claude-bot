@@ -29,6 +29,9 @@ class SnapshotTests(unittest.TestCase):
         self.assertTrue(body["available"])
         by_path = {field["path"]: field for field in body["fields"]}
         self.assertEqual(by_path["agents.defaults.thinkingDefault"]["value"], "high")
+        self.assertEqual(by_path["agents.defaults.thinkingDefault"]["section"], "style")
+        self.assertEqual(by_path["tools.web.search.enabled"]["section"], "tools")
+        self.assertTrue(all(field["section"] != "openclaw" for field in body["fields"]))
         self.assertFalse(by_path["agents.defaults.thinkingDefault"]["unset"])
         self.assertEqual(by_path["agents.defaults.timeoutSeconds"]["value"], 90)
         self.assertFalse(by_path["tools.web.search.enabled"]["value"])
@@ -37,7 +40,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertTrue(by_path["agents.defaults.compaction.enabled"]["value"])
         dumped = json.dumps(body)
         self.assertNotIn("should-not-leak", dumped)
-        self.assertNotIn("gateway", dumped)
+        self.assertTrue(all(not field["path"].startswith("gateway") for field in body["fields"]))
 
     def test_missing_file_is_unavailable(self) -> None:
         with patch.object(openclaw_settings, "CONFIG_PATH", Path("/tmp/no-such-openclaw.json")):

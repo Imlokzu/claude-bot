@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Brain, Cpu, Palette, Puzzle, Search, Sparkles, User, Wrench } from 'lucide-react';
+import { AudioLines, Brain, Palette, Puzzle, Search, Sparkles, User, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Textarea } from '@/components/ui/Field';
@@ -12,7 +12,7 @@ import { get, post } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { glue } from '@/lib/glue';
 import { t as lookT } from '@/lib/i18n';
-import { settingsMatch, t } from '@/locales/settings';
+import { t } from '@/locales/settings';
 import { ACCENTS, THEMES, useTheme } from '@/hooks/useTheme';
 import { useLanguage } from '@/hooks/useLanguage';
 import { JellyRadio } from '@/vendor/reactbits';
@@ -21,27 +21,26 @@ import { StoreSection } from './StoreSection';
 import { ToolsSection } from './ToolsSection';
 import { FirstRun } from './FirstRun';
 import { VoiceSection } from './VoiceSection';
-import { OpenClawSection } from './OpenClawSection';
+import { fieldMatches, OpenClawFields, useOpenClawSettings } from './OpenClawSection';
 import { SettingGroup, SettingRow } from './SettingRow';
 import type { SetupData } from './types';
 
 /*
- * Налаштування.
- *
- * Розділи — свій список ліворуч, а не гармошка й не майстер: сюди заходять,
- * щоб змінити ОДНУ річ, і майстер із кроками кожного разу змушував би йти
- * повз усе інше. Порядок від «хто це» до «чим воно живиться».
+ * Settings are tabs. Each tab is a few categories, and a category mixes
+ * panel fields with OpenClaw fields. There is no OpenClaw tab: a gateway
+ * row is marked and sits next to the local row it belongs with.
  */
 
-const SECTIONS: { id: string; label: 'settings.section.profile' | 'settings.section.style' | 'settings.section.look' | 'settings.section.voice' | 'settings.section.brain' | 'settings.section.openclaw' | 'settings.section.skills' | 'settings.section.tools'; icon: LucideIcon }[] = [
-  { id: 'profile', label: 'settings.section.profile', icon: User },
-  { id: 'style', label: 'settings.section.style', icon: Sparkles },
-  { id: 'look', label: 'settings.section.look', icon: Palette },
-  { id: 'voice', label: 'settings.section.voice', icon: AudioLines },
-  { id: 'brain', label: 'settings.section.brain', icon: Brain },
-  { id: 'openclaw', label: 'settings.section.openclaw', icon: Cpu },
-  { id: 'skills', label: 'settings.section.skills', icon: Puzzle },
-  { id: 'tools', label: 'settings.section.tools', icon: Wrench },
+type SectionId = 'profile' | 'style' | 'brain' | 'voice' | 'look' | 'tools' | 'skills';
+
+const SECTIONS: { id: SectionId; label: 'settings.section.profile' | 'settings.section.style' | 'settings.section.brain' | 'settings.section.voice' | 'settings.section.look' | 'settings.section.tools' | 'settings.section.skills'; icon: LucideIcon; local: string }[] = [
+  { id: 'profile', label: 'settings.section.profile', icon: User, local: 'імʼя мова характер опис name persona' },
+  { id: 'style', label: 'settings.section.style', icon: Sparkles, local: 'емодзі привітання довжина спонтанні emoji greeting reply' },
+  { id: 'brain', label: 'settings.section.brain', icon: Brain, local: 'модель ключ omni токен model key' },
+  { id: 'voice', label: 'settings.section.voice', icon: AudioLines, local: 'голос мікрофон темп voice' },
+  { id: 'look', label: 'settings.section.look', icon: Palette, local: 'тема попап скло акцент theme popup glass accent' },
+  { id: 'tools', label: 'settings.section.tools', icon: Wrench, local: 'інструмент дозвіл tool' },
+  { id: 'skills', label: 'settings.section.skills', icon: Puzzle, local: 'уміння скіл skill' },
 ];
 
 const fieldControl = 'h-8 w-[200px] text-[13px]';
@@ -49,8 +48,9 @@ const fieldControl = 'h-8 w-[200px] text-[13px]';
 export default function SettingsPanel() {
   const toast = useToast();
   const client = useQueryClient();
-  const [section, setSection] = useState('profile');
+  const [section, setSection] = useState<SectionId>('profile');
   const [query, setQuery] = useState('');
+  const openclaw = useOpenClawSettings();
   // Майстер показуємо, доки профіль не позначено налаштованим; після
   // завершення він більше не зʼявляється, але його можна пройти знову,
   // якщо бекенд скине прапорець.
@@ -90,12 +90,20 @@ export default function SettingsPanel() {
   }
 
   const needle = query.trim().toLowerCase();
+  const gatewayFields = openclaw.data?.fields ?? [];
   const visible = SECTIONS.filter((item) => {
     if (!needle) return true;
     if (t(item.label).toLowerCase().includes(needle)) return true;
-    return item.id === 'openclaw' && settingsMatch(needle);
+    if (item.local.includes(needle)) return true;
+    return gatewayFields.some((field) => field.section === item.id && fieldMatches(field, needle));
   });
   const current = visible.find((item) => item.id === section) ?? visible[0];
+  const narrowed = (id: SectionId) => {
+    if (!needle) return false;
+    const item = SECTIONS.find((entry) => entry.id === id);
+    if (!item) return false;
+    return !t(item.label).toLowerCase().includes(needle) && !item.local.includes(needle);
+  };
 
   const nav = (
     <div className="flex shrink-0 flex-col border-b border-line lg:w-[232px] lg:border-b-0 lg:border-r">
@@ -153,7 +161,7 @@ export default function SettingsPanel() {
           ) : (
             <>
               {current?.id === 'profile' ? (
-                <SettingGroup>
+                <SettingGroup label={t('settings.group.identity')}>
                   <SettingRow label="Імʼя" htmlFor="bot-name">
                     <Input
                       id="bot-name"
@@ -218,7 +226,9 @@ export default function SettingsPanel() {
               ) : null}
 
               {current?.id === 'style' ? (
-                <SettingGroup>
+                <div className="space-y-6">
+                {narrowed('style') ? null : (
+                <SettingGroup label={t('settings.group.talk')}>
                   <SettingRow label="Довжина відповіді">
                     <Segmented
                       ariaLabel="Довжина відповіді"
@@ -247,14 +257,31 @@ export default function SettingsPanel() {
                   </SettingRow>
                   <SaveBar saving={saving} onSave={saveProfile} />
                 </SettingGroup>
+                )}
+                <OpenClawFields section="style" query={narrowed('style') ? needle : ''} />
+                </div>
               ) : null}
 
               {current?.id === 'look' ? <LookSection /> : null}
-              {current?.id === 'voice' ? <VoiceSection /> : null}
-              {current?.id === 'brain' ? <BrainSection setup={setup.data!} /> : null}
-              {current?.id === 'openclaw' ? <OpenClawSection query={needle} /> : null}
+              {current?.id === 'voice' ? (
+                <div className="space-y-6">
+                  {narrowed('voice') ? null : <VoiceSection />}
+                  <OpenClawFields section="voice" query={narrowed('voice') ? needle : ''} />
+                </div>
+              ) : null}
+              {current?.id === 'brain' ? (
+                <div className="space-y-6">
+                  {narrowed('brain') ? null : <BrainSection setup={setup.data!} />}
+                  <OpenClawFields section="brain" query={narrowed('brain') ? needle : ''} />
+                </div>
+              ) : null}
               {current?.id === 'skills' ? <StoreSection /> : null}
-              {current?.id === 'tools' ? <ToolsSection /> : null}
+              {current?.id === 'tools' ? (
+                <div className="space-y-6">
+                  {narrowed('tools') ? null : <ToolsSection />}
+                  <OpenClawFields section="tools" query={narrowed('tools') ? needle : ''} />
+                </div>
+              ) : null}
             </>
           )}
         </div>
@@ -288,7 +315,7 @@ function LookSection() {
 
   return (
     <div className="space-y-6">
-      <SettingGroup>
+      <SettingGroup label={t('settings.group.screen')}>
       <SettingRow label="Тема" hint={glue('Зберігається в цьому браузері')}>
         <JellyRadio
           ariaLabel="Тема"
@@ -402,7 +429,7 @@ function BrainSection({ setup }: { setup: SetupData }) {
   };
 
   return (
-    <SettingGroup>
+    <SettingGroup label={t('settings.group.model')}>
       <SettingRow label="Модель" hint={glue('Картинки й прямий виклик. Чат відповідає моделлю OpenClaw.')}>
         <Select className={fieldControl} value={model} onChange={(event) => void saveModel(event.target.value)}>
           {setup.models.map((item) => (

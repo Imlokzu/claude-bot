@@ -25,23 +25,33 @@ export function SettingRow({
   label,
   hint,
   htmlFor,
+  mark,
   children,
   className,
 }: {
   label: string;
   hint?: string;
   htmlFor?: string;
+  mark?: string;
   children: React.ReactNode;
   className?: string;
 }) {
+  const title = (
+    <span className="flex items-center gap-2">
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className="text-[13px] text-ink">{label}</label>
+      ) : (
+        <span className="text-[13px] text-ink">{label}</span>
+      )}
+      {mark ? (
+        <span className="rounded-sm bg-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-ink-3">{mark}</span>
+      ) : null}
+    </span>
+  );
   return (
     <div className={cn('flex flex-col items-start gap-3 border-b border-line px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between sm:gap-6', className)}>
       <div className="min-w-0">
-        {htmlFor ? (
-          <label htmlFor={htmlFor} className="block text-[13px] text-ink">{label}</label>
-        ) : (
-          <p className="text-[13px] text-ink">{label}</p>
-        )}
+        {title}
         {hint ? <p className="mt-0.5 text-[12px] leading-snug text-ink-3">{hint}</p> : null}
       </div>
       <div className="flex shrink-0 items-center">{children}</div>
