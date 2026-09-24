@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Input, Select } from '@/components/ui/Field';
+import { ModelPicker } from './ModelPicker';
 import { SkeletonList } from '@/components/ui/Feedback';
 import { Switch } from '@/components/ui/Switch';
 import { useToast } from '@/components/ui/Toaster';
@@ -32,17 +33,6 @@ interface OcSettings {
 }
 
 const control = 'h-8 w-[180px] text-[13px]';
-const modelControl = 'h-8 w-[220px] text-[13px]';
-
-/** Shown only until the catalog arrives, so the closed control is never blank. */
-function fallbackLabel(id: string): string {
-  const tail = id.split('/').pop() || id;
-  return tail
-    .split('-')
-    .map((part) => (/^\d/.test(part) ? part : part.charAt(0).toUpperCase() + part.slice(1)))
-    .join(' ')
-    .replace(/Gpt/g, 'GPT');
-}
 
 export function useOpenClawSettings() {
   return useQuery({
@@ -162,11 +152,6 @@ export function OpenClawFields({
               : (field.path === 'agents.defaults.model.primary'
                 ? (catalogModels.find((model) => model.is_default)?.id ?? catalogModels[0]?.id ?? liveModel)
                 : '');
-            // The catalog call can come back empty. The configured id is
-            // still a name, and the closed control has to show it.
-            const modelOptions = !listed && liveModel && field.path === 'agents.defaults.model.primary'
-              ? [{ id: liveModel, label: fallbackLabel(liveModel) }, ...catalogModels]
-              : catalogModels;
             return (
               <SettingRow
                 key={field.path}
@@ -183,20 +168,14 @@ export function OpenClawFields({
                     onChange={(next) => write(field, next)}
                   />
                 ) : field.kind === 'model' ? (
-                  <Select
+                  <ModelPicker
                     id={field.path}
-                    className={modelControl}
-                    disabled={pending === field.path}
                     value={modelValue}
-                    onChange={(event) => write(field, event.target.value)}
-                  >
-                    {field.path === 'agents.defaults.model.primary' ? null : (
-                      <option value="">{t('settings.inherit')}</option>
-                    )}
-                    {modelOptions.map((model) => (
-                      <option key={model.id} value={model.id}>{model.label}</option>
-                    ))}
-                  </Select>
+                    models={catalogModels}
+                    allowEmpty={field.path !== 'agents.defaults.model.primary'}
+                    disabled={pending === field.path}
+                    onChange={(next) => write(field, next || null)}
+                  />
                 ) : field.kind === 'enum' ? (
                   <Select
                     id={field.path}

@@ -177,7 +177,10 @@ function ModelRow({ model, id, current, active, showContext, onPick, onHover }: 
       // arrow keys would stop working after the first hover-and-miss.
       onMouseDown={(event) => event.preventDefault()}
       onClick={onPick}
-      className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md px-2 text-left text-ink transition-colors data-[active]:bg-surface-2"
+      className={cn(
+        'flex min-h-11 cursor-pointer items-center gap-2.5 rounded-md px-2 text-left text-ink transition-colors',
+        current ? 'bg-accent-soft' : 'data-[active]:bg-surface-2',
+      )}
     >
       <BrandLogo model={model} />
       <span className="min-w-0 flex-1">

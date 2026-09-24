@@ -146,6 +146,52 @@ const byName = (a: CatalogModel, b: CatalogModel) =>
   a.label.localeCompare(b.label, undefined, { numeric: true, sensitivity: 'base' })
   || hostOf(a.id).localeCompare(hostOf(b.id));
 
+/*
+ * The order the picker is read in.
+ *
+ * Alphabetical put Luna above Sol and buried Astra. The line the owner
+ * asked for is the flagship names first — GPT-6 Astra, then Sol, then
+ * Luna — and the same names again on 5.6 (Sol, Terra, Luna). Lighter
+ * models (Nano, the small Regolo ones) sit under that line.
+ */
+const CODENAMES = ['astra', 'sol', 'terra', 'luna'];
+
+function lineupParts(model: CatalogModel): {
+  provider: number;
+  version: number;
+  code: number;
+  weight: number;
+  size: number;
+} {
+  const tail = `${splitId(model.id).model} ${model.label}`.toLowerCase();
+  const withoutSize = tail.replace(/\d+(?:\.\d+)?\s*b\b/g, ' ');
+  const version = Number(withoutSize.match(/\d+(?:\.\d+)?/)?.[0] ?? 0);
+  const codeAt = CODENAMES.findIndex((name) => new RegExp(`(?:^|[^a-z])${name}(?:[^a-z]|$)`).test(tail));
+  const weight = /\bpro\b/.test(tail) ? 0 : /\b(?:nano|mini)\b/.test(tail) ? 2 : 1;
+  const size = Number(tail.match(/(\d+(?:\.\d+)?)b\b/)?.[1] ?? 0);
+  return {
+    provider: model.id.split('/')[0] === 'openai' ? 0 : 1,
+    version,
+    code: codeAt === -1 ? CODENAMES.length : codeAt,
+    weight,
+    size,
+  };
+}
+
+/** Flagship OpenAI names first, lighter models after them. */
+export function byLineup(a: CatalogModel, b: CatalogModel): number {
+  const left = lineupParts(a);
+  const right = lineupParts(b);
+  if (left.provider !== right.provider) return left.provider - right.provider;
+  if (left.provider === 0) {
+    return right.version - left.version
+      || left.code - right.code
+      || left.weight - right.weight
+      || byName(a, b);
+  }
+  return right.size - left.size || byName(a, b);
+}
+
 export interface ModelGroup<M extends CatalogModel> {
   key: string;
   /** Null for a flat list, which needs no heading. */
@@ -189,7 +235,7 @@ export function arrange<M extends CatalogModel>(
       // "Other" goes last; makers alphabetically, so a group is always
       // where you last saw it.
       a === 'other' ? 1 : b === 'other' ? -1 : BRAND_NAMES[a].localeCompare(BRAND_NAMES[b]));
-    for (const brand of order) groups.push({ key: brand, brand, models: buckets.get(brand)!.sort(byName) });
+    for (const brand of order) groups.push({ key: brand, brand, models: buckets.get(brand)!.sort(byLineup) });
   }
 
   return groups.filter((group) => group.models.length);

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { arrange, brandOf, hostOf, matches, remember } from '../src/panels/chat/modelCatalog.ts';
+import { arrange, brandOf, byLineup, hostOf, matches, remember } from '../src/panels/chat/modelCatalog.ts';
 
 // The real OpenClaw catalog on 2026-09-24, trimmed to the cases that matter.
 const CATALOG = [
@@ -51,14 +51,49 @@ test('search takes words in any order and ignores the catalog punctuation', () =
   assert.equal(find('').length, CATALOG.length);
 });
 
-test('grouping by maker is alphabetical with "other" last, names in natural order', () => {
+test('grouping by maker keeps "other" last and the flagship line on top', () => {
   const groups = arrange(CATALOG);
   const names = groups.map((group) => group.brand);
   assert.equal(names.at(-1), 'other');
   assert.equal(names[0], 'anthropic');
   const openai = groups.find((group) => group.brand === 'openai').models.map((model) => model.label);
-  // Natural order: 5.4 before 6, and 20B before 120B.
-  assert.deepEqual(openai, ['GPT-5.4 Nano', 'GPT-6 Luna', 'GPT-OSS 20B', 'GPT-OSS 120B']);
+  // GPT-6 above 5.4, and the heavier OSS model above the 20B one.
+  assert.deepEqual(openai, ['GPT-6 Luna', 'GPT-5.4 Nano', 'GPT-OSS 120B', 'GPT-OSS 20B']);
+});
+
+test('the lineup is 6 Astra, Sol, Luna, then 5.6 Sol, Terra, Luna, then lighter models', () => {
+  const models = [
+    ['openai/gpt-5.4-nano', 'GPT-5.4 Nano'],
+    ['openai/gpt-5.6-luna', 'GPT-5.6 Luna'],
+    ['regolo/gpt-oss-20b', 'GPT-OSS 20B'],
+    ['openai/gpt-6-luna', 'GPT-6 Luna'],
+    ['openai/gpt-5.6-sol', 'GPT-5.6 Sol'],
+    ['openai/gpt-6-astra', 'GPT-6 Astra'],
+    ['openai/gpt-5.5', 'GPT-5.5'],
+    ['openai/gpt-5.4-pro', 'GPT-5.4 Pro'],
+    ['regolo/qwen3.5-9b', 'Qwen 3.5 9B'],
+    ['openai/gpt-6-sol', 'GPT-6 Sol'],
+    ['openai/gpt-5.6-terra', 'GPT-5.6 Terra'],
+    ['openai/gpt-5.5-pro', 'GPT-5.5 Pro'],
+    ['regolo/gpt-oss-120b', 'GPT-OSS 120B'],
+    ['regolo/qwen3.5-122b', 'Qwen 3.5 122B'],
+  ].map(([id, label]) => ({ id, label }));
+  assert.deepEqual([...models].sort(byLineup).map((model) => model.id), [
+    'openai/gpt-6-astra',
+    'openai/gpt-6-sol',
+    'openai/gpt-6-luna',
+    'openai/gpt-5.6-sol',
+    'openai/gpt-5.6-terra',
+    'openai/gpt-5.6-luna',
+    'openai/gpt-5.5-pro',
+    'openai/gpt-5.5',
+    'openai/gpt-5.4-pro',
+    'openai/gpt-5.4-nano',
+    'regolo/qwen3.5-122b',
+    'regolo/gpt-oss-120b',
+    'regolo/gpt-oss-20b',
+    'regolo/qwen3.5-9b',
+  ]);
 });
 
 test('recent picks lead the list, but step aside while searching', () => {
