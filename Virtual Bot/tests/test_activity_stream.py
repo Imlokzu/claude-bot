@@ -102,6 +102,32 @@ class GatewayActivityTests(unittest.IsolatedAsyncioTestCase):
             "model": "openai/gpt-oss-20b",
         })
 
+    async def test_preamble_narration_reaches_the_chat(self):
+        # Frame shape captured from the live gateway on 2026-09-24: the
+        # "I'll search now" sentence exists only on this stream.
+        emit = AsyncMock()
+        observer = GatewayActivity(emit)
+        frame = {"type": "event", "event": "agent", "payload": {
+            "sessionKey": observer.session_key, "runId": "r1", "stream": "item", "seq": 5,
+            "data": {"itemId": "msg_1", "kind": "preamble", "phase": "update",
+                     "progressText": "[емоція:спокій] Зараз пошукаю"},
+        }}
+        await observer.handle(frame)
+        self.assertEqual(emit.call_args.args[0], {
+            "type": "note", "id": "r1:msg_1", "text": "[емоція:спокій] Зараз пошукаю", "done": False,
+        })
+
+    async def test_answer_candidates_are_not_duplicated_as_narration(self):
+        # The final answer also comes over HTTP; showing it twice is worse
+        # than not showing it here at all.
+        emit = AsyncMock()
+        observer = GatewayActivity(emit)
+        await observer.handle({"type": "event", "event": "agent", "payload": {
+            "sessionKey": observer.session_key, "runId": "r1", "stream": "item", "seq": 6,
+            "data": {"itemId": "msg_2", "kind": "answer_candidate", "progressText": "Готово"},
+        }})
+        emit.assert_not_awaited()
+
     async def test_native_progress_failure_and_lifecycle(self):
         emit = AsyncMock()
         observer = GatewayActivity(emit)
