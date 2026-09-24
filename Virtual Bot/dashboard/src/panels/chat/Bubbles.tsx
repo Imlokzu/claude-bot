@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { TextMessagePartProvider } from '@assistant-ui/react';
 import { Check, ChevronRight, CircleSlash, SmilePlus, X } from 'lucide-react';
 import { Orb } from '@/vendor/aicss';
@@ -14,9 +15,25 @@ import type { ToolStep } from './types';
  * The pieces of a messenger-style reply: short bubbles, the line that says
  * what the bot is doing right now, typing dots, and emoji reactions.
  *
+ * Two motions carry the messenger feel. The typing dots shrink away inside
+ * their own bubble (and a reply that replaces them crossfades out of those
+ * dots). A reaction emoji travels from where it was chosen — the picker, or
+ * the typing bubble when the bot reacts — and lands on the message.
+ *
  * Reactions are content, not icons, so emoji are allowed here even though
  * DESIGN.md bans them as interface icons.
  */
+
+/** How long the typing bubble takes to collapse. The runtime holds a
+ *  reaction-only draft at least this long, so the collapse is not cut off. */
+export const TYPING_LEAVE_MS = 220;
+
+const FLIGHT_MS = 240;
+
+export function typingLeaveMs(): number {
+  if (typeof window === 'undefined') return TYPING_LEAVE_MS;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : TYPING_LEAVE_MS;
+}
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🔥', '🙏', '👏'] as const;
 
@@ -109,23 +126,125 @@ export function ActivityLine({ steps, running }: { steps: ToolStep[]; running: b
   );
 }
 
-export function TypingBubble() {
+export function TypingBubble({ leaving = false }: { leaving?: boolean }) {
   return (
-    <div role="status" aria-label={t('typing.aria')}
-      className="chat-bubble-in flex h-9 items-center gap-1 rounded-lg bg-surface-2 px-3.5">
-      <span className="chat-dot size-1.5 rounded-full bg-ink-3" />
-      <span className="chat-dot size-1.5 rounded-full bg-ink-3" />
-      <span className="chat-dot size-1.5 rounded-full bg-ink-3" />
+    <div
+      role="status"
+      aria-label={leaving ? undefined : t('typing.aria')}
+      aria-hidden={leaving || undefined}
+      data-typing=""
+      className={cn(
+        'chat-bubble-in flex h-9 items-center gap-1.5 rounded-full bg-surface-2 px-4',
+        leaving && 'chat-typing-out',
+      )}
+    >
+      <span className="chat-dot size-2 rounded-full bg-ink-3" />
+      <span className="chat-dot size-2 rounded-full bg-ink-3" />
+      <span className="chat-dot size-2 rounded-full bg-ink-3" />
     </div>
   );
 }
 
+/*
+ * A reaction travels as one fixed emoji, then the chip fades in where it
+ * lands. Fixed, and portaled to the body, because the thread scrolls and a
+ * transformed ancestor would otherwise trap it.
+ */
+type FlightSpec = {
+  emoji: string;
+  x: number; y: number;
+  dx: number; dy: number;
+  mx: number; my: number;
+};
+
+const FlightContext = createContext<(spec: FlightSpec) => boolean>(() => false);
+
+export function EmojiFlights({ children }: { children: ReactNode }) {
+  const [flights, setFlights] = useState<(FlightSpec & { id: number })[]>([]);
+  const launch = useCallback((spec: FlightSpec) => {
+    if (typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+    const id = flightSeq++;
+    setFlights((current) => [...current, { ...spec, id }]);
+    window.setTimeout(() => {
+      setFlights((current) => current.filter((item) => item.id !== id));
+    }, FLIGHT_MS + 20);
+    return true;
+  }, []);
+  return (
+    <FlightContext value={launch}>
+      {children}
+      {typeof document !== 'undefined' ? createPortal(
+        flights.map((flight) => (
+          <span
+            key={flight.id}
+            aria-hidden
+            className="chat-emoji-flight"
+            style={{
+              '--x': flight.x,
+              '--y': flight.y,
+              '--dx': flight.dx,
+              '--dy': flight.dy,
+              '--mx': flight.mx,
+              '--my': flight.my,
+            } as CSSProperties}
+          >{flight.emoji}</span>
+        )),
+        document.body,
+      ) : null}
+    </FlightContext>
+  );
+}
+
+let flightSeq = 0;
+
+export function useEmojiFlight() {
+  return useContext(FlightContext);
+}
+
+function centerOf(rect: DOMRect) {
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+}
+
+/** Where the chip sits: centered on the bubble's bottom edge, inset from a side. */
+export function reactionTarget(bubble: DOMRect, align: 'start' | 'end') {
+  return {
+    x: align === 'start' ? bubble.left + 22 : bubble.right - 22,
+    y: bubble.bottom,
+  };
+}
+
+/** Bow the path sideways so the emoji arcs instead of sliding in a straight line. */
+export function flyEmoji(
+  launch: (spec: FlightSpec) => boolean,
+  emoji: string,
+  from: DOMRect,
+  to: { x: number; y: number },
+): boolean {
+  const start = centerOf(from);
+  const dx = to.x - start.x;
+  const dy = to.y - start.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const bow = Math.min(28, len * 0.22);
+  return launch({
+    emoji,
+    x: start.x,
+    y: start.y,
+    dx,
+    dy,
+    mx: dx * 0.5 + (-dy / len) * bow,
+    my: dy * 0.5 + (dx / len) * bow,
+  });
+}
+
 /** The small emoji badge hanging off a bubble's lower edge. */
-export function ReactionChip({ emoji, label, onClick, align }: {
+export function ReactionChip({ emoji, label, onClick, align, landing }: {
   emoji: string; label: string; onClick?: () => void; align: 'start' | 'end';
+  /** True while an emoji is still in flight towards this chip. */
+  landing?: boolean;
 }) {
   const className = cn(
-    'chat-reaction-in absolute -bottom-3 z-10 grid h-6 min-w-6 place-items-center rounded-full border border-line bg-surface px-1 text-[13px] leading-none shadow-raise',
+    'absolute -bottom-3 z-10 grid h-6 min-w-6 place-items-center rounded-full border border-line bg-surface px-1 text-[13px] leading-none shadow-raise',
+    landing ? 'chat-reaction-land' : 'chat-reaction-in',
     align === 'start' ? 'left-2.5' : 'right-2.5',
   );
   if (!onClick) return <span role="img" aria-label={label} className={className}>{emoji}</span>;
@@ -139,7 +258,7 @@ export function ReactionChip({ emoji, label, onClick, align }: {
 
 function ReactionPicker({ current, onPick, onClose, boundary }: {
   current?: string;
-  onPick: (emoji: string | null) => void;
+  onPick: (emoji: string | null, source?: HTMLElement) => void;
   onClose: () => void;
   /** Clicks inside it (the toggle button included) are not "outside". */
   boundary: React.RefObject<HTMLElement | null>;
@@ -165,7 +284,7 @@ function ReactionPicker({ current, onPick, onClose, boundary }: {
       {QUICK_REACTIONS.map((emoji) => (
         <button key={emoji} type="button" role="menuitem"
           aria-label={emoji === current ? t('reaction.remove', { emoji }) : emoji}
-          onClick={() => { onPick(emoji === current ? null : emoji); onClose(); }}
+          onClick={(event) => { onPick(emoji === current ? null : emoji, event.currentTarget); onClose(); }}
           className={cn(
             'grid size-8 place-items-center rounded-full text-[17px] transition-transform hover:scale-115 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent motion-reduce:transition-none',
             emoji === current && 'bg-accent-soft',
@@ -181,7 +300,7 @@ function ReactionPicker({ current, onPick, onClose, boundary }: {
  * One grey bubble of the bot's reply. Hovering (or focusing) it reveals the
  * react button next to it, the way messengers do; on touch it stays visible.
  */
-export function BotBubble({ text, note, running, reaction, onReact }: {
+export function BotBubble({ text, note, running, reaction, onReact, fromTyping }: {
   text: string;
   /** Said while working rather than the answer — drawn a step quieter. */
   note?: boolean;
@@ -189,20 +308,58 @@ export function BotBubble({ text, note, running, reaction, onReact }: {
   reaction?: string;
   /** Absent while the reply is still being written or cannot be addressed. */
   onReact?: (emoji: string | null) => void;
+  /** This bubble took the place of the typing dots, so the dots fade inside it. */
+  fromTyping?: boolean;
 }) {
   const [picking, setPicking] = useState(false);
+  const [flying, setFlying] = useState<string | null>(null);
+  const [dots, setDots] = useState(fromTyping);
   const row = useRef<HTMLDivElement>(null);
+  const bubble = useRef<HTMLDivElement>(null);
+  const launch = useEmojiFlight();
   // Stable, so the picker's listeners are not re-attached on every render.
   const closePicker = useCallback(() => setPicking(false), []);
+  useEffect(() => {
+    if (!fromTyping) {
+      setDots(false);
+      return;
+    }
+    setDots(true);
+    const id = window.setTimeout(() => setDots(false), typingLeaveMs());
+    return () => window.clearTimeout(id);
+  }, [fromTyping]);
+  const pick = (emoji: string | null, source?: HTMLElement) => {
+    if (emoji && source && bubble.current
+      && flyEmoji(launch, emoji, source.getBoundingClientRect(), reactionTarget(bubble.current.getBoundingClientRect(), 'start'))) {
+      setFlying(emoji);
+    } else {
+      setFlying(null);
+    }
+    onReact?.(emoji);
+  };
   return (
     <div ref={row} className={cn('group/bubble relative flex max-w-full items-center gap-1', reaction && 'mb-3')}>
-      <div {...{ [REPLY_ATTRIBUTE]: '' }}
-        className={cn('chat-bubble-in relative min-w-0 max-w-full rounded-lg bg-surface-2 px-3.5 py-2', note && '[&_*]:text-ink-2')}>
-        <TextMessagePartProvider text={text} isRunning={running}>
-          <Markdown />
-        </TextMessagePartProvider>
+      <div ref={bubble} {...{ [REPLY_ATTRIBUTE]: '' }}
+        className={cn(
+          'chat-bubble-in relative min-w-0 max-w-full rounded-lg bg-surface-2 px-3.5 py-2',
+          fromTyping && 'chat-bubble-open',
+          note && '[&_*]:text-ink-2',
+        )}>
+        {dots ? (
+          <span aria-hidden data-typing="" className="chat-dots-leave pointer-events-none absolute inset-y-0 left-3.5 flex items-center gap-1.5">
+            <span className="chat-dot size-2 rounded-full bg-ink-3" />
+            <span className="chat-dot size-2 rounded-full bg-ink-3" />
+            <span className="chat-dot size-2 rounded-full bg-ink-3" />
+          </span>
+        ) : null}
+        <div className={fromTyping ? 'chat-text-in' : undefined}>
+          <TextMessagePartProvider text={text} isRunning={running}>
+            <Markdown />
+          </TextMessagePartProvider>
+        </div>
         {reaction ? (
-          <ReactionChip emoji={reaction} align="start" label={t('reaction.yours', { emoji: reaction })}
+          <ReactionChip key={reaction} emoji={reaction} align="start" landing={flying === reaction}
+            label={t('reaction.yours', { emoji: reaction })}
             onClick={onReact ? () => onReact(null) : undefined} />
         ) : null}
       </div>
@@ -214,7 +371,7 @@ export function BotBubble({ text, note, running, reaction, onReact }: {
         </button>
       ) : null}
       {picking && onReact ? (
-        <ReactionPicker current={reaction} onPick={onReact} onClose={closePicker} boundary={row} />
+        <ReactionPicker current={reaction} onPick={pick} onClose={closePicker} boundary={row} />
       ) : null}
     </div>
   );

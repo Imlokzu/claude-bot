@@ -16,6 +16,8 @@ export interface ChatMessage {
   reaction?: string;
   /** On a bot message: the user's reactions, keyed by bubble index. */
   reactions?: Record<string, string>;
+  /** Bubble index that should open out of the typing pill. Client-only. */
+  fromTyping?: number;
 }
 
 /**

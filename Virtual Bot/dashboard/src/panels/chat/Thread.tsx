@@ -1,10 +1,13 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { MessagePrimitive, ThreadPrimitive, useAuiState } from '@assistant-ui/react';
 import { ArrowDown } from 'lucide-react';
 import { GalleryScope } from './Gallery';
 import { cn } from '@/lib/cn';
 import { TextType } from '@/vendor/reactbits';
-import { ActivityLine, BotBubble, ReactionChip, TypingBubble } from './Bubbles';
+import {
+  ActivityLine, BotBubble, EmojiFlights, ReactionChip, TypingBubble,
+  flyEmoji, reactionTarget, typingLeaveMs, useEmojiFlight,
+} from './Bubbles';
 import { SourceStrip } from './SourceStrip';
 import { MessageActions } from './MessageActions';
 import { stepsFor } from './replyParts';
@@ -39,19 +42,89 @@ const RetryContext = createContext<{ id: string; run: () => void } | null>(null)
 type OnReact = (messageId: string, bubble: number, emoji: string | null) => void;
 const ReactContext = createContext<OnReact | null>(null);
 
+/*
+ * The typing pill and the bubble that replaces it have to agree on one
+ * render, so this is derived during render rather than after an effect
+ * (an effect would flash the pill away for a frame first).
+ *
+ * A new text bubble while the pill is up absorbs it: the dots fade inside
+ * that bubble, and if the bot is still working the pill returns afterwards.
+ * Anything else that ends the typing (a tool line, a reaction with no text)
+ * collapses the pill itself.
+ */
+function useBubbleMotion(typing: boolean, textCount: number) {
+  const [snap, setSnap] = useState({ typing, texts: textCount, born: -1 });
+  const [pill, setPill] = useState<'show' | 'hide' | 'leave'>(typing ? 'show' : 'hide');
+  const [prev, setPrev] = useState({ typing, texts: textCount });
+
+  const grew = textCount > prev.texts;
+  const absorb = prev.typing && grew;
+  if (typing !== prev.typing || textCount !== prev.texts) {
+    const born = absorb ? textCount - 1 : snap.born;
+    setPrev({ typing, texts: textCount });
+    setSnap({ typing, texts: textCount, born });
+    if (absorb) setPill('hide');
+    else if (typing) setPill('show');
+    else if (prev.typing) setPill('leave');
+    else setPill('hide');
+  }
+
+  useEffect(() => {
+    if (pill === 'leave') {
+      const id = window.setTimeout(() => setPill('hide'), typingLeaveMs());
+      return () => window.clearTimeout(id);
+    }
+    // The new bubble is playing the dots out; bring the pill back only if
+    // the bot is still working once that finishes.
+    if (pill === 'hide' && typing) {
+      const id = window.setTimeout(() => setPill('show'), typingLeaveMs());
+      return () => window.clearTimeout(id);
+    }
+  }, [pill, typing, snap.born]);
+
+  return {
+    born: absorb ? textCount - 1 : snap.born,
+    showTyping: pill === 'show' || pill === 'leave',
+    leaving: pill === 'leave',
+  };
+}
+
 type MessageMeta = {
   steps?: ToolStep[]; running?: boolean; agentStatus?: AgentStatus; model?: string;
   parts?: ReplyPart[]; reaction?: string; reactions?: Record<string, string>; reactable?: boolean;
+  fromTyping?: number;
 };
 
 function UserMessage() {
   const meta = useAuiState((state) => state.message.metadata.custom) as MessageMeta;
+  const bubble = useRef<HTMLDivElement>(null);
+  const launch = useEmojiFlight();
+  const [flying, setFlying] = useState<string | null>(null);
+  // Equal to the reaction already on screen. A difference means this render
+  // is the one where it arrived, so the chip stays hidden until the flight
+  // (the effect below) has a DOM rect to leave from.
+  const seen = useRef(meta.reaction);
+  const pending = Boolean(meta.reaction && meta.reaction !== seen.current);
+  useEffect(() => {
+    const emoji = meta.reaction;
+    const changed = emoji !== seen.current;
+    seen.current = emoji;
+    if (!changed || !emoji || !bubble.current) {
+      if (!emoji) setFlying(null);
+      return;
+    }
+    const box = bubble.current.getBoundingClientRect();
+    const typing = document.querySelector('[data-typing]');
+    const from = typing?.getBoundingClientRect() ?? new DOMRect(box.left - 48, box.top, 36, 28);
+    setFlying(flyEmoji(launch, emoji, from, reactionTarget(box, 'end')) ? emoji : null);
+  }, [meta.reaction, launch]);
   return (
     <MessagePrimitive.Root className={cn('mb-4 flex justify-end', meta.reaction && 'mb-7')}>
-      <div className="chat-bubble-in u-measure relative rounded-lg bg-ink px-3.5 py-2 text-[15px] leading-[1.55] text-bg">
+      <div ref={bubble} className="chat-bubble-in u-measure relative rounded-lg bg-ink px-3.5 py-2 text-[15px] leading-[1.55] text-bg">
         <MessagePrimitive.Parts />
         {meta.reaction ? (
-          <ReactionChip emoji={meta.reaction} align="end" label={t('reaction.bot', { emoji: meta.reaction })} />
+          <ReactionChip key={meta.reaction} emoji={meta.reaction} align="end" landing={pending || flying === meta.reaction}
+            label={t('reaction.bot', { emoji: meta.reaction })} />
         ) : null}
       </div>
     </MessagePrimitive.Root>
@@ -82,10 +155,14 @@ function AssistantMessage() {
   // reply. A live tool already says what is happening.
   const typing = running && (!last || (last.type === 'text' ? Boolean(last.note)
     : !stepsFor(last.ids, steps).some((step) => step.status === 'active')));
+  const textCount = parts.reduce((count, part) => count + (part.type === 'text' ? 1 : 0), 0);
+  const motion = useBubbleMotion(typing, textCount);
   const lost = running && (meta.agentStatus === 'unavailable' || meta.agentStatus === 'disconnected');
 
   // "Thanks!" → 👍 and nothing else: the reaction sits on the user's bubble.
-  if (!running && !parts.length) return null;
+  // The pill stays one beat longer so its dots can shrink away instead of
+  // the row vanishing between frames.
+  if (!running && !parts.length && !motion.showTyping) return null;
 
   let bubble = -1;
   return (
@@ -109,11 +186,12 @@ function AssistantMessage() {
                 note={part.note}
                 running={running && index === parts.length - 1}
                 reaction={meta.reactions?.[String(at)]}
+                fromTyping={at === (motion.born >= 0 ? motion.born : meta.fromTyping)}
                 onReact={!running && meta.reactable && react ? (emoji) => react(id, at, emoji) : undefined}
               />
             );
           })}
-          {typing ? <TypingBubble /> : null}
+          {motion.showTyping ? <TypingBubble leaving={motion.leaving} /> : null}
           {lost ? (
             <p role="status" className="text-[12px] leading-relaxed text-warn">
               {activityT(meta.agentStatus === 'unavailable' ? 'activity.unavailable' : 'activity.disconnected')}
@@ -152,6 +230,7 @@ export function Thread({
     [retryId, onRetry],
   );
   return (
+    <EmojiFlights>
     <ReactContext value={onReact}>
     <RetryContext value={retry}>
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
@@ -226,5 +305,6 @@ export function Thread({
     </ThreadPrimitive.Root>
     </RetryContext>
     </ReactContext>
+    </EmojiFlights>
   );
 }

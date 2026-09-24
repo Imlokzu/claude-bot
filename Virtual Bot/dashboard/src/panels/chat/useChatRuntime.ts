@@ -9,6 +9,7 @@ import { updateActivity, finishActivity, restoreActivity } from './activity';
 import {
   answerText, applyBreak, applyDelta, applyNote, applyStep, restoreParts, toParts, type LiveEntry,
 } from './replyParts';
+import { typingLeaveMs } from './Bubbles';
 import { useToast } from '@/components/ui/Toaster';
 import { estimateTokens } from './tokens';
 import type { ChatMessage, SessionDetail, SessionSummary, ToolStep } from './types';
@@ -34,6 +35,10 @@ export function useChatRuntime() {
   // Відповідь, яка ще пишеться. Окремо від messages, бо її текст міняється
   // на кожен чанк, а історія — ні.
   const [draft, setDraft] = useState<string | null>(null);
+  // A reaction-only reply has no bubble to absorb the typing pill, so the
+  // draft stays up long enough for the pill to collapse instead of vanishing.
+  const [settling, setSettling] = useState(false);
+  const settleTimer = useRef<number | null>(null);
   const [steps, setSteps] = useState<ToolStep[]>([]);
   const stepsRef = useRef<ToolStep[]>([]);
   // The reply being written, in order: narration, tools, answer bubbles.
@@ -41,6 +46,10 @@ export function useChatRuntime() {
   const timelineRef = useRef<LiveEntry[]>([]);
   const draftRef = useRef('');
   const generation = useRef(0);
+  // Whether the last painted frame was showing the typing pill. A reply that
+  // arrives in the same chunk as `done` never paints on the draft, so the
+  // saved message has to open out of the pill itself.
+  const pillOnScreen = useRef(false);
   const [agentStatus, setAgentStatus] = useState<AgentStatus>('connecting');
   const [streamModel, setStreamModel] = useState('');
   // Скільки реплік сховано за переказом. 0 — розмову не стискали.
@@ -52,7 +61,20 @@ export function useChatRuntime() {
   useEffect(() => () => {
     generation.current += 1;
     abortRef.current?.abort();
+    if (settleTimer.current) window.clearTimeout(settleTimer.current);
   }, []);
+
+  // After each painted frame, remember whether the typing pill was actually
+  // up. `done` often shares a chunk with the answer, so this ref — not the
+  // timeline the chunk just wrote — is what decides the opening bubble.
+  useEffect(() => {
+    if (draft === null || settling) return;
+    const parts = toParts(timeline);
+    const last = parts[parts.length - 1];
+    const active = last?.type === 'steps'
+      && steps.some((step) => step.status === 'active' && last.ids.includes(step.id));
+    pillOnScreen.current = !last || (last.type === 'text' ? Boolean(last.note) : !active);
+  }, [draft, settling, timeline, steps]);
 
   const sessions = useQuery({
     queryKey: ['sessions'],
@@ -115,6 +137,8 @@ export function useChatRuntime() {
     abortRef.current = null;
     setSessionId('');
     setMessages([]);
+    if (settleTimer.current) window.clearTimeout(settleTimer.current);
+    setSettling(false);
     setDraft(null);
     setSteps([]);
     stepsRef.current = [];
@@ -141,7 +165,10 @@ export function useChatRuntime() {
       setMessages((current) => [...current, {
         id: userId, role: 'user', content: trimmed, attachments: safeAttachments,
       }]);
+      if (settleTimer.current) window.clearTimeout(settleTimer.current);
+      setSettling(false);
       setDraft('');
+      pillOnScreen.current = true;
       setSteps([]);
       stepsRef.current = [];
       setTimeline([]);
@@ -223,6 +250,9 @@ export function useChatRuntime() {
             terminal = true;
             const finished = result.steps ?? finishActivity(stepsRef.current);
             const parts = restoreParts(result.parts, result.reply, finished);
+            const textBubbles = parts.filter((part) => part.type === 'text').length;
+            const fromTyping = pillOnScreen.current && textBubbles > 0 ? textBubbles - 1 : undefined;
+            pillOnScreen.current = false;
             setMessages((current) => [
               ...current.map((item) => (item.id === userId ? {
                 ...item,
@@ -231,10 +261,22 @@ export function useChatRuntime() {
               } : item)),
               { id: nextId(), role: 'assistant', content: result.reply, steps: finished, parts,
                 serverId: result.assistant_message_id || undefined,
-                model: result.model || streamModel },
+                model: result.model || streamModel, fromTyping },
             ]);
-            setDraft(null);
             setSteps(finished);
+            // No bubble grew out of the typing pill (a bare reaction). Keep
+            // the draft mounted, but no longer "running", so the pill can
+            // collapse before it goes away.
+            if (!parts.length) {
+              setSettling(true);
+              if (settleTimer.current) window.clearTimeout(settleTimer.current);
+              settleTimer.current = window.setTimeout(() => {
+                setSettling(false);
+                if (generation.current === version) setDraft(null);
+              }, typingLeaveMs() + 40);
+            } else {
+              setDraft(null);
+            }
             if (result.model) setStreamModel(result.model);
             // Each assistant message owns its activity, including saved history.
             // Бекенд міг створити нову розмову й дати їй назву у фоні.
@@ -338,18 +380,19 @@ export function useChatRuntime() {
   );
 
   const runtime = useExternalStoreRuntime<ChatMessage>({
-    isRunning: draft !== null,
+    isRunning: draft !== null && !settling,
     isLoading: false,
     messages: visible,
     convertMessage: (message): ThreadMessageLike => ({
       id: message.id,
       role: message.role,
       content: [{ type: 'text', text: message.content }],
-      metadata: { custom: { steps: message.steps ?? [], running: message.id === 'draft',
+      metadata: { custom: { steps: message.steps ?? [], running: message.id === 'draft' && !settling,
         agentStatus: message.id === 'draft' ? agentStatus : undefined,
         model: message.model || (message.id === 'draft' ? streamModel : undefined),
         parts: message.parts, reaction: message.reaction, reactions: message.reactions,
-        reactable: Boolean(message.serverId && sessionId) } },
+        reactable: Boolean(message.serverId && sessionId),
+        fromTyping: message.fromTyping } },
     }),
     onNew: async (message: AppendMessage) => {
       const text = message.content
@@ -369,7 +412,7 @@ export function useChatRuntime() {
     openSession,
     newSession,
     steps,
-    running: draft !== null,
+    running: draft !== null && !settling,
     compactedFrom,
     usedTokens,
     // Сира історія — для панелі витрат (вхідні/вихідні рахуються окремо).
