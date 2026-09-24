@@ -37,6 +37,15 @@ class StreamTagFilterTests(unittest.TestCase):
         clean, _ = extract_emotion(raw)
         self.assertEqual(visible.strip(), clean)
 
+    def test_russian_spelling_is_removed_and_the_later_tag_wins(self) -> None:
+        raw = "[емоция:web] шукаю [emotion:confused] не вийшло"
+        clean, emotion = extract_emotion(raw)
+        self.assertNotIn("[", clean)
+        self.assertEqual(emotion, "confused")
+        visible, found = self._run(["[емоция:web] шукаю ", "[emotion:confused] не вийшло"])
+        self.assertNotIn("[", visible)
+        self.assertEqual(found, ["web", "confused"])
+
     def test_plain_brackets_are_kept(self) -> None:
         visible, found = self._run(["масив a[0] і b[1] тут"])
         self.assertEqual(visible, "масив a[0] і b[1] тут")

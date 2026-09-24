@@ -52,6 +52,7 @@ import app_config as cfg
 import auth_clerk
 import brain_context
 import brains
+import chat_bubbles
 import chat_store
 import openclaw_models
 from tool_activity import ActivityLog, detail_for, result_failed
@@ -349,6 +350,33 @@ async def _require_user(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Потрібен вхід (Clerk)")
     payload = auth_clerk.verify_clerk_token(token)
     return auth_clerk.user_id_from_payload(payload)
+
+
+def _is_loopback(request: Request) -> bool:
+    host = request.client.host if request.client else ""
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
+async def _tool_caller(request: Request) -> str:
+    """Who is calling a tool.
+
+    OpenClaw's search bridge is a local process. It has no browser session,
+    so a missing token from loopback is the bridge, not a stranger. A call
+    from anywhere else still needs Clerk. A token that was sent is always
+    checked, even on loopback.
+    """
+    if auth_clerk.is_auth_disabled():
+        return ""
+    auth = request.headers.get("authorization") or request.headers.get("Authorization") or ""
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    if not token:
+        token = (request.headers.get("x-clerk-token") or request.query_params.get("token") or "").strip()
+    if token:
+        payload = auth_clerk.verify_clerk_token(token)
+        return auth_clerk.user_id_from_payload(payload)
+    if _is_loopback(request):
+        return ""
+    raise HTTPException(status_code=401, detail="Потрібен вхід (Clerk)")
 
 
 # Вибір моделі кодинг-агента живе в окремому роутері (coding_api.py):
@@ -1330,7 +1358,9 @@ def _save_history(
     steps: list | None = None,
     attachments: list[dict] | None = None,
     participant_name: str = "",
-) -> None:
+    parts: list | None = None,
+    reaction: str | None = None,
+) -> tuple[str, str] | None:
     """Дописує обмін до історії сесії: у памʼять процесу і на диск."""
     history.append({"role": "user", "content": _participant_message(user, participant_name)})
     history.append({"role": "assistant", "content": assistant})
@@ -1338,9 +1368,26 @@ def _save_history(
         _cleanup_stale_sessions()
         _sessions[sid] = (history[-cfg.CHAT_HISTORY_LIMIT:], time.monotonic())
     try:
-        chat_store.append(sid, user, assistant, steps, attachments, participant_name)
+        return chat_store.append(
+            sid, user, assistant, steps, attachments, participant_name,
+            parts=parts, reaction=reaction,
+        )
     except Exception:  # noqa: BLE001 — збереження історії не має валити відповідь
         log.exception("Не вдалося зберегти чат на диск")
+        return None
+
+
+def _reactions_note(pending: list[dict]) -> str:
+    """
+    Tell the model which of its messages the user reacted to since last turn.
+
+    A reaction is not a turn — nobody expects a reply to a thumbs-up — so it
+    rides along with the next real message instead of waking the bot.
+    """
+    lines = [f'{p.get("emoji")} on "{p.get("text") or "…"}"' for p in pending if p.get("emoji")]
+    if not lines:
+        return ""
+    return "[The user reacted to your earlier messages: " + "; ".join(lines) + "]\n\n"
 
 
 async def _autoname_chat(sid: str, user_message: str, reply: str) -> None:
@@ -1374,6 +1421,7 @@ async def _autoname_chat(sid: str, user_message: str, reply: str) -> None:
         return
     finally:
         chat_store.mark_titled(sid)
+    title = chat_bubbles.plain(title or "")
     # Мозок любить додати пояснення — беремо лише перший рядок
     first_line = (title or "").strip().splitlines()[0] if title else ""
     if first_line:
@@ -1573,6 +1621,9 @@ async def api_chat(request: Request, req: ChatRequest):
         # ботом) — тоді репліка йде без підпису, а не під чужим імʼям.
         participant_name = participant["name"] if participant else ""
     agent_message = _participant_message(message, participant_name)
+    with brain_context.set_clerk_user(clerk_uid):
+        pending_reactions = chat_store.take_pending_reactions(sid)
+    agent_message = _reactions_note(pending_reactions) + agent_message
     log.info("→ Запит у чат: session=%s user=%s %s", sid, clerk_uid[:8], message[:120])
     # Хід для окремої консолі (/console): звідки прийшла репліка видно за
     # Referer — з екрана пристрою чи з панелі. Далі до цього ходу чіпляються
@@ -1606,9 +1657,12 @@ async def api_chat(request: Request, req: ChatRequest):
                 final_emotion = emotions.settled_emotion(emotion)
                 trace_log.end_turn(mode=mode, model=brains.get_last_model(), emotion=final_emotion)
             log.info("Чат (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
-            _save_history(
+            bubbles, reaction = chat_bubbles.shape(reply)
+            reply = "\n\n".join(bubbles)
+            ids = _save_history(
                 sid, history, message, reply,
                 attachments=req.attachments, participant_name=participant_name,
+                parts=[{"type": "text", "text": b} for b in bubbles], reaction=reaction,
             )
             # Назву чату генеруємо у фоні — відповідь на неї не чекає
             asyncio.create_task(_autoname_chat(sid, message, reply))
@@ -1619,11 +1673,12 @@ async def api_chat(request: Request, req: ChatRequest):
                 events.publish_emotion(final_emotion)
             except Exception:  # noqa: BLE001
                 log.exception("Не вдалося опублікувати SSE-подію емоції")
-            try:
-                display_bridge.send_chat_exchange_bg(message, reply, final_emotion)
-                events.publish_reply(reply, final_emotion)
-            except Exception:  # noqa: BLE001
-                log.exception("Не вдалося запустити відправку на дисплей")
+            if reply:
+                try:
+                    display_bridge.send_chat_exchange_bg(message, reply, final_emotion)
+                    events.publish_reply(reply, final_emotion)
+                except Exception:  # noqa: BLE001
+                    log.exception("Не вдалося запустити відправку на дисплей")
             try:
                 await asyncio.to_thread(memory.append_chat_log, message, reply, emotion)
             except Exception:  # noqa: BLE001
@@ -1631,11 +1686,15 @@ async def api_chat(request: Request, req: ChatRequest):
 
             return {
                 "reply": reply,
+                "bubbles": bubbles,
+                "reaction": reaction,
                 "emotion": final_emotion,
                 "session_id": sid,
                 "mode": mode,
                 "model": brains.get_last_model(),
                 "tool_results": tool_results,
+                "user_message_id": ids[0] if ids else "",
+                "assistant_message_id": ids[1] if ids else "",
             }
 
     async def stream_response():
@@ -1652,10 +1711,75 @@ async def api_chat(request: Request, req: ChatRequest):
             # Тег [емоція:…] моделі не має світитись у чаті: ріжемо його прямо в
             # потоці, а знайдену емоцію показуємо на обличчі ОДРАЗУ, а не в кінці.
             tag_filter = emotions.StreamTagFilter()
+            # [[msg]] / [react:…] are cut the same way, after the emotion tag.
+            shaper = chat_bubbles.BubbleStream()
+            # The reply in the order it happened: what the bot said before a
+            # tool, the tools, the answer. The client draws the same sequence
+            # live; `parts` on disk lets a reopened chat look identical.
+            timeline: list[dict] = []
+            notes: dict[str, list[str]] = {}
+            reaction: dict[str, str | None] = {"emoji": None}
+
+            def add_step(step_id: str) -> None:
+                if any(step_id in entry.get("ids", ()) for entry in timeline):
+                    return
+                if timeline and timeline[-1]["type"] == "steps":
+                    timeline[-1]["ids"].append(step_id)
+                else:
+                    timeline.append({"type": "steps", "ids": [step_id]})
+
+            def add_answer() -> None:
+                if not any(entry["type"] == "answer" for entry in timeline):
+                    timeline.append({"type": "answer"})
+
+            def keep(event: dict) -> dict | None:
+                """Bookkeeping for one shaped event; None means do not send it."""
+                if event["type"] == "reaction":
+                    if reaction["emoji"] is not None:
+                        return None
+                    reaction["emoji"] = event["emoji"]
+                    return event
+                add_answer()
+                return event
+
+            async def queue_shaped(shaped: list[dict]) -> None:
+                for item in shaped:
+                    item = keep(item)
+                    if item:
+                        await event_queue.put(item)
+
+            def build_parts(answer: list[str]) -> list[dict]:
+                parts: list[dict] = []
+                for entry in timeline:
+                    if entry["type"] == "note":
+                        parts += [{"type": "text", "text": b, "note": True} for b in notes.get(entry["id"], [])]
+                    elif entry["type"] == "steps":
+                        parts.append({"type": "steps", "ids": list(entry["ids"])})
+                    else:
+                        parts += [{"type": "text", "text": b} for b in answer]
+                return parts
 
             async def emit(event: dict) -> None:
                 if event.get("type") in ("tool_start", "tool_progress", "tool_done", "tool_result", "tool_error"):
                     event = activity.record(event)
+                    step = event.get("step")
+                    if isinstance(step, dict) and step.get("id"):
+                        add_step(str(step["id"]))
+                if event.get("type") == "note":
+                    note_id = str(event.get("id") or "")
+                    raw = str(event.get("text") or "")
+                    if not event.get("done"):
+                        raw = chat_bubbles.trim_open_tag(raw)
+                    bubbles, note_reaction = chat_bubbles.shape(emotions.extract_emotion(raw)[0])
+                    if note_reaction:
+                        await queue_shaped([{"type": "reaction", "emoji": note_reaction}])
+                    if not note_id or not bubbles or bubbles == notes.get(note_id):
+                        return
+                    if note_id not in notes:
+                        timeline.append({"type": "note", "id": note_id})
+                    notes[note_id] = bubbles
+                    await event_queue.put({"type": "note", "id": note_id, "bubbles": bubbles})
+                    return
                 if event.get("type") == "delta":
                     visible, found = tag_filter.feed(event.get("chunk") or "")
                     if found:
@@ -1677,11 +1801,15 @@ async def api_chat(request: Request, req: ChatRequest):
                         # словами. Мозок на цей момент уже відпрацював, тож ці
                         # паузи нічого не затримують.
                         for piece in _typewriter(visible):
-                            await event_queue.put({**event, "chunk": piece})
+                            await queue_shaped(shaper.feed(piece))
                             await asyncio.sleep(_TYPE_DELAY_S)
                         return
-                    event = {**event, "chunk": visible}
+                    await queue_shaped(shaper.feed(visible))
+                    return
                 await event_queue.put(event)
+
+            def frames(shaped: list[dict]) -> list[str]:
+                return [f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in map(keep, shaped) if e]
 
             chat_task = asyncio.create_task(brains.chat(
                 agent_message, history, emit=emit, **_chat_image_kwargs(images),
@@ -1703,57 +1831,85 @@ async def api_chat(request: Request, req: ChatRequest):
                             break
                         continue
 
-                reply, emotion, mode, tool_results = chat_task.result()
+                raw_reply, emotion, mode, tool_results = chat_task.result()
                 final_emotion = emotions.settled_emotion(emotion)
                 trace_log.end_turn(mode=mode, model=brains.get_last_model(), emotion=final_emotion)
                 log.info("Чат stream (режим=%s, емоція=%s, tools=%d)", mode, emotion, len(tool_results))
-                _save_history(
+                # The final text is the authority on the answer's bubbles; the
+                # stream only previews them.
+                bubbles, final_reaction = chat_bubbles.shape(raw_reply)
+                reply = "\n\n".join(bubbles)
+                if bubbles:
+                    add_answer()
+                late_reaction = frames([{"type": "reaction", "emoji": final_reaction}]) if final_reaction else []
+                parts = build_parts(bubbles)
+                ids = _save_history(
                     sid, history, message, reply,
                     steps=activity.finish(),
                     attachments=req.attachments, participant_name=participant_name,
+                    parts=parts, reaction=reaction["emoji"],
                 )
                 saved = True
                 asyncio.create_task(_autoname_chat(sid, message, reply))
+                for frame in late_reaction:
+                    yield frame
 
-                # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом)
-                tail = tag_filter.flush()
-                if tail:
-                    streamed["text"] += tail
-                    yield f"event: delta\ndata: {json.dumps({'chunk': tail})}\n\n"
+                # Хвіст, який фільтр тримав «про всяк випадок» (виявився не тегом).
+                # A reaction-only reply (a bare emoji included) must not be
+                # typed out as its own bubble first — done puts it on the
+                # person's message instead.
+                if bubbles:
+                    tail = tag_filter.flush()
+                    if tail:
+                        streamed["text"] += tail
+                        for frame in frames(shaper.feed(tail)):
+                            yield frame
 
-                # Якщо мозок віддав токени справжнім стрімом — текст уже на екрані.
-                # Досилаємо лише те, чого бракує (напр. після вирізання тега емоції).
-                already = streamed["text"]
-                if already and reply.startswith(already):
-                    rest = reply[len(already):]
-                    if rest:
-                        yield f"event: delta\ndata: {json.dumps({'chunk': rest})}\n\n"
-                elif already:
-                    # Текст розішовся (напр. вирізано тег емоції всередині) —
-                    # просимо фронтенд замінити текст ціліком (done нижче все одно це зробить).
-                    log.debug("Стрімовий текст відрізняється від фінального — заміню на done")
-                else:
-                    # Мозок не стрімить (демо, тулзи, Anthropic) — імітуємо пословно,
-                    # щоб усе одно було видно появу тексту, а не стіну відразу.
-                    words = reply.split(" ")
-                    for i, word in enumerate(words):
-                        chunk = word + (" " if i < len(words) - 1 else "")
-                        yield f"event: delta\ndata: {json.dumps({'chunk': chunk})}\n\n"
-                        await asyncio.sleep(0.02)
+                    # Якщо мозок віддав токени справжнім стрімом — текст уже на екрані.
+                    # Досилаємо лише те, чого бракує (напр. після вирізання тега емоції).
+                    already = streamed["text"]
+                    if already and raw_reply.startswith(already):
+                        rest = raw_reply[len(already):]
+                        if rest:
+                            for frame in frames(shaper.feed(rest)):
+                                yield frame
+                    elif already:
+                        # Текст розішовся (напр. вирізано тег емоції всередині) —
+                        # просимо фронтенд замінити текст ціліком (done нижче все одно це зробить).
+                        log.debug("Стрімовий текст відрізняється від фінального — заміню на done")
+                    else:
+                        # Мозок не стрімить (демо, тулзи, Anthropic) — імітуємо пословно,
+                        # щоб усе одно було видно появу тексту, а не стіну відразу.
+                        words = raw_reply.split(" ")
+                        for i, word in enumerate(words):
+                            chunk = word + (" " if i < len(words) - 1 else "")
+                            for frame in frames(shaper.feed(chunk)):
+                                yield frame
+                            await asyncio.sleep(0.02)
+                    for frame in frames(shaper.flush()):
+                        yield frame
 
                 yield f"event: emotion\ndata: {json.dumps({'emotion': final_emotion})}\n\n"
-                yield f"event: done\ndata: {json.dumps({'reply': reply, 'emotion': final_emotion, 'session_id': sid, 'mode': mode, 'model': brains.get_last_model(), 'tool_results': tool_results, 'steps': activity.finish()})}\n\n"
+                done = {
+                    'reply': reply, 'bubbles': bubbles, 'parts': parts, 'reaction': reaction["emoji"],
+                    'emotion': final_emotion, 'session_id': sid, 'mode': mode,
+                    'model': brains.get_last_model(), 'tool_results': tool_results,
+                    'steps': activity.finish(),
+                    'user_message_id': ids[0] if ids else '', 'assistant_message_id': ids[1] if ids else '',
+                }
+                yield f"event: done\ndata: {json.dumps(done)}\n\n"
 
                 # Інтеграційний шар після стрімінгу
                 try:
                     events.publish_emotion(final_emotion)
                 except Exception:  # noqa: BLE001
                     log.exception("Не вдалося опублікувати SSE-подію емоції")
-                try:
-                    display_bridge.send_chat_exchange_bg(message, reply, final_emotion)
-                    events.publish_reply(reply, final_emotion)
-                except Exception:  # noqa: BLE001
-                    log.exception("Не вдалося запустити відправку на дисплей")
+                if reply:
+                    try:
+                        display_bridge.send_chat_exchange_bg(message, reply, final_emotion)
+                        events.publish_reply(reply, final_emotion)
+                    except Exception:  # noqa: BLE001
+                        log.exception("Не вдалося запустити відправку на дисплей")
                 try:
                     await asyncio.to_thread(memory.append_chat_log, message, reply, emotion)
                 except Exception:  # noqa: BLE001
@@ -1771,13 +1927,38 @@ async def api_chat(request: Request, req: ChatRequest):
                 if not chat_task.done():
                     chat_task.cancel()
                 if not saved:
-                    _save_history(sid, history, message, streamed["text"],
+                    partial = shaper.text_bubbles()
+                    _save_history(sid, history, message, "\n\n".join(partial),
                                   steps=activity.finish(), attachments=req.attachments,
-                                  participant_name=participant_name)
+                                  participant_name=participant_name,
+                                  parts=build_parts(partial), reaction=reaction["emoji"])
                     trace_log.end_turn(error="interrupted")
                 await asyncio.gather(chat_task, return_exceptions=True)
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")
+
+
+class SessionReactionRequest(BaseModel):
+    message_id: str = Field(min_length=1, max_length=40)
+    bubble: int = Field(default=0, ge=0, le=chat_store.MAX_PARTS)
+    emoji: Optional[str] = Field(default=None, max_length=16)
+
+
+@app.post("/api/sessions/{session_id}/reactions")
+async def api_session_reaction(
+    session_id: str, request: Request, req: SessionReactionRequest, kind: str = Query(default=""),
+) -> dict:
+    """The user's emoji on one bubble of a bot reply; `emoji: null` removes it."""
+    clerk_uid = await _require_user(request)
+    if req.emoji is not None and not chat_bubbles.is_emoji(req.emoji):
+        raise HTTPException(status_code=400, detail="Реакція — це один емодзі")
+    with brain_context.set_clerk_user(clerk_uid), chat_store.set_kind(_chat_kind(kind)):
+        if not chat_store.is_valid_id(session_id):
+            raise HTTPException(status_code=400, detail="Некоректний id сесії")
+        reactions = chat_store.set_user_reaction(session_id, req.message_id, req.bubble, req.emoji)
+        if reactions is None:
+            raise HTTPException(status_code=404, detail="Повідомлення не знайдено")
+        return {"ok": True, "reactions": reactions}
 
 
 # ------------------------------------------------------------------ історія чатів
@@ -2003,7 +2184,7 @@ async def api_session_compact(session_id: str, request: Request, kind: str = Que
             log.warning("Стискання чату не вдалося: %s", type(exc).__name__)
             raise HTTPException(status_code=502, detail="Мозок не переказав розмову") from exc
 
-        result = chat_store.compact(session_id, summary)
+        result = chat_store.compact(session_id, chat_bubbles.plain(summary))
         if result is None:
             raise HTTPException(status_code=500, detail="Не вдалося зберегти переказ")
         # Копія історії в памʼяті процесу тепер бреше — скидаємо, щоб
@@ -2358,7 +2539,7 @@ async def api_tools_call(request: Request, req: ToolCallRequest) -> dict:
     мозок (OpenClaw → tools_mcp/workspace_mcp), тому шлемо SSE-події: інакше
     в панелі не було б видно, що бот саме зараз щось шукає чи пише у файл.
     """
-    clerk_uid = await _require_user(request)
+    clerk_uid = await _tool_caller(request)
     detail = _tool_detail(req.args)
     # ask_question/todo_list/show_choice малюють себе самі карткою (подія
     # "ui" — публікує сам тул), тому дублювати їх згорнутим рядком не треба.

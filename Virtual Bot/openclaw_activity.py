@@ -122,6 +122,16 @@ class GatewayActivity:
             if data.get("phase") in ("end", "error"):
                 self.terminal.set()
             return
+        if payload.get("stream") == "item":
+            # What the model says BEFORE a tool call ("ok, I'll look it up")
+            # only travels here: the HTTP stream carries just the final answer,
+            # delivered after all tools have run. `progressText` is a growing
+            # snapshot of that message, not a delta.
+            text = data.get("progressText")
+            if data.get("kind") == "preamble" and data.get("itemId") and isinstance(text, str):
+                await self.emit({"type": "note", "id": f"{run_id}:{data['itemId']}",
+                                 "text": text, "done": data.get("phase") == "end"})
+            return
         if payload.get("stream") != "tool":
             return
         kind = {"start": "tool_start", "update": "tool_progress", "result": "tool_done"}.get(data.get("phase"))
