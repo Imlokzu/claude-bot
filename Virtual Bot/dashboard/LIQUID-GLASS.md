@@ -5,8 +5,10 @@ rim bends whatever is behind it and catches a bright line of light. It is
 not a frosted plate and not a grey card: a white wash on this dark page
 reads as a solid fill, so the plate has no fill of its own.
 
-The sample is on the bot's chat bubbles, the composer field, and the
-jump-to-latest circle. Nothing else uses it yet.
+The sample is on the composer, as a plate behind the field, and on the
+jump-to-latest circle. Bot replies stay a solid surface: nothing sits
+behind them, so a lens there is only a rim around the words. Nothing else
+uses it yet.
 
 Do not put this on more surfaces until the owner says the sample looks
 right. When they do, add the class and let the existing watcher pick the
@@ -22,8 +24,10 @@ backdrop through `backdrop-filter: url(#…)`.
 
 `useLiquidGlass` watches the conversation column:
 
-- bot bubbles and the typing pill — the shared lens, no colour split
-- the composer field — the same lens plus a small chromatic fringe
+- `.liquid-glass-plate`, a layer behind the composer field — the same lens
+  plus a small chromatic fringe. The filter is not on the field. An SVG
+  backdrop filter clips the element it belongs to, and on the field that
+  cut a tall draft down to the last line.
 - the jump circle — a full lens, because the bevel is clamped to the radius
 
 The numbers were chosen by looking at the dark chat, not from the library

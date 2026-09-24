@@ -132,7 +132,10 @@ export function Composer({
           frame of the same size: same glow, and the menus are no longer its
           children.
         */}
-        <div className="relative">
+        <div className="prompt-bar-slot relative">
+          {/* The lens is a plate under the field. On the field itself the
+              SVG filter clips a tall draft down to the last line. */}
+          <div className="liquid-glass liquid-glass-plate" aria-hidden="true" />
           <PromptBar
             placeholder={t('composer.placeholder')}
             labels={{
@@ -233,7 +236,7 @@ export function Composer({
             aria-hidden="true"
           />
 
-          <div className="pointer-events-none absolute inset-0">
+          <div className="prompt-bar-glow pointer-events-none absolute inset-0">
             <VoiceBeam
               stream={dictation.stream}
               type="default"

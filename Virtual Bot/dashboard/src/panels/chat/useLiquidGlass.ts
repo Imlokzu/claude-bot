@@ -35,10 +35,10 @@ export function useLiquidGlass(root: RefObject<HTMLElement | null>) {
     const Hyalite = window.Hyalite;
     if (!el || !Hyalite?.supported()) return;
     if (window.matchMedia('(prefers-reduced-transparency: reduce)').matches) return;
-    // Bubbles share one map bucket. The field and the circle bend a little
-    // colour; a column of replies does not need that extra pass.
-    const bubbles = Hyalite.watch(el, '.liquid-glass:not(.chat-scroll-latest)', lens);
-    const field = Hyalite.watch(el, '.prompt-bar__field', { ...lens, dispersion: 0.45 });
+    // The lens sits on a plate behind the field, never on the field itself.
+    // The SVG filter clips the element it is attached to, and that was
+    // cutting a tall draft down to its last line.
+    const field = Hyalite.watch(el, '.liquid-glass-plate', { ...lens, dispersion: 0.45 });
     const circle = Hyalite.watch(el, '.chat-scroll-latest', {
       ...lens,
       bevel: 18,
@@ -46,7 +46,6 @@ export function useLiquidGlass(root: RefObject<HTMLElement | null>) {
       dispersion: 0.4,
     });
     return () => {
-      bubbles.stop();
       field.stop();
       circle.stop();
     };

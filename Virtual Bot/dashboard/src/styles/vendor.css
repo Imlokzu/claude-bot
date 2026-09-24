@@ -514,9 +514,10 @@
 /* Liquid glass. Recipe and the "do not spread yet" rule: LIQUID-GLASS.md.
    Chromium gets a refraction lens from Hyalite (--hyalite, --hyalite-edge).
    Every other engine keeps this rim and a small blur. No fill: a white wash
-   on the dark page painted a grey card. */
-.liquid-glass,
-.chat-composer .prompt-bar__field {
+   on the dark page painted a grey card.
+   The lens is never on the field that holds the draft. The SVG filter clips
+   its own element, and a tall textarea was being cut down to the last line. */
+.liquid-glass {
   background: transparent;
   -webkit-backdrop-filter: var(--hyalite, blur(6px) saturate(1.8));
   backdrop-filter: var(--hyalite, blur(6px) saturate(1.8));
@@ -526,22 +527,37 @@
     inset 0 -1px 0 rgba(255, 255, 255, 0.06),
     inset 0 0 0 1px rgba(255, 255, 255, 0.22));
 }
+.chat-composer .prompt-bar__field {
+  background: transparent;
+}
+.liquid-glass-plate {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: 16px;
+  pointer-events: none;
+}
+.chat-composer .prompt-bar-slot > .prompt-bar {
+  position: relative;
+  z-index: 1;
+}
+.chat-composer .prompt-bar-glow {
+  z-index: 2;
+}
 .chat-composer {
   position: relative;
   z-index: 3;
   margin-top: -1.15rem;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .liquid-glass,
-  .chat-composer .prompt-bar__field {
+  .liquid-glass {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: color-mix(in srgb, var(--c-surface) 92%, transparent);
   }
 }
 @media (prefers-reduced-transparency: reduce) {
-  .liquid-glass,
-  .chat-composer .prompt-bar__field {
+  .liquid-glass {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     background: var(--c-surface-2);
