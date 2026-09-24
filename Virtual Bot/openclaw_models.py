@@ -43,8 +43,8 @@ THINKING_LEVELS: tuple[str, ...] = (
     "off", "minimal", "low", "medium", "high", "xhigh", "adaptive", "max", "ultra",
 )
 
-# The picker only offers providers that actually answer. OpenCode Go, NVIDIA
-# and the local Omni shim stay out: they were in the catalog and failed.
+# The picker offers Regolo, and from OpenAI only the Luna models.
+# The rest of the OpenAI catalog (Sol, Astra, Terra, …) stays out.
 CHAT_PROVIDERS = frozenset({"openai", "regolo"})
 
 _CLI_TIMEOUT_S = 20.0
@@ -152,12 +152,22 @@ async def catalog(force: bool = False) -> list[dict]:
             log.warning("openclaw models list віддав не-JSON")
             return list(_catalog or [])
         models = [_normalize(m) for m in data.get("models", []) if m.get("key")]
-        _catalog = [
-            m for m in models
-            if m["id"] and str(m.get("provider") or "") in CHAT_PROVIDERS
-        ]
+        _catalog = [m for m in models if _shown(m)]
         _catalog_at = time.monotonic()
         return list(_catalog)
+
+
+def _shown(model: dict) -> bool:
+    """Regolo stays whole. OpenAI is Luna only."""
+    if not model.get("id"):
+        return False
+    provider = str(model.get("provider") or "")
+    if provider == "regolo":
+        return True
+    if provider != "openai":
+        return False
+    haystack = f"{model.get('id') or ''} {model.get('label') or ''}".casefold()
+    return "luna" in haystack
 
 
 def default_model(models: list[dict]) -> str:

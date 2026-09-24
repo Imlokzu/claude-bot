@@ -115,14 +115,17 @@ export interface BrainModelsResponse {
   available: boolean;
 }
 
-const BRAIN_MODELS_CACHE_KEY = 'claude-bot:brain-models:v2';
-const CHAT_PROVIDERS = new Set(['openai', 'regolo']);
+const BRAIN_MODELS_CACHE_KEY = 'claude-bot:brain-models:v3';
+
+function keptModel(model: BrainModel): boolean {
+  const provider = model.id.split('/')[0] ?? '';
+  if (provider === 'regolo') return true;
+  if (provider !== 'openai') return false;
+  return `${model.id} ${model.label}`.toLowerCase().includes('luna');
+}
 
 function keptModels(data: BrainModelsResponse): BrainModelsResponse {
-  return {
-    ...data,
-    models: data.models.filter((model) => CHAT_PROVIDERS.has(model.id.split('/')[0] ?? '')),
-  };
+  return { ...data, models: data.models.filter(keptModel) };
 }
 
 function readBrainModelsCache(): { data: BrainModelsResponse; savedAt: number } | undefined {

@@ -64,11 +64,16 @@ class CatalogTests(unittest.TestCase):
             {"key": "opencode-go/kimi-k3", "name": "Kimi K3"},
             {"key": "nvidia/nemotron", "name": "Nemotron"},
             {"key": "regolo/gpt-oss-120b", "name": "GPT-OSS 120B"},
+            {"key": "openai/gpt-6-sol", "name": "GPT-6 Sol"},
             {"key": "openai/gpt-6-luna", "name": "GPT-6 Luna"},
+            {"key": "openai/gpt-5.6-luna", "name": "GPT-5.6-Luna"},
         ]})
         with patch.object(openclaw_models, "_run_cli", AsyncMock(return_value=(0, raw, ""))):
             models = asyncio.run(openclaw_models.catalog(force=True))
-        self.assertEqual([m["id"] for m in models], ["regolo/gpt-oss-120b", "openai/gpt-6-luna"])
+        self.assertEqual(
+            [m["id"] for m in models],
+            ["regolo/gpt-oss-120b", "openai/gpt-6-luna", "openai/gpt-5.6-luna"],
+        )
 
     def test_broken_cli_keeps_the_previous_catalog(self) -> None:
         """Збій CLI не має спорожняти список: порожній вибір гірший за старий."""

@@ -146,6 +146,7 @@ export function OpenClawFields({
               ? (brain.data?.selected || stored || brain.data?.default || '')
               : stored;
             const modelOptions = brain.data?.models ?? [];
+            const modelValue = modelOptions.some((model) => model.id === liveModel) ? liveModel : '';
             return (
               <SettingRow
                 key={field.path}
@@ -166,13 +167,10 @@ export function OpenClawFields({
                     id={field.path}
                     className={modelControl}
                     disabled={pending === field.path}
-                    value={liveModel}
+                    value={modelValue}
                     onChange={(event) => write(field, event.target.value)}
                   >
                     <option value="">{t('settings.inherit')}</option>
-                    {liveModel && !modelOptions.some((model) => model.id === liveModel) ? (
-                      <option value={liveModel}>{liveModel}</option>
-                    ) : null}
                     {modelOptions.map((model) => (
                       <option key={model.id} value={model.id}>{model.label}</option>
                     ))}
