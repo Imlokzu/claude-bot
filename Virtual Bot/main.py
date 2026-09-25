@@ -54,6 +54,7 @@ import brain_context
 import brains
 import chat_bubbles
 import chat_store
+import openclaw_config
 import openclaw_models
 import openclaw_settings
 from tool_activity import ActivityLog, detail_for, result_failed
@@ -780,10 +781,18 @@ def api_setup_get() -> dict:
         "models": brains.models_with_capabilities(),
         "selected_model": brains.get_selected_omni_model(),
         # Чи задані ключі (лише факт, не значення)
-        "keys_set": {
-            "omni": cfg.get_omni_key() is not None,
-            "openclaw": cfg.get_openclaw_token() is not None,
-        },
+        "keys_set": _keys_state(),
+    }
+
+
+def _keys_state() -> dict:
+    """Whether each secret is set, and who owns it. Never the value."""
+    return {
+        "omni": cfg.get_omni_key() is not None,
+        "openclaw": cfg.get_openclaw_token() is not None,
+        # "openclaw": read from the local gateway's own config, so the panel
+        # shows it as managed there instead of offering a second copy.
+        "openclaw_source": "openclaw" if openclaw_config.gateway_token() else "env",
     }
 
 
@@ -808,20 +817,43 @@ def _update_env_file(updates: dict[str, str]) -> None:
         pass
 
 
+def _drop_env_line(key: str) -> None:
+    """Remove KEY from Virtual Bot/.env so an old copy cannot shadow OpenClaw."""
+    env_path = cfg.BASE_DIR / ".env"
+    try:
+        lines = env_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    kept = [ln for ln in lines if not ln.strip().startswith(f"{key}=")]
+    if len(kept) != len(lines):
+        env_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
+
 @app.post("/api/setup/keys")
-def api_setup_keys(req: KeysSaveRequest) -> dict:
-    """Зберігає секрети у .env (порожнє = не міняти). Значення не повертаємо."""
-    _update_env_file({
-        "OMNI_API_KEY": req.omni_key.strip(),
-        "OPENCLAW_TOKEN": req.openclaw_token.strip(),
-    })
-    return {
-        "ok": True,
-        "keys_set": {
-            "omni": cfg.get_omni_key() is not None,
-            "openclaw": cfg.get_openclaw_token() is not None,
-        },
-    }
+async def api_setup_keys(req: KeysSaveRequest, request: Request) -> dict:
+    """
+    Save secrets; an empty value means "keep". Values are never returned.
+
+    The Omni key goes into OpenClaw's `env.vars`, the one place both the
+    gateway and this bot read it. The gateway token is only written to .env
+    for a gateway on another host: a local gateway's token is read from its
+    own config, so a copy here could only go stale.
+    """
+    await _require_user(request)
+    omni = req.omni_key.strip()
+    if omni:
+        code, _out, err = await openclaw_models._run_cli(
+            "config", "set", "env.vars.OMNI_API_KEY", json.dumps(omni), "--strict-json",
+        )
+        if code != 0:
+            log.warning("openclaw config set env.vars.OMNI_API_KEY: code %d (%s)", code, err.strip()[:160])
+            raise HTTPException(status_code=502, detail="OpenClaw rejected the key")
+        _drop_env_line("OMNI_API_KEY")
+        os.environ.pop("OMNI_API_KEY", None)
+    token = req.openclaw_token.strip()
+    if token and not openclaw_config.gateway_token():
+        _update_env_file({"OPENCLAW_TOKEN": token})
+    return {"ok": True, "keys_set": _keys_state()}
 
 
 @app.post("/api/setup")

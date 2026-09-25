@@ -244,9 +244,9 @@ coding:
 openclaw:
   base_url: http://127.0.0.1:18789
   agent: openclaw/default
-  # Vision requests stay inside OpenClaw but use a model that accepts images.
-  image_model: regolo/qwen3.5-122b
-  # Звідки взяти токен, якщо env OPENCLAW_TOKEN не задано (шлях відносно цієї папки)
+  # The image model and the gateway token are not set here: both belong to
+  # OpenClaw (agents.defaults.imageModel, gateway.auth.token) and are read
+  # from its config. The fallback below only matters for a remote gateway.
   voice_loop_config: "../Voice Loop/config.yaml"
   timeout_s: 45
 

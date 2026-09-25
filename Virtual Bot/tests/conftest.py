@@ -12,6 +12,14 @@ import pytest
 # auth_clerk, а той — env при кожному запиті, але хай буде до всього).
 os.environ.setdefault("CLERK_DISABLED", "1")
 
+# Point OpenClaw (our reader and every `openclaw` subprocess) at a file that
+# does not exist, so no test ever reads the owner's gateway token or rewrites
+# their real config. Tests that need a config write their own and patch it in.
+os.environ.setdefault(
+    "OPENCLAW_CONFIG_PATH",
+    str(Path(tempfile.gettempdir()) / "virtual-bot-tests" / "no-openclaw.json"),
+)
+
 import chat_store
 
 

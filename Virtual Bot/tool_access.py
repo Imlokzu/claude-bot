@@ -27,12 +27,13 @@ import tempfile
 from pathlib import Path
 
 import emotions_mcp
+import openclaw_config
 import tools_mcp
 import workspace_mcp
 
 log = logging.getLogger("virtual_bot.tool_access")
 
-CONFIG_PATH = Path.home() / ".openclaw" / "openclaw.json"
+CONFIG_PATH = openclaw_config.config_path()
 
 # Tools that act outside this machine or destroy data. The panel warns before
 # switching these on; nothing is blocked, but an accidental tap should not

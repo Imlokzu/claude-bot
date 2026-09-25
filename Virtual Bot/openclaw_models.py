@@ -34,6 +34,7 @@ import time
 from pathlib import Path
 
 import app_config as cfg
+import openclaw_config
 
 log = logging.getLogger("virtual_bot.openclaw_models")
 
@@ -58,7 +59,7 @@ _CATALOG_TTL_S = 120.0
 # Last list that actually came back. A restart, or a CLI that does not
 # answer in time, still has names to show instead of a blank select.
 _DISK_CACHE: Path | None = Path.home() / ".openclaw" / "virtual-bot-brain-models.json"
-_CONFIG_PATH = Path.home() / ".openclaw" / "openclaw.json"
+_CONFIG_PATH = openclaw_config.config_path()
 
 _catalog: list[dict] | None = None
 _catalog_at: float = 0.0

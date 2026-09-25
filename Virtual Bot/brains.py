@@ -29,6 +29,7 @@ import profile_store
 import trace_log
 from emotions import ALLOWED_EMOTIONS, extract_emotion, guess_emotion
 from memory import append_user_profile, find_relevant_notes, load_user_profile
+import openclaw_config
 import openclaw_models
 from openclaw_activity import GatewayActivity
 import tools as tool_registry
@@ -380,11 +381,8 @@ def _openclaw_agent_model() -> str:
     override = openclaw_models.get_selected()
     if override:
         return override.split("/")[-1]
-    path = Path.home() / ".openclaw" / "openclaw.json"
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        model = data["agents"]["defaults"]["model"]["primary"]
-    except Exception:  # noqa: BLE001 — конфіг чужого застосунку може змінитись
+    model = openclaw_config.get("agents.defaults.model.primary", "")
+    if not isinstance(model, str):
         return ""
     # «omni/opencode-go/minimax-m3» → «minimax-m3»: показуємо саму модель
     return str(model).split("/")[-1] if model else ""
@@ -670,6 +668,19 @@ def _openclaw_note_success() -> None:
     _openclaw_failed_at_mono = None
 
 
+def _image_headers() -> dict[str, str]:
+    """
+    Route an image turn to OpenClaw's own image model.
+
+    The panel's text-model override must not reach an image turn: a text-only
+    model would drop the picture. The image model comes from OpenClaw's
+    config, not a second copy in config.yaml that nobody updated when the
+    panel changed it. Unset means no header, and the gateway decides.
+    """
+    model = openclaw_config.image_model()
+    return {"x-openclaw-model": model} if model else {}
+
+
 async def chat_openclaw(
     message: str,
     system_prompt: str,
@@ -701,11 +712,7 @@ async def chat_openclaw(
         "Content-Type": "application/json",
         # Вибір моделі в панелі. Поле `model` вище — це АГЕНТ, а не модель.
         # Vision явно йде на image-модель OpenClaw; текст лишає вибір панелі.
-        **(
-            {"x-openclaw-model": cfg.OPENCLAW_IMAGE_MODEL}
-            if images
-            else openclaw_models.chat_headers()
-        ),
+        **(_image_headers() if images else openclaw_models.chat_headers()),
     }
     if session_key:
         headers["x-openclaw-session-key"] = session_key

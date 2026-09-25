@@ -14,11 +14,12 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+import openclaw_config
 import openclaw_models
 
 log = logging.getLogger("virtual_bot.openclaw_settings")
 
-CONFIG_PATH = Path.home() / ".openclaw" / "openclaw.json"
+CONFIG_PATH = openclaw_config.config_path()
 
 _MISSING = object()
 

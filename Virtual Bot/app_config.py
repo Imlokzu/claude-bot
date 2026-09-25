@@ -2,7 +2,8 @@
 «Клод Бот» — Virtual Bot: завантаження конфігурації.
 
 Читає config.yaml (без секретів) і окремо дістає секрети:
-- токен OpenClaw: env OPENCLAW_TOKEN (пріоритет) або з "Voice Loop/config.yaml";
+- OpenClaw gateway token: from OpenClaw's own config when the gateway is
+  local, otherwise env OPENCLAW_TOKEN or "Voice Loop/config.yaml";
 - ключ Anthropic: тільки env ANTHROPIC_API_KEY.
 
 Секрети НІКОЛИ не потрапляють у відповіді API і в статику.
@@ -17,6 +18,8 @@ from typing import Any
 from urllib.parse import urlparse
 
 import yaml
+
+import openclaw_config
 
 # Коренева папка Virtual Bot (де лежить цей файл)
 BASE_DIR = Path(__file__).resolve().parent
@@ -254,7 +257,8 @@ OMNI_MODELS: list[dict[str, object]] = _load_omni_models()
 
 OPENCLAW_BASE_URL: str = cfg_str("openclaw", "base_url", default="http://127.0.0.1:18789").rstrip("/")
 OPENCLAW_AGENT: str = cfg_str("openclaw", "agent", default="openclaw/default")
-OPENCLAW_IMAGE_MODEL: str = cfg_str("openclaw", "image_model", default="regolo/qwen3.5-122b")
+# The image model is not configured here: it is OpenClaw's
+# agents.defaults.imageModel, read per request (openclaw_config.image_model).
 OPENCLAW_TIMEOUT_S: float = cfg_float("openclaw", "timeout_s", default=45)
 # Чат: два різні таймаути OpenClaw плюс бекоф-запобіжник після невдачі.
 #
@@ -393,9 +397,19 @@ def httpx_trust_env(url: str) -> bool:
 
 def get_openclaw_token() -> str | None:
     """
-    Токен OpenClaw: спершу env OPENCLAW_TOKEN, інакше — з config.yaml Voice Loop.
-    Повертає None, якщо токена ніде нема. Значення — секрет, не логувати!
+    OpenClaw gateway token. A secret: never log it.
+
+    When the gateway runs on this machine, its own config is the only source:
+    a copy in .env went stale the first time OpenClaw rotated the token, and
+    the bot then failed with 401 while the panel said the key was set. The
+    env var and the Voice Loop config remain for a gateway on another host.
     """
+    host = (urlparse(OPENCLAW_BASE_URL).hostname or "").lower()
+    if host in {"127.0.0.1", "localhost", "::1"}:
+        token = openclaw_config.gateway_token()
+        if token:
+            return token
+
     env_token = os.environ.get("OPENCLAW_TOKEN", "").strip()
     if env_token:
         return env_token
@@ -409,11 +423,13 @@ def get_openclaw_token() -> str | None:
 
 def get_omni_key() -> str | None:
     """
-    Ключ Omni-роутера — тільки з env OMNI_API_KEY (зазвичай із файлу .env).
-    Повертає None, якщо ключа нема. Значення — секрет, не логувати!
+    Omni router key. A secret: never log it.
+
+    An explicit environment variable wins (a real `export`); otherwise the
+    key is the one OpenClaw holds in `env.vars`, which the panel writes.
     """
     key = os.environ.get("OMNI_API_KEY", "").strip()
-    return key or None
+    return key or openclaw_config.env_var("OMNI_API_KEY")
 
 
 def get_anthropic_key() -> str | None:
