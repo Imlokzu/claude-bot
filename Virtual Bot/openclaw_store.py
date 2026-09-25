@@ -34,8 +34,20 @@ def _openclaw_command() -> str:
 
 
 def _agent_args() -> list[str]:
+    """
+    `--agent` for the CLI, derived from the gateway route in config.yaml.
+
+    `openclaw/default` is a model route on the HTTP gateway, not an agent id:
+    passed as-is the CLI answered "Unknown agent id" and every skills list
+    and install failed. `openclaw/<id>` names agent <id>; `default` means
+    "let OpenClaw pick its default agent", which is what omitting it does.
+    """
     agent = str(getattr(cfg, "OPENCLAW_AGENT", "")).strip()
-    return ["--agent", agent] if agent else []
+    if agent.startswith("openclaw/"):
+        agent = agent[len("openclaw/"):]
+    if not agent or agent == "default" or "/" in agent:
+        return []
+    return ["--agent", agent]
 
 
 def _run(args: list[str], *, timeout: int) -> str:

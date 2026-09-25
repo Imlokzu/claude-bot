@@ -213,5 +213,18 @@ class InstallEndpointTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
 
+class AgentArgsTests(unittest.TestCase):
+    def test_gateway_route_is_not_passed_as_an_agent_id(self) -> None:
+        import openclaw_store
+        for route, expected in (
+            ("openclaw/default", []),
+            ("openclaw/main", ["--agent", "main"]),
+            ("helper", ["--agent", "helper"]),
+            ("", []),
+        ):
+            with patch.object(openclaw_store.cfg, "OPENCLAW_AGENT", route):
+                self.assertEqual(openclaw_store._agent_args(), expected, route)
+
+
 if __name__ == "__main__":
     unittest.main()
