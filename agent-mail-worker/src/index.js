@@ -2,6 +2,22 @@
  * Cloudflare Email Routing Worker for Agent Mailbox & OTP extraction
  */
 
+function bearer(request) {
+  return (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "");
+}
+
+// Constant-time comparison. Hashing first makes both sides the same length,
+// so neither the content nor the length of the secret leaks through timing.
+async function secretEquals(provided, expected) {
+  if (!provided || !expected) return false;
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(provided)),
+    crypto.subtle.digest("SHA-256", encoder.encode(expected)),
+  ]);
+  return crypto.subtle.timingSafeEqual(a, b);
+}
+
 // Helper to extract OTP code and verification URL from email text/subject
 function extractOtpAndLinks(subject, bodyText) {
   const fullContent = `${subject}\n${bodyText}`;
@@ -176,17 +192,22 @@ export default {
     // If this is an agent send endpoint, let its dedicated handler perform agent token validation
     const isSendEndpoint = url.pathname === "/api/send" || url.pathname === "/v1/send";
 
-    // General auth check for inbox / OTP management endpoints
+    // General auth check for inbox / OTP management endpoints.
+    // Fails closed: a Worker deployed without its secrets answers 503 instead
+    // of silently letting everyone read every mailbox. The key is accepted
+    // only in headers; a key in the query string ends up in access logs.
     if (!isSendEndpoint) {
-      const authHeader = request.headers.get("Authorization") || "";
-      const xApiKey = request.headers.get("X-API-Key") || "";
-      const queryKey = url.searchParams.get("key") || "";
-
-      const providedKey = authHeader.replace(/^Bearer\s+/i, "") || xApiKey || queryKey;
-      const validAdminKey = env.API_KEY;
-      const validAgentToken = env.DEFAULT_AGENT_TOKEN;
-
-      if (validAdminKey && providedKey !== validAdminKey && providedKey !== validAgentToken) {
+      if (!env.API_KEY || !env.DEFAULT_AGENT_TOKEN) {
+        return Response.json(
+          { error: "Mail gateway secrets are not configured" },
+          { status: 503, headers: corsHeaders }
+        );
+      }
+      const providedKey = bearer(request) || request.headers.get("X-API-Key") || "";
+      const allowed =
+        (await secretEquals(providedKey, env.API_KEY)) ||
+        (await secretEquals(providedKey, env.DEFAULT_AGENT_TOKEN));
+      if (!allowed) {
         return Response.json(
           { error: "Unauthorized: invalid API key" },
           { status: 401, headers: corsHeaders }
@@ -306,11 +327,15 @@ export default {
     // POST /api/send or /v1/send — Secure outbound email gateway for AI agents
     if ((url.pathname === "/api/send" || url.pathname === "/v1/send") && request.method === "POST") {
       // 1. Validate agent token
-      const agentToken = (request.headers.get("Authorization") || "").replace(/^Bearer\s+/i, "") ||
-                         request.headers.get("X-Agent-Token") || "";
-      const validToken = env.DEFAULT_AGENT_TOKEN || "ag_tok_lokzu_sec_2026";
+      if (!env.DEFAULT_AGENT_TOKEN) {
+        return Response.json(
+          { error: "Mail gateway secrets are not configured" },
+          { status: 503, headers: corsHeaders }
+        );
+      }
+      const agentToken = bearer(request) || request.headers.get("X-Agent-Token") || "";
       
-      if (!agentToken || agentToken !== validToken) {
+      if (!(await secretEquals(agentToken, env.DEFAULT_AGENT_TOKEN))) {
         return Response.json(
           { error: "Unauthorized: invalid agent token. The agent does not have permission to send emails." },
           { status: 401, headers: corsHeaders }

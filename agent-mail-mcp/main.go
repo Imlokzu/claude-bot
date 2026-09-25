@@ -14,7 +14,6 @@ import (
 
 const (
 	defaultGatewayURL = "https://send.waveio.me"
-	defaultAgentToken = "ag_tok_lokzu_sec_2026"
 	defaultAgentEmail = "lokzu@ag.waveio.me"
 	mcpVersion        = "2024-11-05"
 )
@@ -30,10 +29,9 @@ func loadConfig() Config {
 	if gw == "" {
 		gw = defaultGatewayURL
 	}
+	// No default token: one compiled into the binary is published with the
+	// source. Without AGENT_TOKEN the gateway answers 401, which says why.
 	tok := os.Getenv("AGENT_TOKEN")
-	if tok == "" {
-		tok = defaultAgentToken
-	}
 	email := os.Getenv("AGENT_EMAIL")
 	if email == "" {
 		email = defaultAgentEmail

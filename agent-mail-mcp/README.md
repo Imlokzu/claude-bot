@@ -19,5 +19,5 @@ go build -o bin/agent-mail-mcp main.go
 
 ## Running
 ```bash
-AGENT_TOKEN="ag_tok_lokzu_sec_2026" AGENT_EMAIL="lokzu@ag.waveio.me" ./bin/agent-mail-mcp
+AGENT_TOKEN="<your agent token>" AGENT_EMAIL="lokzu@ag.waveio.me" ./bin/agent-mail-mcp
 ```

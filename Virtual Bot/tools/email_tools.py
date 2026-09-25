@@ -17,13 +17,14 @@ import httpx
 log = logging.getLogger("virtual_bot.tools.email")
 
 DEFAULT_API_URL = "https://mail.waveio.me"
-DEFAULT_API_KEY = "agmail_secret_lokzu_2026"
 DEFAULT_DOMAIN = "ag.waveio.me"
 
 
 def _get_config() -> tuple[str, str, str]:
     api_url = os.getenv("AGENT_MAIL_API_URL", DEFAULT_API_URL).rstrip("/")
-    api_key = os.getenv("AGENT_MAIL_API_KEY", DEFAULT_API_KEY)
+    # No default: a key baked into the source is published with the repo.
+    # It lives in Virtual Bot/.env (git-ignored) as AGENT_MAIL_API_KEY.
+    api_key = os.getenv("AGENT_MAIL_API_KEY", "").strip()
     domain = os.getenv("AGENT_MAIL_DOMAIN", DEFAULT_DOMAIN).strip()
     return api_url, api_key, domain
 

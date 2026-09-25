@@ -12,10 +12,13 @@ routes = [
 binding = "AG_MAILBOX"
 id = "0266ff7e479e4a1fae1e8508639e6edc"
 
+# Secrets are NOT vars: set them with `wrangler secret put <NAME>`.
+#   API_KEY              admin key for inbox / OTP endpoints
+#   DEFAULT_AGENT_TOKEN  agent token for inbox and /v1/send
+#   BREVO_API_KEY        outbound mail provider key
+# A value written here is published with the repo.
 [vars]
 FORWARD_MAIN_DOMAIN_TO = "lokzuhd@gmail.com"
-API_KEY = "agmail_secret_lokzu_2026"
-DEFAULT_AGENT_TOKEN = "ag_tok_lokzu_sec_2026"
 DEFAULT_SENDER_EMAIL = "noreply@waveio.me"
 
 
