@@ -483,6 +483,11 @@ class ProfileSaveRequest(BaseModel):
     persona: str = Field(default="friendly", max_length=40)
     persona_custom: str = Field(default="", max_length=400)
     greeting: str = Field(default="", max_length=300)
+    # The Style tab posts these too. Without the fields pydantic dropped them
+    # silently, so the switches looked saved and reverted on reload.
+    reply_length: str | None = Field(default=None, max_length=16)
+    use_emoji: bool | None = None
+    spontaneous: bool | None = None
 
 
 class McpEnableRequest(BaseModel):
@@ -822,7 +827,7 @@ def api_setup_keys(req: KeysSaveRequest) -> dict:
 @app.post("/api/setup")
 def api_setup_save(req: ProfileSaveRequest) -> dict:
     """Зберігає профіль (імʼя/мова/характер/привітання) — одразу впливає на промпт."""
-    prof = profile_store.save(req.model_dump())
+    prof = profile_store.save(req.model_dump(exclude_none=True))
     return {"ok": True, "profile": prof}
 
 
