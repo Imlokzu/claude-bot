@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { AudioLines, Brain, Palette, Puzzle, Search, Sparkles, User, Wrench } from 'lucide-react';
+import { AudioLines, Brain, Compass, Palette, Plug, Puzzle, Search, Sparkles, User, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input, Select, Textarea } from '@/components/ui/Field';
@@ -17,7 +17,9 @@ import { ACCENTS, THEMES, useTheme } from '@/hooks/useTheme';
 import { useLanguage } from '@/hooks/useLanguage';
 import { JellyRadio } from '@/vendor/reactbits';
 import { useCssVar } from '@/hooks/useAccentRgb';
-import { StoreSection } from './StoreSection';
+import { DiscoverSection } from './DiscoverSection';
+import { McpSection } from './McpSection';
+import { SkillsSection } from './SkillsSection';
 import { ToolsSection } from './ToolsSection';
 import { FirstRun } from './FirstRun';
 import { VoiceSection } from './VoiceSection';
@@ -31,16 +33,18 @@ import type { SetupData } from './types';
  * row is marked and sits next to the local row it belongs with.
  */
 
-type SectionId = 'profile' | 'style' | 'brain' | 'voice' | 'look' | 'tools' | 'skills';
+type SectionId = 'profile' | 'style' | 'brain' | 'voice' | 'look' | 'tools' | 'mcp' | 'skills' | 'discover';
 
-const SECTIONS: { id: SectionId; label: 'settings.section.profile' | 'settings.section.style' | 'settings.section.brain' | 'settings.section.voice' | 'settings.section.look' | 'settings.section.tools' | 'settings.section.skills'; icon: LucideIcon; local: string }[] = [
+const SECTIONS: { id: SectionId; label: `settings.section.${SectionId}`; icon: LucideIcon; local: string }[] = [
   { id: 'profile', label: 'settings.section.profile', icon: User, local: 'імʼя мова характер опис name persona' },
   { id: 'style', label: 'settings.section.style', icon: Sparkles, local: 'емодзі привітання довжина спонтанні emoji greeting reply' },
   { id: 'brain', label: 'settings.section.brain', icon: Brain, local: 'модель ключ omni токен model key' },
   { id: 'voice', label: 'settings.section.voice', icon: AudioLines, local: 'голос мікрофон темп voice' },
   { id: 'look', label: 'settings.section.look', icon: Palette, local: 'тема попап скло акцент theme popup glass accent' },
   { id: 'tools', label: 'settings.section.tools', icon: Wrench, local: 'інструмент дозвіл tool' },
+  { id: 'mcp', label: 'settings.section.mcp', icon: Plug, local: 'mcp сервер server міст bridge' },
   { id: 'skills', label: 'settings.section.skills', icon: Puzzle, local: 'уміння скіл skill' },
+  { id: 'discover', label: 'settings.section.discover', icon: Compass, local: 'каталог магазин встановити smithery clawhub registry catalog store install' },
 ];
 
 const fieldControl = 'h-8 w-[200px] text-[13px]';
@@ -276,7 +280,9 @@ export default function SettingsPanel() {
                   <OpenClawFields section="brain" skipGroups={['models']} query={narrowed('brain') ? needle : ''} />
                 </div>
               ) : null}
-              {current?.id === 'skills' ? <StoreSection /> : null}
+              {current?.id === 'mcp' ? <McpSection onDiscover={() => setSection('discover')} /> : null}
+              {current?.id === 'skills' ? <SkillsSection onDiscover={() => setSection('discover')} /> : null}
+              {current?.id === 'discover' ? <DiscoverSection /> : null}
               {current?.id === 'tools' ? (
                 <div className="space-y-6">
                   {narrowed('tools') ? null : <ToolsSection />}
@@ -398,20 +404,22 @@ function BrainSection({ setup }: { setup: SetupData }) {
   const [omni, setOmni] = useState('');
   const [openclaw, setOpenclaw] = useState('');
   const [busy, setBusy] = useState(false);
+  // A local gateway owns its token; the panel shows it, it does not copy it.
+  const tokenOwned = setup.keys_set.openclaw_source === 'openclaw';
 
   const saveKeys = async () => {
     setBusy(true);
     try {
-      // Порожнє поле = «не міняти»: бекенд ігнорує порожні значення, тож
-      // випадково стерти робочий ключ неможливо.
-      await post('/api/setup/keys', { omni_key: omni, openclaw_token: openclaw });
+      // An empty field means "keep": the backend ignores empty values, so a
+      // working key cannot be wiped by accident.
+      await post('/api/setup/keys', { omni_key: omni, openclaw_token: tokenOwned ? '' : openclaw });
       setOmni('');
       setOpenclaw('');
-      toast.ok('Ключі збережено');
+      toast.ok(t('settings.keys.saved'));
       void client.invalidateQueries({ queryKey: ['setup'] });
       void client.invalidateQueries({ queryKey: ['status'] });
     } catch (error) {
-      toast.error('Не вдалося зберегти', (error as Error).message);
+      toast.error(t('settings.keys.failed'), (error as Error).message);
     } finally {
       setBusy(false);
     }
@@ -420,9 +428,10 @@ function BrainSection({ setup }: { setup: SetupData }) {
   return (
     <SettingGroup label={t('settings.group.keys')}>
       <SettingRow
-        label="Omni API-ключ"
-        hint={setup.keys_set.omni ? 'Уже заданий — залиш порожнім, щоб не міняти' : 'Не заданий'}
+        label={t('settings.keys.omni')}
+        hint={glue(setup.keys_set.omni ? t('settings.keys.omniSet') : t('settings.keys.omniUnset'))}
         htmlFor="omni-key"
+        mark={t('settings.source.openclaw')}
       >
         <Input
           id="omni-key"
@@ -431,27 +440,39 @@ function BrainSection({ setup }: { setup: SetupData }) {
           autoComplete="off"
           value={omni}
           onChange={(event) => setOmni(event.target.value)}
-          placeholder={setup.keys_set.omni ? '••••••••' : 'вставити ключ'}
+          placeholder={setup.keys_set.omni ? '••••••••' : t('settings.keys.paste')}
         />
       </SettingRow>
-      <SettingRow
-        label="OpenClaw токен"
-        hint={setup.keys_set.openclaw ? 'Уже заданий — залиш порожнім, щоб не міняти' : 'Не заданий'}
-        htmlFor="openclaw-token"
-      >
-        <Input
-          id="openclaw-token"
-          className={fieldControl}
-          type="password"
-          autoComplete="off"
-          value={openclaw}
-          onChange={(event) => setOpenclaw(event.target.value)}
-          placeholder={setup.keys_set.openclaw ? '••••••••' : 'вставити токен'}
-        />
-      </SettingRow>
+      {tokenOwned ? (
+        <SettingRow
+          label={t('settings.keys.token')}
+          hint={glue(t('settings.keys.tokenOwned'))}
+          mark={t('settings.source.openclaw')}
+        >
+          <span className={cn('text-[12px]', setup.keys_set.openclaw ? 'text-ok' : 'text-err')}>
+            {setup.keys_set.openclaw ? t('settings.keys.managed') : t('settings.keys.missing')}
+          </span>
+        </SettingRow>
+      ) : (
+        <SettingRow
+          label={t('settings.keys.token')}
+          hint={glue(setup.keys_set.openclaw ? t('settings.keys.tokenSet') : t('settings.keys.tokenUnset'))}
+          htmlFor="openclaw-token"
+        >
+          <Input
+            id="openclaw-token"
+            className={fieldControl}
+            type="password"
+            autoComplete="off"
+            value={openclaw}
+            onChange={(event) => setOpenclaw(event.target.value)}
+            placeholder={setup.keys_set.openclaw ? '••••••••' : t('settings.keys.paste')}
+          />
+        </SettingRow>
+      )}
       <div className="flex justify-end px-4 py-3">
         <Button variant="solid" disabled={busy || (!omni && !openclaw)} onClick={saveKeys}>
-          {busy ? 'Зберігаю…' : 'Зберегти ключі'}
+          {busy ? t('settings.keys.saving') : t('settings.keys.save')}
         </Button>
       </div>
     </SettingGroup>

@@ -25,30 +25,82 @@ export interface SetupData {
   reply_lengths: Option[];
   models: { id: string; label?: string }[];
   selected_model: string;
-  keys_set: { omni: boolean; openclaw: boolean };
+  keys_set: { omni: boolean; openclaw: boolean; openclaw_source?: 'openclaw' | 'env' };
 }
 
-export interface StoreSkill {
-  slug: string;
-  name?: string;
-  description?: string;
-  installed?: boolean;
-  version?: string;
+/** One entry of OpenClaw's mcp.servers. Env and header values never arrive. */
+export interface McpServer {
+  name: string;
+  transport: 'stdio' | 'http';
+  launch: string;
+  enabled: boolean;
+  env_keys: string[];
+  header_keys: string[];
+  builtin: boolean;
 }
 
-export interface StoreMcp {
-  id: string;
-  label?: string;
-  name?: string;
-  description?: string;
-  hint?: string;
-  installed?: boolean;
+export interface InstalledSkill {
+  name: string;
+  description: string;
+  emoji: string;
+  source: string;
+  bundled: boolean;
+  enabled: boolean;
+  eligible: boolean;
+  missing: string[];
+  homepage: string;
 }
 
-export interface StoreCatalog {
-  skills: StoreSkill[];
-  mcp: StoreMcp[];
-  installed: { skills: string[]; mcp: string[] };
+export interface Extensions {
+  available: boolean;
+  mcp: McpServer[];
+  skills: InstalledSkill[];
   errors: Record<string, string>;
-  openclaw: { available: boolean };
+}
+
+export type CatalogSource = 'mcp-registry' | 'smithery' | 'clawhub' | 'skills-sh';
+
+export interface CatalogItem {
+  source: CatalogSource;
+  kind: 'mcp' | 'skill';
+  id: string;
+  name: string;
+  description: string;
+  homepage: string;
+  version?: string;
+  popularity?: number;
+  verified?: boolean;
+  installable: boolean;
+  via: string;
+}
+
+export interface CatalogResult {
+  source: CatalogSource;
+  kind: 'mcp' | 'skill';
+  query: string;
+  items: CatalogItem[];
+}
+
+export interface PlanField {
+  name: string;
+  description: string;
+  required: boolean;
+  secret: boolean;
+  default: string;
+  template: string;
+}
+
+export interface InstallPlan {
+  source: CatalogSource;
+  id: string;
+  kind: 'mcp' | 'skill';
+  name?: string;
+  via?: string;
+  transport?: 'stdio' | 'http';
+  command?: string;
+  args?: string[];
+  url?: string;
+  env?: PlanField[];
+  headers?: PlanField[];
+  ref?: string;
 }
