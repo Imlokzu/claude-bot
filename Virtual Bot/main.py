@@ -485,9 +485,9 @@ class ProfileSaveRequest(BaseModel):
     greeting: str = Field(default="", max_length=300)
     # The Style tab posts these too. Without the fields pydantic dropped them
     # silently, so the switches looked saved and reverted on reload.
-    reply_length: str | None = Field(default=None, max_length=16)
-    use_emoji: bool | None = None
-    spontaneous: bool | None = None
+    reply_length: Optional[str] = Field(default=None, max_length=16)
+    use_emoji: Optional[bool] = None
+    spontaneous: Optional[bool] = None
 
 
 class McpEnableRequest(BaseModel):
