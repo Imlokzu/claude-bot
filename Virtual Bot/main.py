@@ -79,10 +79,12 @@ import video_control
 import elevenlabs_voice
 import piper_voice
 import memory
+import openclaw_extensions
 import openclaw_store
 import profile_store
 import services_manager
 import setup_suggestions
+import extension_registries
 import tool_access
 import tools
 import projects
@@ -501,6 +503,31 @@ class SkillInstallRequest(BaseModel):
     slug: str = Field(min_length=1, max_length=128)
     version: str = Field(default="", max_length=64)
     force: bool = False
+
+
+class McpAddRequest(BaseModel):
+    """A custom MCP server. Values in env and headers are secrets."""
+    name: str = Field(min_length=1, max_length=48)
+    transport: str = Field(default="stdio", pattern="^(stdio|http)$")
+    command: str = Field(default="", max_length=400)
+    args: list[str] = Field(default_factory=list, max_length=40)
+    env: dict[str, str] = Field(default_factory=dict)
+    url: str = Field(default="", max_length=2000)
+    http_transport: str = Field(default="streamable-http", pattern="^(streamable-http|sse)$")
+    headers: dict[str, str] = Field(default_factory=dict)
+
+
+class EnabledRequest(BaseModel):
+    enabled: bool
+
+
+class ExtensionInstallRequest(BaseModel):
+    """Install from a catalog. Only the id is trusted; the plan is rebuilt here."""
+    source: str = Field(min_length=1, max_length=32)
+    id: str = Field(min_length=1, max_length=200)
+    name: str = Field(default="", max_length=48)
+    env: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
 
 
 class StorePackageRequest(BaseModel):
@@ -955,6 +982,148 @@ async def api_store_mcp_install(req: McpEnableRequest, request: Request) -> dict
     if setup_suggestions.by_id(req.id) is None:
         raise HTTPException(status_code=404, detail="Невідомий MCP у каталозі")
     return await asyncio.to_thread(_enable_one_mcp, req.id, req.env)
+
+
+# ------------------------------------------------------------------ MCP and skills
+#
+# What OpenClaw has installed, the few edits the panel makes to it, and the
+# public catalogs to add more from. There is no list of our own: see
+# openclaw_extensions.py.
+
+_EXTENSION_STATUS = {
+    "invalid_name": 400, "invalid_url": 400, "invalid_transport": 400,
+    "invalid_header": 400, "invalid_env": 400, "invalid_command": 400,
+    "invalid_slug": 400, "invalid_id": 400, "unknown_source": 400,
+    "builtin": 403, "not_found": 404, "exists": 409, "not_installable": 422,
+    "timeout": 504,
+}
+
+
+def _extension_error(exc: Exception) -> HTTPException:
+    code = getattr(exc, "code", "")
+    status = _EXTENSION_STATUS.get(code, 502)
+    return HTTPException(status_code=status, detail=str(exc))
+
+
+@app.get("/api/extensions")
+async def api_extensions(request: Request) -> dict:
+    await _require_user(request)
+    return await asyncio.to_thread(openclaw_extensions.installed)
+
+
+@app.post("/api/extensions/mcp")
+async def api_extensions_mcp_add(req: McpAddRequest, request: Request) -> dict:
+    await _require_user(request)
+    try:
+        return await asyncio.to_thread(
+            openclaw_extensions.add_mcp,
+            req.name,
+            command=req.command if req.transport == "stdio" else "",
+            args=req.args,
+            env=req.env,
+            url=req.url if req.transport == "http" else "",
+            http_transport=req.http_transport,
+            headers=req.headers,
+        )
+    except openclaw_store.OpenClawStoreError as exc:
+        raise _extension_error(exc) from exc
+
+
+@app.post("/api/extensions/mcp/{name}/enabled")
+async def api_extensions_mcp_enabled(name: str, req: EnabledRequest, request: Request) -> dict:
+    await _require_user(request)
+    try:
+        return await asyncio.to_thread(openclaw_extensions.set_mcp_enabled, name, req.enabled)
+    except openclaw_store.OpenClawStoreError as exc:
+        raise _extension_error(exc) from exc
+
+
+@app.delete("/api/extensions/mcp/{name}")
+async def api_extensions_mcp_remove(name: str, request: Request) -> dict:
+    await _require_user(request)
+    try:
+        return await asyncio.to_thread(openclaw_extensions.remove_mcp, name)
+    except openclaw_store.OpenClawStoreError as exc:
+        raise _extension_error(exc) from exc
+
+
+@app.post("/api/extensions/skills/{name}/enabled")
+async def api_extensions_skill_enabled(name: str, req: EnabledRequest, request: Request) -> dict:
+    await _require_user(request)
+    try:
+        return await asyncio.to_thread(openclaw_extensions.set_skill_enabled, name, req.enabled)
+    except openclaw_store.OpenClawStoreError as exc:
+        raise _extension_error(exc) from exc
+
+
+@app.get("/api/extensions/browse")
+async def api_extensions_browse(
+    request: Request,
+    source: str = Query(pattern="^(mcp-registry|smithery|clawhub|skills-sh)$"),
+    query: str = Query(default="", max_length=160),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> dict:
+    await _require_user(request)
+    try:
+        return await asyncio.to_thread(extension_registries.search, source, query, limit)
+    except extension_registries.RegistryError as exc:
+        raise _extension_error(exc) from exc
+
+
+@app.get("/api/extensions/browse/plan")
+async def api_extensions_plan(
+    request: Request,
+    source: str = Query(pattern="^(mcp-registry|smithery|clawhub|skills-sh)$"),
+    id: str = Query(min_length=1, max_length=200),
+) -> dict:
+    await _require_user(request)
+    try:
+        return await asyncio.to_thread(extension_registries.plan, source, id)
+    except extension_registries.RegistryError as exc:
+        raise _extension_error(exc) from exc
+
+
+def _install_from_catalog(req: ExtensionInstallRequest) -> dict:
+    plan = extension_registries.plan(req.source, req.id)
+    if plan["kind"] == "skill":
+        return {**openclaw_extensions.install_skill_ref(plan["ref"]), "kind": "skill"}
+    # Only the variables and headers the catalog declares go through, so a
+    # tampered request cannot add LD_PRELOAD or similar to the launch.
+    declared_env = {item["name"] for item in plan.get("env", [])}
+    env = {k: v for k, v in req.env.items() if k in declared_env and v}
+    headers = {
+        item["name"]: extension_registries.fill_template(item["template"], req.headers[item["name"]])
+        for item in plan.get("headers", [])
+        if req.headers.get(item["name"])
+    }
+    missing = [
+        item["name"]
+        for item in [*plan.get("env", []), *plan.get("headers", [])]
+        if item["required"] and not (env.get(item["name"]) or headers.get(item["name"]))
+    ]
+    if missing:
+        raise openclaw_store.OpenClawStoreError(
+            "Required values are missing: " + ", ".join(missing), code="invalid_env",
+        )
+    result = openclaw_extensions.add_mcp(
+        req.name.strip() or plan["name"],
+        command=plan.get("command", ""),
+        args=plan.get("args", []),
+        env=env,
+        url=plan.get("url", ""),
+        http_transport=plan.get("http_transport", "streamable-http"),
+        headers=headers,
+    )
+    return {**result, "kind": "mcp"}
+
+
+@app.post("/api/extensions/install")
+async def api_extensions_install(req: ExtensionInstallRequest, request: Request) -> dict:
+    await _require_user(request)
+    try:
+        return await asyncio.to_thread(_install_from_catalog, req)
+    except (openclaw_store.OpenClawStoreError, extension_registries.RegistryError) as exc:
+        raise _extension_error(exc) from exc
 
 
 # ------------------------------------------------------------------ магазин екрана

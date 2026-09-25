@@ -46,6 +46,9 @@ def _run(args: list[str], *, timeout: int) -> str:
             cwd=str(cfg.BASE_DIR),
             capture_output=True,
             text=True,
+            # No terminal behind us: a CLI that stops to ask (an install
+            # policy warning, a login) must fail fast, not wait for the timeout.
+            stdin=subprocess.DEVNULL,
             timeout=timeout,
             check=False,
         )
