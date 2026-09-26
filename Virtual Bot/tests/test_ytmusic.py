@@ -131,7 +131,9 @@ def test_play_music_tool_prefers_ytmusic(fake_helper, monkeypatch):
     monkeypatch.setattr(events, "publish", lambda event: published.append(event))
     result = asyncio.run(music_tools.play_music("anything"))
     assert result["source"] == "YouTube Music" and result["up_next"] >= 1
-    assert published[-1]["track"]["uploader"] == "A, B"
+    # Other publishers (console log, watcher) share the bus: filter by type.
+    music_events = [e for e in published if e.get("type") == "music"]
+    assert music_events[-1]["track"]["uploader"] == "A, B" and music_events[-1]["queue"]
 
 
 def test_play_music_tool_falls_back_without_helper(monkeypatch):
