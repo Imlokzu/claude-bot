@@ -272,12 +272,13 @@ SCHEMAS: list[dict] = [
                     "action": {
                         "type": "string",
                         "enum": ["pause", "resume", "stop", "forward", "back", "seek",
-                                 "restart", "end", "speed", "mute", "unmute"],
+                                 "restart", "end", "speed", "mute", "unmute",
+                                 "captions_on", "captions_off"],
                         "description": (
                             "pause — пауза; resume — далі; stop — зупинити й закрити; "
                             "forward/back — перемотати на seconds; seek — на position; "
                             "restart — з початку; end — у кінець; speed — швидкість rate; "
-                            "mute/unmute — звук."
+                            "mute/unmute — звук; captions_on/captions_off — субтитри на відео."
                         ),
                     },
                     "seconds": {

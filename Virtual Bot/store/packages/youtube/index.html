@@ -2,11 +2,12 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
+<title>YouTube</title>
 <style>
-  /* Палітра — та сама, що в пакеті device-settings (узгоджена з ботом).
-     Світла тема потрібна: батько шле її в botSkin разом зі скіном, і без
-     цього блоку застосунок лишався ТЕМНИМ на світлому екрані — а іконки на
-     currentColor стали б світлими на світлому. */
+  /* Palette shared with device-settings (tuned to the bot). The light theme
+     matters: the parent sends it in botSkin with the skin, and without this
+     block the app stayed DARK on a light screen — with currentColor icons
+     turning light on light. */
   :root {
     --bg: #16181a; --panel: #1e2124; --line: #2f3438;
     --text: #e8e4dc; --muted: #8e9498; --accent: #d17a58;
@@ -20,51 +21,41 @@
     color-scheme: light;
   }
 
-  /* Застосунок екрана: батько — iframe 320×240. Кольори — зі змінних теми
-     (скін приходить повідомленням від батька), фолбеки — темна тема. */
   html, body { margin: 0; height: 100%; overflow: hidden;
     background: var(--bg, #16181a); color: var(--text, #e8e4dc);
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     -webkit-user-select: none; user-select: none;
     -webkit-tap-highlight-color: transparent; }
-  .wrap { display: flex; flex-direction: column; height: 100%; padding: 6px 8px 4px; gap: 5px; }
+  .wrap { display: flex; flex-direction: column; height: 100%; padding: 6px 8px 4px; gap: 5px; box-sizing: border-box; }
   .bar { display: flex; gap: 5px; flex: none; }
   input { flex: 1; min-width: 0; height: 28px; padding: 0 9px;
     border: 1px solid var(--line, #2f3438); border-radius: 14px;
     background: var(--panel, #1e2124); color: var(--text, #e8e4dc);
     font-size: 13px; outline: none; }
   input:focus { border-color: var(--accent, #d17a58); }
-  /* ⚠️ Тільки .bar button і .ctl button. Поки правило стояло на ВСІ button,
-     height діяв і на карточки результатів (.card — теж button): карточка з
-     превʼю має бути ~126px, а їй давали 30 — і кожна наступна накривала
-     попередню. Саме через це «превʼю накладені одне на одне». */
+  /* Only .bar and .ctl buttons. While this rule sat on ALL buttons, the
+     height also hit result cards (.card is a button too): a card with a
+     preview needs ~126px, it got 30 — and each card covered the previous. */
   .bar button { background: var(--panel, #1e2124); color: var(--text, #e8e4dc);
     border: 1px solid var(--line, #2f3438); border-radius: 14px;
     height: 28px; padding: 0 11px; font-size: 12px; flex: none; cursor: pointer; }
   .bar button:active { background: var(--accent, #d17a58); }
-  /* Шестерня — квадратна: поруч із «Шукати» на 320px кожен зайвий піксель
-     ширини забирає його в поля пошуку. */
+  /* Square cog: next to "Search" on 320px every extra pixel of width comes
+     out of the search field. */
   .bar button.icon { padding: 0; width: 28px; }
 
-  /* Іконки — свої, векторні, у стилі решти екрана: viewBox 24×24, ЛИШЕ
-     обведення `currentColor`, без заливки (той самий контракт, що в
-     static/screen/icons.js і в пакеті device-settings). Emoji тут не
-     годяться: браузер малює ⏸/⏪/⚙ КОЛЬОРОВИМИ растровими наліпками, і на
-     піксельному екрані під скіном вони читаються як чужі — не міняють колір
-     разом із темою, не тоншають, не масштабуються під розмір кнопки.
-     Тримаємо словник у пакеті, а не імпортуємо icons.js: пакет мусить
-     лишатися самодостатнім. */
+  /* Own vector icons in the screen's style: viewBox 24x24, stroke-only
+     currentColor, no fill (same contract as static/screen/icons.js). Kept in
+     the package, not imported: a package must stay self-contained. */
   svg { width: 14px; height: 14px; flex: none; fill: none;
     stroke: currentColor; stroke-width: 1.8;
     stroke-linecap: round; stroke-linejoin: round; }
   .bar button.icon svg { width: 15px; height: 15px; }
   .ctl button svg { width: 13px; height: 13px; display: block; margin: 0 auto; }
-  /* Кнопки з іконкою + підписом (режим, «Назад») — щоб текст не сідав на
-     іконку і обоє стояли по центру. */
   .ib { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
 
-  /* Рядок режиму + статус. Режим ЗАПАМʼЯТОВУЄТЬСЯ, тому тап по карточці
-     одразу вмикає — без другого питання «як саме грати». */
+  /* Mode row + status. The mode is REMEMBERED, so a tap on a card plays at
+     once — no second question about how. */
   .row2 { display: flex; align-items: center; gap: 6px; flex: none; min-height: 20px; }
   .seg { display: flex; flex: none; border: 1px solid var(--line, #2f3438);
     border-radius: 10px; overflow: hidden; }
@@ -75,34 +66,43 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .status.now { color: var(--accent, #d17a58); }
 
-  /* Сітка як на ютубі: дві колонки, превʼю на всю ширину карточки, 16:9.
-     Дві, а не одна: на 320px одна колонка дає превʼю 300×169 — тобто один
-     результат на екран, і пошук перетворюється на прокрутку. */
+  /* Two columns like YouTube: one column gives a 300x169 preview on 320px,
+     one result per screen, and search turns into scrolling. */
   .grid { flex: 1; min-height: 0; overflow-y: auto; touch-action: pan-y;
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px 7px;
     align-content: start; padding: 4px 0 6px;
     border-top: 1px solid var(--line, #2f3438); scrollbar-width: none; }
   .grid::-webkit-scrollbar { display: none; }
+  .shelf { grid-column: 1 / -1; font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted, #8e9498); padding-top: 2px; }
+  .chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; }
+  .chips button { background: var(--panel, #1e2124); color: var(--text, #e8e4dc);
+    border: 1px solid var(--line, #2f3438); border-radius: 11px;
+    min-height: 24px; padding: 0 9px; font-size: 10px; cursor: pointer; max-width: 140px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .card { display: flex; flex-direction: column; gap: 3px; width: 100%;
     padding: 0; border: none; background: transparent; text-align: left;
-    color: var(--text, #e8e4dc); cursor: pointer; }
+    color: var(--text, #e8e4dc); cursor: pointer; position: relative; }
   .card:active .thumb { border-color: var(--accent, #d17a58); }
   .card:disabled { opacity: 0.5; }
-  /* aspect-ratio, а не фіксована висота: карточка міняє ширину разом із
-     сіткою, а превʼю мусить лишатись 16:9, інакше кадр розтягує людей. */
+  /* aspect-ratio, not a fixed height: the card width follows the grid and
+     the preview must stay 16:9, or people get stretched. */
   .thumb { width: 100%; aspect-ratio: 16 / 9; border-radius: 5px;
     object-fit: cover; display: block; background: var(--line, #2f3438);
     border: 1px solid transparent; }
+  /* Resume bar under a continue-watching preview; scaleX, never width. */
+  .resume { position: absolute; left: 1px; right: 1px; top: 0; aspect-ratio: 16 / 9;
+    pointer-events: none; display: flex; align-items: flex-end; }
+  .resume i { display: block; height: 3px; width: 100%; background: var(--accent, #d17a58);
+    transform-origin: left center; border-radius: 0 0 0 5px; }
   .t { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
     overflow: hidden; font-size: 10.5px; line-height: 1.22; font-weight: 600; }
   .s { font-size: 9px; color: var(--muted, #8e9498);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  /* Прямий ефір: змукшованої доріжки в нього немає, тому видно ЗАРАЗ, а не
-     після тапу в тишу. */
+  /* A live stream has no muxed track, so say so NOW rather than after a
+     tap into silence. The dot is CSS: a glyph sits off the baseline. */
   .live { color: var(--accent, #d17a58); font-weight: 600; }
-  /* Кружок ефіру — CSS, а не символ ●: у частині шрифтів він або завеликий,
-     або з'їжджає з базової лінії. */
   .live::before { content: ""; display: inline-block; width: 5px; height: 5px;
     margin-right: 3px; border-radius: 50%; background: currentColor;
     vertical-align: 1px; }
@@ -111,10 +111,7 @@
     line-height: 1.45; color: var(--muted, #8e9498); }
   .hint b { color: var(--text, #e8e4dc); }
 
-  /* ---- Режим «з картинкою»: плеєр на весь застосунок ---- */
-  /* Під відео — не голий #000, а колір панелі: у світлій темі чорна
-     рамка навколо кадру читалась як діра в інтерфейсі. Сам кадр однаково
-     лишається на чорному (.vbox), бо так задумано в кіно. */
+  /* ---- Video mode: the player takes the whole app ---- */
   .player { position: absolute; inset: 0; display: none;
     flex-direction: column; background: var(--panel, #1e2124); }
   .player.on { display: flex; }
@@ -123,24 +120,33 @@
   .ptitle { flex: 1; min-width: 0; font-size: 10px; color: var(--text, #e8e4dc);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .vbox { flex: 1; min-height: 0; display: flex; align-items: center;
-    justify-content: center; background: #000; }
+    justify-content: center; background: #000; position: relative; }
   video { width: 100%; max-height: 100%; background: #000; display: block; }
+  /* Captions: one line block over the bottom of the frame. Only opacity
+     changes; the text swaps in place, so nothing reflows the video. */
+  .cap { position: absolute; left: 8px; right: 8px; bottom: 6px; text-align: center;
+    pointer-events: none; opacity: 0; transition: opacity .15s linear; }
+  .cap.on { opacity: 1; }
+  .cap span { display: inline; padding: 1px 5px; border-radius: 3px;
+    background: rgba(0, 0, 0, .72); color: #fff; font-size: 11px; line-height: 1.5;
+    -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   .ctl { flex: none; display: flex; align-items: center; gap: 4px;
     height: 30px; padding: 0 5px; background: var(--panel, #1e2124); }
   .ctl button { background: transparent; color: var(--text, #e8e4dc);
     border: 1px solid var(--line, #2f3438); border-radius: 9px;
-    height: 22px; min-width: 24px; padding: 0 4px; font-size: 10px; cursor: pointer; }
+    height: 24px; min-width: 24px; padding: 0 4px; font-size: 10px; cursor: pointer; }
+  .ctl button.on { border-color: var(--accent, #d17a58); color: var(--accent, #d17a58); }
   .ctl button:active { background: var(--accent, #d17a58); color: var(--bg, #16181a); }
   .seek { flex: 1; min-width: 0; height: 16px; position: relative; cursor: pointer; }
   .seek i { position: absolute; left: 0; right: 0; top: 7px; height: 3px;
     border-radius: 2px; background: var(--line, #2f3438); display: block; }
-  /* transform: scaleX — і тільки він. width на кожному кадрі — це reflow, а
-     на A53 плеєр і декодер уже забрали все, що було. */
+  /* transform: scaleX only. width on every frame is a reflow, and on an A53
+     the player and decoder have already taken everything there was. */
   .seek b { position: absolute; left: 0; top: 7px; height: 3px; width: 100%;
     border-radius: 2px; background: var(--accent, #d17a58); display: block;
     transform: scaleX(0); transform-origin: left center; }
-  /* Позначки вклеєної реклами на смужці: видно ЗАЗДАЛЕГІДЬ, де плеєр
-     стрибне, тож пропуск не читається як збій потоку. */
+  /* Sponsor marks on the bar: you see IN ADVANCE where the player will
+     jump, so a skip does not read as a broken stream. */
   .seek .ad { position: absolute; top: 6px; height: 5px; border-radius: 1px;
     background: var(--off, #6b5330); opacity: 0.85; }
   .time { flex: none; font-size: 9px; color: var(--muted, #8e9498);
@@ -151,7 +157,7 @@
     color: var(--muted, #8e9498); }
   .vmsg.on { display: flex; }
 
-  /* Плашка «пропущено»: opacity, без reflow, і не перехоплює тапи. */
+  /* "Skipped" pill: opacity only, no reflow, does not catch taps. */
   .skipped { position: absolute; left: 6px; bottom: 36px; max-width: 260px;
     display: flex; align-items: center; gap: 5px;
     padding: 4px 8px; border-radius: 9px; pointer-events: none;
@@ -160,7 +166,7 @@
     opacity: 0; transition: opacity 0.18s linear; }
   .skipped.on { opacity: 1; }
 
-  /* ---- Налаштування: аркуш поверх усього застосунку ---- */
+  /* ---- Sheets (settings, transcript) over the whole app ---- */
   .sheet { position: absolute; inset: 0; display: none; flex-direction: column;
     background: var(--bg, #16181a); }
   .sheet.on { display: flex; }
@@ -169,7 +175,7 @@
   .shead .ptitle { font-size: 11px; font-weight: 600; }
   .shead button, .ptop button { background: transparent; color: var(--text, #e8e4dc);
     border: 1px solid var(--line, #2f3438); border-radius: 9px;
-    height: 20px; padding: 0 8px; font-size: 10px; cursor: pointer; }
+    height: 22px; padding: 0 8px; font-size: 10px; cursor: pointer; }
   .sbody { flex: 1; min-height: 0; overflow-y: auto; touch-action: pan-y;
     padding: 7px 9px 10px; scrollbar-width: none; }
   .sbody::-webkit-scrollbar { display: none; }
@@ -178,7 +184,7 @@
   .opt .txt { flex: 1; min-width: 0; }
   .opt .n { font-size: 11px; font-weight: 600; }
   .opt .d { font-size: 9px; line-height: 1.35; color: var(--muted, #8e9498); }
-  /* Перемикач 40×22 — мінімум, у який палець на резистивному тачі влучає. */
+  /* A 40x22 switch is the smallest a finger hits on a resistive panel. */
   .sw { flex: none; width: 40px; height: 22px; border-radius: 11px; padding: 0;
     border: 1px solid var(--line, #2f3438); background: var(--panel, #1e2124);
     position: relative; cursor: pointer; }
@@ -198,111 +204,274 @@
   .note { padding: 8px 0 2px; font-size: 9px; line-height: 1.45;
     color: var(--muted, #8e9498); }
   .note b { color: var(--text, #e8e4dc); }
+  /* Transcript lines: tap to jump. The current line is marked by colour
+     only, so following along costs no layout. */
+  .line { display: flex; gap: 7px; width: 100%; padding: 5px 2px; border: none;
+    border-bottom: 1px solid var(--line, #2f3438); background: transparent;
+    color: var(--text, #e8e4dc); text-align: left; font-size: 10.5px; line-height: 1.35; cursor: pointer; }
+  .line .ts { flex: none; width: 34px; color: var(--muted, #8e9498); font-variant-numeric: tabular-nums; }
+  .line.now { color: var(--accent, #d17a58); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="bar">
-    <input id="q" type="search" placeholder="Що шукати на YouTube?" aria-label="Пошук">
-    <button id="go" type="button">Шукати</button>
-    <button id="cog" class="icon" type="button" aria-label="Налаштування" data-icon="settings"></button>
+    <input id="q" type="search" data-i18n-placeholder="search.placeholder" data-i18n-aria="search.aria">
+    <button id="go" type="button" data-i18n="search.go"></button>
+    <button id="cog" class="icon" type="button" data-i18n-aria="settings.aria" data-icon="settings"></button>
   </div>
   <div class="row2">
-    <div class="seg" id="mode" role="group" aria-label="Режим відтворення">
-      <button type="button" class="ib" data-mode="video"><span class="i" data-icon="play"></span>Відео</button>
-      <button type="button" class="ib" data-mode="audio"><span class="i" data-icon="music"></span>Звук</button>
+    <div class="seg" id="mode" role="group" data-i18n-aria="mode.aria">
+      <button type="button" class="ib" data-mode="video"><span class="i" data-icon="play"></span><span data-i18n="mode.video"></span></button>
+      <button type="button" class="ib" data-mode="audio"><span class="i" data-icon="music"></span><span data-i18n="mode.audio"></span></button>
     </div>
-    <div class="status" id="status">Пошук по YouTube.</div>
+    <div class="status" id="status"></div>
   </div>
-  <div class="grid" id="grid">
-    <div class="hint">
-      Два режими. <b>Відео</b> — грає тут, з картинкою. <b>Звук</b> — іде в
-      <b>Now Playing</b> угорі екрана й не спиняється, коли застосунок закрито.
-      Режим памʼятається. Вклеєну рекламу плеєр пропускає сам — шестерня
-      вгорі.
-    </div>
-  </div>
+  <div class="grid" id="grid"></div>
 </div>
 
 <div class="player" id="player">
   <div class="ptop">
-    <button class="pback ib" id="pback" type="button"><span class="i" data-icon="back"></span>Назад</button>
+    <button class="pback ib" id="pback" type="button"><span class="i" data-icon="back"></span><span data-i18n="common.back"></span></button>
     <div class="ptitle" id="ptitle"></div>
   </div>
   <div class="vbox">
     <video id="v" playsinline preload="metadata"></video>
+    <div class="cap" id="cap"><span id="capText"></span></div>
   </div>
   <div class="vmsg" id="vmsg"></div>
   <div class="skipped" id="skipped"></div>
   <div class="ctl">
-    <!-- Крок СИМЕТРИЧНИЙ: 10 туди, 10 назад. Асиметрія (10 назад, 30
-         вперед) дає дві різні кнопки на вигляд однакової пари — око цього не
-         очікує, а пальцем на 320×240 і поспіху відрізнити «на скільки саме»
-         однаково не встигаєш. Скільки саме — в aria-label і в підказці. -->
-    <button id="seekBack" type="button" aria-label="Назад на 10 секунд" data-icon="rewind"></button>
-    <button id="pp" type="button" aria-label="Пуск або пауза"></button>
-    <button id="seekFwd" type="button" aria-label="Вперед на 10 секунд" data-icon="forward"></button>
+    <!-- The step is SYMMETRIC: 10 back, 10 forward. An asymmetric pair looks
+         identical and does different things. -->
+    <button id="seekBack" type="button" data-i18n-aria="player.back10" data-icon="rewind"></button>
+    <button id="pp" type="button" data-i18n-aria="player.playPause"></button>
+    <button id="seekFwd" type="button" data-i18n-aria="player.fwd10" data-icon="forward"></button>
     <div class="seek" id="seek"><i></i><b id="seekfill"></b></div>
     <div class="time" id="time">0:00</div>
-    <button id="rate" type="button" aria-label="Швидкість">1×</button>
+    <button id="cc" type="button" data-i18n="player.cc" data-i18n-aria="player.ccAria"></button>
+    <button id="lines" type="button" data-i18n-aria="player.linesAria" data-icon="list"></button>
+    <button id="rate" type="button" data-i18n-aria="player.rate">1x</button>
   </div>
+</div>
+
+<div class="sheet" id="transcript">
+  <div class="shead">
+    <button id="tback" class="ib" type="button"><span class="i" data-icon="back"></span><span data-i18n="common.back"></span></button>
+    <div class="ptitle" data-i18n="transcript.head"></div>
+  </div>
+  <div class="sbody" id="tbody"></div>
 </div>
 
 <div class="sheet" id="sheet">
   <div class="shead">
-    <button id="sback" class="ib" type="button"><span class="i" data-icon="back"></span>Назад</button>
-    <div class="ptitle">Відео і реклама</div>
+    <button id="sback" class="ib" type="button"><span class="i" data-icon="back"></span><span data-i18n="common.back"></span></button>
+    <div class="ptitle" data-i18n="settings.head"></div>
   </div>
   <div class="sbody">
     <div class="opt">
       <div class="txt">
-        <div class="n">Пропускати вклеєну рекламу</div>
-        <div class="d">База SponsorBlock. Запит іде хешем — сервер не бачить, що саме ти дивишся.</div>
+        <div class="n" data-i18n="settings.sponsor"></div>
+        <div class="d" data-i18n="settings.sponsorHint"></div>
       </div>
-      <button class="sw" id="swSponsor" type="button" role="switch" aria-label="Пропускати рекламу"></button>
+      <button class="sw" id="swSponsor" type="button" role="switch" data-i18n-aria="settings.sponsor"></button>
     </div>
     <div class="cats" id="cats"></div>
     <div class="opt">
       <div class="txt">
-        <div class="n">Казати, що пропустив</div>
-        <div class="d">Плашка на пару секунд — щоб стрибок не виглядав як збій.</div>
+        <div class="n" data-i18n="settings.notify"></div>
+        <div class="d" data-i18n="settings.notifyHint"></div>
       </div>
-      <button class="sw" id="swNotify" type="button" role="switch" aria-label="Повідомляти про пропуск"></button>
+      <button class="sw" id="swNotify" type="button" role="switch" data-i18n-aria="settings.notify"></button>
     </div>
     <div class="opt">
       <div class="txt">
-        <div class="n">Превʼю через бота</div>
-        <div class="d">Картинки тягне бот, а не пристрій напряму з Google. Жодного запиту до їхніх серверів.</div>
+        <div class="n" data-i18n="settings.thumbs"></div>
+        <div class="d" data-i18n="settings.thumbsHint"></div>
       </div>
-      <button class="sw" id="swThumbs" type="button" role="switch" aria-label="Превʼю через бота"></button>
+      <button class="sw" id="swThumbs" type="button" role="switch" data-i18n-aria="settings.thumbs"></button>
     </div>
-    <div class="note" id="snote">
-      Рекламу, яку вставляє <b>сам YouTube</b>, тут не видно взагалі: відео йде
-      потоком через бота, без плеєра YouTube — прероли й банери просто не
-      доходять. Ці перемикачі — про рекламу, <b>вклеєну в саме відео</b>.
+    <div class="opt">
+      <div class="txt">
+        <div class="n" data-i18n="settings.captions"></div>
+        <div class="d" data-i18n="settings.captionsHint"></div>
+      </div>
+      <button class="sw" id="swCaptions" type="button" role="switch" data-i18n-aria="settings.captions"></button>
     </div>
+    <div class="opt">
+      <div class="txt">
+        <div class="n" data-i18n="settings.history"></div>
+        <div class="d" data-i18n="settings.historyHint"></div>
+      </div>
+      <button class="sw" id="clearHistory" type="button" data-i18n-aria="settings.history"></button>
+    </div>
+    <div class="note" data-i18n-html="settings.note"></div>
   </div>
 </div>
 <script>
-  // Клієнт YouTube на екрані 320×240.
-  //   пошук   → /api/music/search (yt-dlp на бекенді, без ключів)
-  //   звук    → /api/music/play: SSE-подія боту, грає в Now Playing
-  //   відео   → /api/music/video: змукшований mp4 просто в <video>
-  //   реклама → /api/video/segments: сегменти SponsorBlock, плеєр їх стрибає
-  //   бот     → postMessage {type:"botVideo"} від батька: пауза, перемотка…
-  //   стан    → POST /api/video/state: щоб бот знав, де ми зупинились
+  // YouTube client for the 320x240 screen.
+  //   search     -> /api/music/search (yt-dlp on the backend, no keys)
+  //   audio      -> /api/music/play: SSE to the bot, plays in Now Playing
+  //   video      -> /api/music/video: muxed mp4 straight into <video>
+  //   sponsors   -> /api/video/segments: SponsorBlock segments to jump over
+  //   captions   -> /api/music/transcript: segments shown over the video
+  //   bot        -> postMessage {type:"botVideo"} from the parent
+  //   state      -> POST /api/video/state, so the bot knows where we are
   const $ = (id) => document.getElementById(id);
 
-  /* Свої іконки. Той самий контракт, що в static/screen/icons.js: viewBox
-     24×24, лише обведення currentColor — тож колір і товщина живуть у CSS і
-     міняються разом зі скіном. Словник тримаємо в пакеті (не імпортуємо
-     icons.js), бо пакет мусить лишатися самодостатнім: він копіюється в
-     installed/ цілком і не має ламатись від правки внутрішнього модуля екрана. */
+  /* ---------- i18n ---------- */
+
+  const STR = {
+    uk: {
+      "search.placeholder": "Що шукати на YouTube?",
+      "search.aria": "Пошук",
+      "search.go": "Шукати",
+      "settings.aria": "Налаштування",
+      "mode.aria": "Режим відтворення",
+      "mode.video": "Відео",
+      "mode.audio": "Звук",
+      "common.back": "Назад",
+      "status.idle": "Пошук по YouTube.",
+      "status.searching": "Шукаю «{q}»…",
+      "status.found": "Знайдено: {n}. Тап — {what}.",
+      "status.watch": "дивитись",
+      "status.listen": "слухати",
+      "status.nothing": "Нічого не знайшлось.",
+      "status.searchDown": "Пошук недоступний.",
+      "status.offline": "Бот недоступний.",
+      "status.live": "Прямий ефір поки не граємо — тільки записи.",
+      "status.starting": "Вмикаю: {title}",
+      "status.playing": "Грає в Now Playing угорі: {title}",
+      "status.failed": "Не вийшло: {error}",
+      "status.ads": "Знайдено вклеєної реклами: {time}",
+      "home.hint": "Два режими. <b>Відео</b> — грає тут, з картинкою. <b>Звук</b> — іде в <b>Now Playing</b> угорі екрана й не спиняється, коли застосунок закрито. Вклеєну рекламу плеєр пропускає сам.",
+      "home.continue": "Продовжити перегляд",
+      "home.recent": "Нещодавні пошуки",
+      "card.live": "ЕФІР",
+      "player.back10": "Назад на 10 секунд",
+      "player.fwd10": "Вперед на 10 секунд",
+      "player.playPause": "Пуск або пауза",
+      "player.rate": "Швидкість",
+      "player.cc": "CC",
+      "player.ccAria": "Субтитри",
+      "player.linesAria": "Текст відео",
+      "player.untitled": "Відео",
+      "player.preparing": "Готую відео… перше з'єднання — кілька секунд.",
+      "player.tapToPlay": "Тапни кнопку пуску, щоб почати.",
+      "player.tapToResume": "Тапни кнопку пуску, щоб продовжити.",
+      "player.buffering": "Буферизую…",
+      "player.error": "Відео не пішло. Спробуй режим «Звук» — він іде іншим шляхом.",
+      "player.startFailed": "Не вдалося запустити.",
+      "player.skipped": "{label} — {time}",
+      "player.ad": "реклама",
+      "transcript.head": "Текст відео",
+      "transcript.loading": "Завантажую субтитри…",
+      "transcript.none": "Субтитрів немає: {error}",
+      "settings.head": "Відео і реклама",
+      "settings.sponsor": "Пропускати вклеєну рекламу",
+      "settings.sponsorHint": "База SponsorBlock. Запит іде хешем — сервер не бачить, що саме ти дивишся.",
+      "settings.notify": "Казати, що пропустив",
+      "settings.notifyHint": "Плашка на пару секунд — щоб стрибок не виглядав як збій.",
+      "settings.thumbs": "Превʼю через бота",
+      "settings.thumbsHint": "Картинки тягне бот, а не пристрій напряму з Google.",
+      "settings.captions": "Субтитри одразу",
+      "settings.captionsHint": "Вмикати CC для кожного нового відео.",
+      "settings.history": "Забути історію",
+      "settings.historyHint": "Прибрати «Продовжити перегляд» і нещодавні пошуки з цього пристрою.",
+      "settings.note": "Рекламу, яку вставляє <b>сам YouTube</b>, тут не видно взагалі: відео йде потоком через бота, без плеєра YouTube. Ці перемикачі — про рекламу, <b>вклеєну в саме відео</b>.",
+    },
+    en: {
+      "search.placeholder": "Search YouTube",
+      "search.aria": "Search",
+      "search.go": "Search",
+      "settings.aria": "Settings",
+      "mode.aria": "Playback mode",
+      "mode.video": "Video",
+      "mode.audio": "Audio",
+      "common.back": "Back",
+      "status.idle": "Search YouTube.",
+      "status.searching": "Searching “{q}”…",
+      "status.found": "Found {n}. Tap to {what}.",
+      "status.watch": "watch",
+      "status.listen": "listen",
+      "status.nothing": "Nothing found.",
+      "status.searchDown": "Search unavailable.",
+      "status.offline": "The bot is offline.",
+      "status.live": "Live streams can't play yet — recordings only.",
+      "status.starting": "Starting: {title}",
+      "status.playing": "Playing in Now Playing: {title}",
+      "status.failed": "Failed: {error}",
+      "status.ads": "Sponsor segments found: {time}",
+      "home.hint": "Two modes. <b>Video</b> plays here, with picture. <b>Audio</b> goes to <b>Now Playing</b> at the top and keeps going after you close the app. Sponsor segments are skipped automatically.",
+      "home.continue": "Continue watching",
+      "home.recent": "Recent searches",
+      "card.live": "LIVE",
+      "player.back10": "Back 10 seconds",
+      "player.fwd10": "Forward 10 seconds",
+      "player.playPause": "Play or pause",
+      "player.rate": "Speed",
+      "player.cc": "CC",
+      "player.ccAria": "Captions",
+      "player.linesAria": "Transcript",
+      "player.untitled": "Video",
+      "player.preparing": "Preparing video… the first connection takes a few seconds.",
+      "player.tapToPlay": "Tap play to start.",
+      "player.tapToResume": "Tap play to continue.",
+      "player.buffering": "Buffering…",
+      "player.error": "The video didn't start. Try Audio mode — it takes a different path.",
+      "player.startFailed": "Couldn't start.",
+      "player.skipped": "{label} — {time}",
+      "player.ad": "sponsor",
+      "transcript.head": "Transcript",
+      "transcript.loading": "Loading captions…",
+      "transcript.none": "No captions: {error}",
+      "settings.head": "Video and ads",
+      "settings.sponsor": "Skip sponsor segments",
+      "settings.sponsorHint": "SponsorBlock database. Queried by hash — the server can't see what you watch.",
+      "settings.notify": "Say what was skipped",
+      "settings.notifyHint": "A pill for a couple of seconds, so a jump doesn't look like a glitch.",
+      "settings.thumbs": "Previews through the bot",
+      "settings.thumbsHint": "The bot fetches images, not this device straight from Google.",
+      "settings.captions": "Captions by default",
+      "settings.captionsHint": "Turn CC on for every new video.",
+      "settings.history": "Forget history",
+      "settings.historyHint": "Clear continue-watching and recent searches on this device.",
+      "settings.note": "Ads inserted by <b>YouTube itself</b> never show here: video streams through the bot, without YouTube's player. These switches are about sponsor segments <b>baked into the video</b>.",
+    },
+  };
+
+  function storageGet(key, fallback) {
+    // Storage throws in a sandbox and in private mode; the app keeps working.
+    try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch (e) { return fallback; }
+  }
+  function storageSet(key, value) {
+    try { localStorage.setItem(key, value); } catch (e) { /* memory only */ }
+  }
+
+  let lang = storageGet("botScreenLang", "uk") === "en" ? "en" : "uk";
+  function t(key, vars) {
+    let text = (STR[lang] && STR[lang][key]) || STR.uk[key] || key;
+    if (vars) for (const k in vars) text = text.split("{" + k + "}").join(String(vars[k]));
+    return text;
+  }
+  // HTML only from our own dictionary, never from data: values are escaped.
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  }
+  function applyI18n() {
+    document.documentElement.lang = lang;
+    for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n);
+    for (const el of document.querySelectorAll("[data-i18n-html]")) el.innerHTML = t(el.dataset.i18nHtml);
+    for (const el of document.querySelectorAll("[data-i18n-placeholder]")) el.placeholder = t(el.dataset.i18nPlaceholder);
+    for (const el of document.querySelectorAll("[data-i18n-aria]")) el.setAttribute("aria-label", t(el.dataset.i18nAria));
+  }
+
+  /* ---------- icons ---------- */
+
   const ICONS = {
-    // Шляхи скопійовані ДОСЛІВНО з static/screen/icons.js (play, pause,
-    // next, settings, music) — щоб на екрані не жили дві схожі-але-різні
-    // іконки одного й того ж. Стрілки «назад» у тому наборі немає, тож вона
-    // взята з пакета device-settings, де вже склалась така сама конвенція.
+    // Copied VERBATIM from static/screen/icons.js (play, pause, next,
+    // settings, music, list) so the screen never shows two near-identical
+    // versions of one icon. "back" follows device-settings.
     play:     '<path d="M8 5.4v13.2L19.2 12z"/>',
     pause:    '<path d="M8.6 5.5v13M15.4 5.5v13"/>',
     skip:     '<path d="M6.5 5.5v13L15.8 12z"/><path d="M17.5 5.5v13"/>',
@@ -311,75 +480,135 @@
     music:    '<path d="M9.2 18V6.2l9.3-2v11.6"/>' +
               '<circle cx="6.9" cy="18" r="2.4"/>' +
               '<circle cx="16.2" cy="15.8" r="2.4"/>',
+    list:     '<path d="M4 6.5h.01M4 12h.01M4 17.5h.01M8.5 6.5h11.5M8.5 12h11.5M8.5 17.5h11.5"/>',
     back:     '<path d="m14 5-7 7 7 7M7 12h13"/>',
-    // Перемотка: два трикутники, дзеркальні один одному. У icons.js такої
-    // пари немає, тому масштаб узятий від play (y 6.6…17.4) — щоб у ряду
-    // кнопок усі три іконки читались однаково великими.
+    // Mirrored double triangles, scaled from play (y 6.6..17.4) so the three
+    // transport icons read the same size in a row.
     rewind:   '<path d="M11.5 6.6 5 12l6.5 5.4z"/><path d="M19 6.6 12.5 12l6.5 5.4z"/>',
     forward:  '<path d="M12.5 6.6 19 12l-6.5 5.4z"/><path d="M5 6.6 11.5 12 5 17.4z"/>',
   };
 
   function iconSvg(name) {
-    return '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-           (ICONS[name] || ICONS.play) + "</svg>";
+    return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || ICONS.play) + "</svg>";
   }
-  /* Розставляємо іконки в розмітці по data-icon: сама розмітка лишається
-     читабельною, без простирадла path прямо в HTML. */
   function paintIcons(root) {
-    for (const el of (root || document).querySelectorAll("[data-icon]")) {
-      el.innerHTML = iconSvg(el.dataset.icon);
-    }
+    for (const el of (root || document).querySelectorAll("[data-icon]")) el.innerHTML = iconSvg(el.dataset.icon);
   }
+
   const q = $("q"), go = $("go"), grid = $("grid"), status = $("status");
   const player = $("player"), video = $("v"), vmsg = $("vmsg"), sheet = $("sheet");
   const KEY = "youtube.lastQuery";
   const MODE_KEY = "youtube.mode";
+  const HISTORY_KEY = "youtube.history";
+  const SEARCHES_KEY = "youtube.searches";
+  const CAPTIONS_KEY = "youtube.captions";
   const RATES = [1, 1.25, 1.5, 1.75, 2];
 
   let mode = "video";
   let rateIdx = 0;
   let seekRaf = false;
-  let current = null;          // трек, який грає в плеєрі
-  let settings = null;         // налаштування з бекенда (адблок, превʼю)
-  let catalog = {};            // словник категорій SponsorBlock
-  let adSegments = [];         // сегменти для пропуску в цьому відео
+  let current = null;          // track in the player
+  let settings = null;         // backend settings (sponsors, previews)
+  let catalog = {};            // SponsorBlock category names
+  let adSegments = [];         // segments to skip in this video
   let skippedCount = 0, skippedSeconds = 0;
   let skipTimer = 0, stateTimer = 0;
+  let lastTracks = [];
+  let statusKey = ["status.idle", null, false];
 
-  function pref(key, fallback) {
-    try { return localStorage.getItem(key) || fallback; } catch (e) { return fallback; }
-  }
-  function setPref(key, value) {
-    try { localStorage.setItem(key, value); } catch (e) { /* приватний режим */ }
-  }
-
-  /* Годинник з'являється лише коли він потрібен. Без цієї гілки
-     півторагодинне відео показувало «100:50» — формально правда, а на око
-     нісенітниця. */
   function fmt(sec) {
+    // An hour-long video used to read "100:50" — true, and nonsense to the eye.
     sec = Math.max(0, Math.floor(Number(sec) || 0));
     const s = sec % 60, m = Math.floor(sec / 60) % 60, h = Math.floor(sec / 3600);
     const mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
     return h ? h + ":" + mm + ":" + ss : m + ":" + ss;
   }
-  function say(text, now) {
-    status.textContent = text;
+  // The status line remembers its key, so a language switch re-renders it.
+  function say(key, vars, now) {
+    statusKey = [key, vars || null, !!now];
+    status.textContent = t(key, vars);
     status.className = "status" + (now ? " now" : "");
   }
-  /* FastAPI на невалідному параметрі віддає detail СПИСКОМ обʼєктів, і
-     `"…" + detail` друкував у рядок статусу «[object Object]» — тобто
-     помилка була, а прочитати її було неможливо. */
+  /* FastAPI sends detail as a LIST of objects for invalid params; string
+     concatenation printed "[object Object]" into the status line. */
   function detailText(payload, fallback) {
     const d = payload && payload.detail;
     if (typeof d === "string" && d) return d;
+    if (d && typeof d.message === "string") return d.message;
     if (Array.isArray(d) && d.length && d[0] && d[0].msg) return String(d[0].msg);
     return fallback;
   }
 
-  /* ---------- налаштування (спільні з ботом) ----------
-     Лежать на бекенді, а не в localStorage: інакше перемикач на екрані і
-     фраза «вимкни пропуск реклами» жили б окремими життями, і бот звітував
-     би про стан, якого немає. */
+  /* ---------- local history: continue watching + recent searches ----------
+     On the device, not the backend: this is what one screen watched, and the
+     bot has no business keeping a watch log. */
+
+  function readList(key) {
+    try { const v = JSON.parse(storageGet(key, "[]")); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+  }
+  function writeList(key, list) { storageSet(key, JSON.stringify(list)); }
+
+  function rememberSearch(query) {
+    const list = readList(SEARCHES_KEY).filter((x) => x !== query);
+    list.unshift(query);
+    writeList(SEARCHES_KEY, list.slice(0, 6));
+  }
+
+  function rememberWatch(track, position, duration) {
+    if (!track || !track.id) return;
+    const list = readList(HISTORY_KEY).filter((x) => x.id !== track.id);
+    // Within 20 s of either end there is nothing to "continue".
+    const pos = Number(position) || 0, total = Number(duration) || 0;
+    const finished = total && pos > total - 20;
+    list.unshift({
+      id: track.id, title: track.title || "", uploader: track.uploader || "",
+      duration: total || track.duration || 0, thumb: track.thumb || "",
+      position: finished || pos < 20 ? 0 : Math.floor(pos),
+    });
+    writeList(HISTORY_KEY, list.slice(0, 8));
+  }
+
+  function renderHome() {
+    lastTracks = [];
+    grid.innerHTML = "";
+    const history = readList(HISTORY_KEY).filter((x) => x.position > 0);
+    if (history.length) {
+      grid.appendChild(shelf("home.continue"));
+      for (const item of history.slice(0, 4)) grid.appendChild(card(item));
+    }
+    const searches = readList(SEARCHES_KEY);
+    if (searches.length) {
+      grid.appendChild(shelf("home.recent"));
+      const chips = document.createElement("div");
+      chips.className = "chips";
+      for (const query of searches) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.textContent = query;
+        chip.addEventListener("click", () => { q.value = query; search(); });
+        chips.appendChild(chip);
+      }
+      grid.appendChild(chips);
+    }
+    if (!history.length && !searches.length) {
+      const hint = document.createElement("div");
+      hint.className = "hint";
+      hint.innerHTML = t("home.hint");
+      grid.appendChild(hint);
+    }
+    say("status.idle");
+  }
+
+  function shelf(key) {
+    const el = document.createElement("div");
+    el.className = "shelf";
+    el.textContent = t(key);
+    return el;
+  }
+
+  /* ---------- settings (shared with the bot) ----------
+     On the backend, not in localStorage: otherwise the switch here and the
+     phrase "turn off ad skipping" would live separate lives. */
 
   async function loadSettings() {
     try {
@@ -388,7 +617,6 @@
       settings = d.settings || null;
       catalog = d.categories || {};
     } catch (e) {
-      // Бот недоступний — граємо з дефолтами, а не падаємо
       settings = settings || { sponsorblock: true, categories: ["sponsor"], proxy_thumbnails: true, notify_skips: true };
       catalog = catalog || {};
     }
@@ -396,8 +624,7 @@
   }
 
   async function patchSettings(patch) {
-    // Малюємо ОДРАЗУ, а відповідь сервера лише підтверджує: на резистивному
-    // тачі перемикач, який «думає» пів секунди, читається як не натиснутий.
+    // Draw AT ONCE; a switch that "thinks" for half a second reads as not pressed.
     settings = Object.assign({}, settings, patch);
     renderSettings();
     try {
@@ -408,17 +635,20 @@
       });
       const d = await r.json();
       if (d && d.settings) { settings = d.settings; renderSettings(); }
-    } catch (e) { /* лишаємо оптимістичний стан */ }
+    } catch (e) { /* keep the optimistic state */ }
+  }
+
+  function setSwitch(id, on) {
+    $(id).classList.toggle("on", !!on);
+    $(id).setAttribute("aria-checked", String(!!on));
   }
 
   function renderSettings() {
+    setSwitch("swCaptions", captionsDefault());
     if (!settings) return;
-    $("swSponsor").classList.toggle("on", !!settings.sponsorblock);
-    $("swSponsor").setAttribute("aria-checked", String(!!settings.sponsorblock));
-    $("swNotify").classList.toggle("on", !!settings.notify_skips);
-    $("swNotify").setAttribute("aria-checked", String(!!settings.notify_skips));
-    $("swThumbs").classList.toggle("on", !!settings.proxy_thumbnails);
-    $("swThumbs").setAttribute("aria-checked", String(!!settings.proxy_thumbnails));
+    setSwitch("swSponsor", settings.sponsorblock);
+    setSwitch("swNotify", settings.notify_skips);
+    setSwitch("swThumbs", settings.proxy_thumbnails);
 
     const box = $("cats");
     box.classList.toggle("off", !settings.sponsorblock);
@@ -432,11 +662,10 @@
       b.addEventListener("click", () => {
         const next = new Set(settings.categories || []);
         if (next.has(key)) next.delete(key); else next.add(key);
-        // Знята остання категорія = пропускати нічого. Це той самий
-        // вимкнений адблок, тільки непомітний, — тож гасимо його явно.
+        // No categories left = skip nothing, i.e. the same off switch, only
+        // invisible — so turn it off explicitly.
         const list = Array.from(next);
-        patchSettings(list.length ? { categories: list, sponsorblock: true }
-                                  : { sponsorblock: false });
+        patchSettings(list.length ? { categories: list, sponsorblock: true } : { sponsorblock: false });
       });
       box.appendChild(b);
     }
@@ -444,8 +673,6 @@
 
   $("swSponsor").addEventListener("click", () => {
     const on = !settings?.sponsorblock;
-    // Вмикають пропуск, а категорій нема — беремо базовий набір, інакше
-    // перемикач «увімкнено» не робив би нічого.
     const patch = { sponsorblock: on };
     if (on && !(settings?.categories || []).length) {
       patch.categories = ["sponsor", "selfpromo", "interaction", "music_offtopic"];
@@ -455,113 +682,123 @@
   $("swNotify").addEventListener("click", () => patchSettings({ notify_skips: !settings?.notify_skips }));
   $("swThumbs").addEventListener("click", () => {
     patchSettings({ proxy_thumbnails: !settings?.proxy_thumbnails });
-    // Превʼю в списку вже намальовані з іншим джерелом — перемальовуємо
     if (lastTracks.length) render(lastTracks);
+  });
+  $("swCaptions").addEventListener("click", () => {
+    storageSet(CAPTIONS_KEY, captionsDefault() ? "0" : "1");
+    renderSettings();
+  });
+  $("clearHistory").addEventListener("click", () => {
+    writeList(HISTORY_KEY, []);
+    writeList(SEARCHES_KEY, []);
+    storageSet(KEY, "");
+    sheet.classList.remove("on");
+    q.value = "";
+    renderHome();
   });
   $("cog").addEventListener("click", () => {
     sheet.classList.add("on");
-    // Перечитуємо: налаштування спільні з ботом, і він міг перемкнути їх
-    // голосом, поки застосунок був відкритий. Інакше перемикачі показували
-    // б стан, якого вже немає.
+    // Re-read: the bot may have flipped a switch by voice meanwhile.
     loadSettings();
   });
   $("sback").addEventListener("click", () => { sheet.classList.remove("on"); });
 
-  /* ---------- режим ---------- */
+  /* ---------- mode ---------- */
 
   function setMode(next) {
     mode = next === "audio" ? "audio" : "video";
-    setPref(MODE_KEY, mode);
-    for (const b of $("mode").querySelectorAll("button")) {
-      b.classList.toggle("on", b.dataset.mode === mode);
-    }
+    storageSet(MODE_KEY, mode);
+    for (const b of $("mode").querySelectorAll("button")) b.classList.toggle("on", b.dataset.mode === mode);
   }
   $("mode").addEventListener("click", (e) => {
     const b = e.target.closest("button[data-mode]");
     if (b) setMode(b.dataset.mode);
   });
 
-  /* ---------- список ---------- */
+  /* ---------- results ---------- */
 
-  let lastTracks = [];
+  /* Previews through the bot (the device never talks to Google) or direct.
+     The direct URL comes from the backend's search result; the package holds
+     no Google address of its own. */
+  function thumbUrl(item) {
+    if (settings && settings.proxy_thumbnails === false && item.thumb) return item.thumb;
+    return "/api/video/thumb?id=" + encodeURIComponent(item.id);
+  }
 
-  /* Превʼю: через бота (тоді пристрій НЕ стукає до Google) або напряму.
-     Проксі бота на 404 віддає прозорий піксель, тож карточка лишається
-     блоком 16:9 і сітка не зʼїжджає. */
-  function thumbUrl(t) {
-    if (settings && settings.proxy_thumbnails === false) {
-      return t.thumb || ("https://i.ytimg.com/vi/" + encodeURIComponent(t.id) + "/mqdefault.jpg");
+  function card(item) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "card";
+
+    const thumb = document.createElement("img");
+    thumb.className = "thumb";
+    thumb.loading = "lazy";
+    thumb.alt = "";
+    thumb.decoding = "async";
+    thumb.src = thumbUrl(item);
+    // No network: a grey 16:9 block stays, not a hole in the grid
+    thumb.addEventListener("error", () => { thumb.removeAttribute("src"); }, { once: true });
+    btn.appendChild(thumb);
+
+    if (item.position && item.duration) {
+      const bar = document.createElement("div");
+      bar.className = "resume";
+      const fill = document.createElement("i");
+      fill.style.transform = "scaleX(" + Math.min(1, item.position / item.duration).toFixed(3) + ")";
+      bar.appendChild(fill);
+      btn.appendChild(bar);
     }
-    return "/api/video/thumb?id=" + encodeURIComponent(t.id);
+
+    const title = document.createElement("div");
+    title.className = "t";
+    title.textContent = item.title;
+
+    const sub = document.createElement("div");
+    sub.className = "s";
+    if (item.live) {
+      const live = document.createElement("span");
+      live.className = "live";
+      live.textContent = t("card.live");
+      sub.appendChild(live);
+      sub.appendChild(document.createTextNode(" · " + (item.uploader || "YouTube")));
+    } else {
+      sub.textContent = (item.uploader || "YouTube") + (item.duration ? " · " + fmt(item.duration) : "");
+    }
+
+    btn.appendChild(title);
+    btn.appendChild(sub);
+    btn.addEventListener("click", () => start(item, btn));
+    return btn;
   }
 
   function render(tracks) {
     lastTracks = tracks;
     grid.innerHTML = "";
-    if (!tracks.length) {
-      say("Нічого не знайшлось.", false);
-      return;
-    }
-    for (const t of tracks) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "card";
-
-      const thumb = document.createElement("img");
-      thumb.className = "thumb";
-      thumb.loading = "lazy";
-      thumb.alt = "";
-      thumb.decoding = "async";
-      thumb.src = thumbUrl(t);
-      // Немає мережі — лишається сірий прямокутник тієї самої висоти, а не
-      // порожнє місце з поїхавшою сіткою
-      thumb.addEventListener("error", () => { thumb.removeAttribute("src"); }, { once: true });
-
-      const title = document.createElement("div");
-      title.className = "t";
-      title.textContent = t.title;
-
-      const sub = document.createElement("div");
-      sub.className = "s";
-      if (t.live) {
-        const live = document.createElement("span");
-        live.className = "live";
-        live.textContent = "ЕФІР";
-        sub.appendChild(live);
-        sub.appendChild(document.createTextNode(" · " + (t.uploader || "YouTube")));
-      } else {
-        sub.textContent = (t.uploader || "YouTube") + (t.duration ? " · " + fmt(t.duration) : "");
-      }
-
-      btn.appendChild(thumb);
-      btn.appendChild(title);
-      btn.appendChild(sub);
-      btn.addEventListener("click", () => start(t, btn));
-      grid.appendChild(btn);
-    }
-    say("Знайдено: " + tracks.length + ". Тап — " + (mode === "video" ? "дивитись." : "слухати."), false);
+    if (!tracks.length) { say("status.nothing"); return; }
+    for (const item of tracks) grid.appendChild(card(item));
+    say("status.found", { n: tracks.length, what: t(mode === "video" ? "status.watch" : "status.listen") });
   }
 
   async function search() {
     const query = q.value.trim();
-    if (!query) return;
-    setPref(KEY, query);
-    say("Шукаю «" + query + "»…", false);
+    if (!query) { renderHome(); return; }
+    storageSet(KEY, query);
+    rememberSearch(query);
+    say("status.searching", { q: query });
     grid.innerHTML = "";
     go.disabled = true;
     try {
-      // limit=8 — це стеля самого ендпоінта (Query(..., le=8)). На 10 він
-      // віддавав 422, і в статусі з'являлось «[object Object]».
+      // limit=8 is the endpoint's own ceiling; 10 returned 422.
       const r = await fetch("/api/music/search?q=" + encodeURIComponent(query) + "&limit=8");
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        say(detailText(err, "Пошук недоступний."), false);
+        status.textContent = detailText(err, t("status.searchDown"));
         return;
       }
       const d = await r.json();
       render(d.tracks || []);
     } catch (e) {
-      say("Бот недоступний.", false);
+      say("status.offline");
     } finally {
       go.disabled = false;
     }
@@ -569,134 +806,129 @@
 
   go.addEventListener("click", search);
   q.addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+  q.addEventListener("search", () => { if (!q.value.trim()) renderHome(); });
 
-  /* ---------- запуск у вибраному режимі ---------- */
+  /* ---------- play in the chosen mode ---------- */
 
-  function start(t, btn) {
-    // Ефір не заграє ні відео, ні звуком: у нього тільки HLS, а ми проксимо
-    // окремі доріжки. Кажемо це відразу, замість «увімкнув» і тиші.
-    if (t.live) {
-      say("Прямий ефір поки не граємо — тільки записи.", false);
-      return;
-    }
-    if (mode === "video") openVideo(t);
-    else playAudio(t, btn);
+  function start(item, btn) {
+    // A live stream has only HLS; say so now instead of "playing" and silence.
+    if (item.live) { say("status.live"); return; }
+    if (mode === "video") openVideo(item, item.position || 0);
+    else playAudio(item, btn);
   }
 
-  async function playAudio(t, btn) {
+  async function playAudio(item, btn) {
     if (btn) btn.disabled = true;
-    say("Вмикаю: " + t.title, true);
+    say("status.starting", { title: item.title }, true);
     try {
       const r = await fetch("/api/music/play", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: t.id, title: t.title,
-          uploader: t.uploader || "", duration: t.duration || 0,
-        }),
+        body: JSON.stringify({ id: item.id, title: item.title, uploader: item.uploader || "", duration: item.duration || 0 }),
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
-        say("Не вийшло: " + detailText(err, String(r.status)), false);
+        say("status.failed", { error: detailText(err, String(r.status)) });
       } else {
-        say("Грає в Now Playing угорі: " + t.title, true);
+        say("status.playing", { title: item.title }, true);
       }
     } catch (e) {
-      say("Бот недоступний.", false);
+      say("status.offline");
     }
     if (btn) btn.disabled = false;
   }
 
-  /* ---------- плеєр із картинкою ---------- */
+  /* ---------- the video player ---------- */
 
-  /* Кнопка пуску показує те, що МОЖНА зробити: коли грає — «пауза», коли
-     стоїть — «пуск». Джерело правди — video.paused, а не наш намір: при
-     заблокованому autoplay плеєр лишається на паузі, і статична іконка
-     «пауза» казала б, що відео йде. */
+  /* The button shows what you CAN do. The truth is video.paused, not our
+     intent: with autoplay blocked the player stays paused. */
   function setPlayIcon(playing) { $("pp").innerHTML = iconSvg(playing ? "pause" : "play"); }
 
-  function vsay(text) {
-    vmsg.textContent = text || "";
-    vmsg.classList.toggle("on", !!text);
+  let vmsgKey = "";
+  function vsay(key) {
+    vmsgKey = key || "";
+    vmsg.textContent = key ? t(key) : "";
+    vmsg.classList.toggle("on", !!key);
   }
 
-  async function openVideo(t, startAt) {
-    // Те саме відео вже в плеєрі — не смикаємо потік заново: перше
-    // з'єднання коштує кілька секунд, і «покажи це ще раз» виглядало б
-    // як зависання.
-    if (current && current.id === t.id && player.classList.contains("on")) {
+  async function openVideo(item, startAt) {
+    // Same video already open: do not restart the stream — the first
+    // connection costs seconds, and "show it again" would look like a hang.
+    if (current && current.id === item.id && player.classList.contains("on")) {
       if (startAt) video.currentTime = startAt;
       if (video.paused) video.play().catch(() => {});
       return;
     }
-    current = t;
+    if (current) rememberWatch(current, video.currentTime, video.duration);
+    current = item;
     sheet.classList.remove("on");
-    $("ptitle").textContent = t.title || "Відео";
+    $("transcript").classList.remove("on");
+    $("ptitle").textContent = item.title || t("player.untitled");
     player.classList.add("on");
-    // Now Playing і відео — два різних джерела звуку. Без цього вони заграли
-    // б РАЗОМ: трек угорі й відео тут, обидва в колонку.
-    try { await fetch("/api/music/stop", { method: "POST" }); } catch (e) { /* не критично */ }
-    vsay("Готую відео… перше з'єднання — кілька секунд.");
-    $("time").textContent = t.duration ? "0:00 / " + fmt(t.duration) : "0:00";
+    // Now Playing and video are two sound sources; without this they would
+    // play TOGETHER.
+    try { await fetch("/api/music/stop", { method: "POST" }); } catch (e) { /* not critical */ }
+    vsay("player.preparing");
+    $("time").textContent = item.duration ? "0:00 / " + fmt(item.duration) : "0:00";
     setRate(0);
-    // «Приглуши» стосувалось ТОГО відео. Без цього рядка наступний ролик
-    // стартував у тиші, і виглядало це як зламаний звук, а не як пам'ять
-    // про давню команду.
+    // "Mute" was about THAT video; the next one starting silent looks broken.
     video.muted = false;
     resetSkips();
-    setPlayIcon(false);          // заграє — подія playing перемалює сама
-    video.src = "/api/music/video?id=" + encodeURIComponent(t.id);
+    resetCaptions();
+    setPlayIcon(false);
+    video.src = "/api/music/video?id=" + encodeURIComponent(item.id);
     if (startAt) {
-      // currentTime до metadata браузер відкидає — чекаємо на дані
-      video.addEventListener("loadedmetadata", () => {
-        try { video.currentTime = startAt; } catch (e) {}
-      }, { once: true });
+      // currentTime before metadata is dropped by the browser
+      video.addEventListener("loadedmetadata", () => { try { video.currentTime = startAt; } catch (e) {} }, { once: true });
     }
-    loadSegments(t.id);
-    // Звітуємо ДО першого кадру. Без цього плеєр, що відкрився й чекає тапу
-    // (autoplay заблокований), не казав про себе нічого — і бот до кінця TTL
-    // описував попереднє відео як поточне. Тривалість уточнить loadedmetadata.
+    loadSegments(item.id);
+    if (captionsDefault()) setCaptions(true);
+    // Report BEFORE the first frame: a player waiting for a tap otherwise
+    // says nothing, and the bot describes the previous video as current.
     pushState();
     video.addEventListener("loadedmetadata", () => pushState(), { once: true });
     try {
       await video.play();
     } catch (e) {
-      // autoplay-політика або мертве джерело — кажемо, а не лишаємо чорноту
-      vsay("Тапни кнопку пуску, щоб почати.");
+      vsay("player.tapToPlay");
     }
   }
 
   function closeVideo() {
+    if (current) rememberWatch(current, video.currentTime, video.duration);
     player.classList.remove("on");
-    try { video.pause(); } catch (e) { /* уже мертвий */ }
-    // Порожній src, а не тільки pause: інакше проксі-потік тягнеться далі й
-    // їсть мережу, поки застосунок відкритий.
+    $("transcript").classList.remove("on");
+    try { video.pause(); } catch (e) { /* already dead */ }
+    // Empty src, not just pause: the proxied stream would keep pulling.
     video.removeAttribute("src");
-    try { video.load(); } catch (e) { /* ігноруємо */ }
+    try { video.load(); } catch (e) { /* ignore */ }
     vsay("");
     current = null;
     resetSkips();
+    resetCaptions();
     stopStateReports();
     pushState({ closed: true });
+    if (!lastTracks.length) renderHome();
   }
   $("pback").addEventListener("click", closeVideo);
 
   video.addEventListener("playing", () => { vsay(""); setPlayIcon(true); startStateReports(); pushState(); });
-  video.addEventListener("pause", () => { setPlayIcon(false); pushState(); });
-  video.addEventListener("waiting", () => vsay("Буферизую…"));
-  video.addEventListener("ended", () => { setPlayIcon(false); pushState(); });
-  video.addEventListener("error", () => {
-    vsay("Відео не пішло. Спробуй режим «Звук» — він іде іншим шляхом.");
+  video.addEventListener("pause", () => {
+    setPlayIcon(false);
+    pushState();
+    if (current) rememberWatch(current, video.currentTime, video.duration);
   });
+  video.addEventListener("waiting", () => vsay("player.buffering"));
+  video.addEventListener("ended", () => { setPlayIcon(false); pushState(); if (current) rememberWatch(current, 0, 0); });
+  video.addEventListener("error", () => { if (video.getAttribute("src")) vsay("player.error"); });
 
   $("pp").addEventListener("click", () => {
-    if (video.paused) video.play().catch(() => vsay("Не вдалося запустити."));
+    if (video.paused) video.play().catch(() => vsay("player.startFailed"));
     else video.pause();
   });
 
-  /* Крок перемотки — той самий, що й у тула video_control за
-     замовчуванням (SEEK_STEP_S ↔ DEFAULT_STEP_S), щоб «перемотай вперед»
-     голосом і тап по кнопці давали однаковий результат. */
+  /* The seek step equals the video_control tool default (SEEK_STEP_S <->
+     DEFAULT_STEP_S), so "skip ahead" by voice and a tap do the same thing. */
   const SEEK_STEP_S = 10;
   function nudge(delta) {
     const total = video.duration;
@@ -707,31 +939,27 @@
   $("seekBack").addEventListener("click", () => nudge(-SEEK_STEP_S));
   $("seekFwd").addEventListener("click", () => nudge(SEEK_STEP_S));
 
-  /* Швидкість: одна кнопка по колу, а не пʼять чипів. На 320px пʼять
-     мішеней поруч із перемоткою — це промахи пальцем, а не вибір. */
+  /* Speed cycles on one button: five chips next to the transport on 320px
+     are misses, not choices. */
   function setRate(idx) {
     rateIdx = ((idx % RATES.length) + RATES.length) % RATES.length;
-    const value = RATES[rateIdx];
-    // preservesPitch — інакше на 2× ведучий стає бурундуком
-    video.preservesPitch = true;
-    video.webkitPreservesPitch = true;
-    video.playbackRate = value;
-    $("rate").textContent = String(value) + "×";
+    setRateValue(RATES[rateIdx]);
   }
   function setRateValue(value) {
-    const idx = RATES.indexOf(Number(value));
-    if (idx >= 0) { setRate(idx); return; }
-    // Швидкість, якої немає в кнопці (0.5, 0.75) — ставимо як є, а на
-    // кнопці показуємо чесно те, що грає
+    const rate = Number(value) || 1;
+    const idx = RATES.indexOf(rate);
+    if (idx >= 0) rateIdx = idx;
+    // preservesPitch, or the host turns into a chipmunk at 2x
     video.preservesPitch = true;
     video.webkitPreservesPitch = true;
-    video.playbackRate = Number(value) || 1;
-    $("rate").textContent = String(Number(value) || 1) + "×";
+    video.playbackRate = rate;
+    $("rate").textContent = String(rate) + "x";
   }
   $("rate").addEventListener("click", () => setRate(rateIdx + 1));
 
   video.addEventListener("timeupdate", () => {
     maybeSkip();
+    updateCaption();
     if (seekRaf) return;
     seekRaf = true;
     requestAnimationFrame(() => {
@@ -752,13 +980,131 @@
     pushState();
   });
 
-  /* ---------- вклеєна реклама: пропуск (SponsorBlock) ----------
+  /* ---------- captions and transcript ----------
+     Loaded once per video on first need and shared by the overlay and the
+     transcript sheet. The backend picks the source (the youtube.com panel
+     first), so this works even when YouTube's timedtext is blocked. */
 
-     Рекламу, яку вставляє сам YouTube, ми не бачимо взагалі — відео йде
-     проксі-потоком без їхнього плеєра. Лишається реклама, вклеєна в саме
-     відео, і її межі знає тільно спільнотна база. Пропуск робимо тут, у
-     плеєрі: стрибок на кінець сегмента + плашка, щоб це не читалось як
-     збій потоку. */
+  let captions = null;          // null = not loaded, [] = none
+  let captionsError = "";
+  let captionsFor = "";
+  let captionsOn = false;
+  let captionIdx = -1;
+
+  function captionsDefault() { return storageGet(CAPTIONS_KEY, "0") === "1"; }
+
+  function resetCaptions() {
+    captions = null; captionsError = ""; captionsFor = ""; captionIdx = -1;
+    setCaptions(false);
+  }
+
+  async function loadCaptions() {
+    if (!current) return [];
+    if (captions && captionsFor === current.id) return captions;
+    const id = current.id;
+    try {
+      const r = await fetch("/api/music/transcript?id=" + encodeURIComponent(id) + "&lang=" + lang);
+      const d = await r.json().catch(() => ({}));
+      if (!current || current.id !== id) return [];
+      if (!r.ok) { captions = []; captionsError = detailText(d, String(r.status)); }
+      else { captions = (d.segments || []).filter((s) => s && s.text); captionsError = ""; }
+    } catch (e) {
+      captions = []; captionsError = t("status.offline");
+    }
+    captionsFor = id;
+    return captions;
+  }
+
+  // Binary search: an hour of captions is ~1000 lines and timeupdate fires
+  // four times a second on a Pi.
+  function segmentAt(time) {
+    if (!captions || !captions.length) return -1;
+    let lo = 0, hi = captions.length - 1, best = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (captions[mid].start <= time) { best = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return best;
+  }
+
+  function updateCaption() {
+    const idx = segmentAt(video.currentTime + 0.2);
+    if (idx === captionIdx) return;
+    captionIdx = idx;
+    if (captionsOn) {
+      $("capText").textContent = idx >= 0 ? captions[idx].text : "";
+      $("cap").classList.toggle("on", idx >= 0);
+    }
+    const sheetOpen = $("transcript").classList.contains("on");
+    if (sheetOpen) markLine(idx, false);
+  }
+
+  async function setCaptions(on) {
+    captionsOn = !!on;
+    $("cc").classList.toggle("on", captionsOn);
+    if (!captionsOn) { $("cap").classList.remove("on"); return; }
+    await loadCaptions();
+    if (!captions.length) {
+      captionsOn = false;
+      $("cc").classList.remove("on");
+      if (captionsError) { vsay(""); vmsg.textContent = t("transcript.none", { error: captionsError }); vmsg.classList.add("on"); setTimeout(() => vsay(""), 3000); }
+      return;
+    }
+    captionIdx = -1;
+    updateCaption();
+  }
+  $("cc").addEventListener("click", () => setCaptions(!captionsOn));
+
+  function markLine(idx, scroll) {
+    const body = $("tbody");
+    const prev = body.querySelector(".line.now");
+    if (prev) prev.classList.remove("now");
+    const el = idx >= 0 ? body.children[idx] : null;
+    if (el) {
+      el.classList.add("now");
+      if (scroll) el.scrollIntoView({ block: "center" });
+    }
+  }
+
+  async function openTranscript() {
+    const body = $("tbody");
+    $("transcript").classList.add("on");
+    body.textContent = t("transcript.loading");
+    await loadCaptions();
+    body.innerHTML = "";
+    if (!captions.length) {
+      body.textContent = t("transcript.none", { error: captionsError || "—" });
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    captions.forEach((seg) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "line";
+      const ts = document.createElement("span");
+      ts.className = "ts";
+      ts.textContent = fmt(seg.start);
+      const text = document.createElement("span");
+      text.textContent = seg.text;
+      row.append(ts, text);
+      row.addEventListener("click", () => {
+        try { video.currentTime = seg.start; } catch (e) {}
+        $("transcript").classList.remove("on");
+        if (video.paused) video.play().catch(() => {});
+        pushState();
+      });
+      frag.appendChild(row);
+    });
+    body.appendChild(frag);
+    markLine(segmentAt(video.currentTime + 0.2), true);
+  }
+  $("lines").addEventListener("click", openTranscript);
+  $("tback").addEventListener("click", () => $("transcript").classList.remove("on"));
+
+  /* ---------- sponsor segments (SponsorBlock) ----------
+     Ads YouTube inserts never reach us — the video is proxied without their
+     player. What is left is sponsorship baked into the video, and only the
+     community database knows its bounds. */
 
   function resetSkips() {
     adSegments = [];
@@ -774,17 +1120,15 @@
       const r = await fetch("/api/video/segments?id=" + encodeURIComponent(videoId));
       if (!r.ok) return;
       const d = await r.json();
-      if (!current || current.id !== videoId) return;   // встигли перемкнути відео
+      if (!current || current.id !== videoId) return;   // switched meanwhile
       adSegments = (d.segments || []).map((s) => ({ ...s, done: false }));
       if (adSegments.length) {
-        say("Знайдено вклеєної реклами: " + fmt(d.skipped_seconds || 0), true);
+        say("status.ads", { time: fmt(d.skipped_seconds || 0) }, true);
         markSegments();
       }
-    } catch (e) { /* база не критична — граємо без пропусків */ }
+    } catch (e) { /* not critical — play without skipping */ }
   }
 
-  /* Позначки на смужці перемотки. Малюємо, коли відома тривалість: до
-     метаданих ширина сегмента у відсотках порахувалась би від нуля. */
   function markSegments() {
     const total = video.duration;
     if (!(total > 0) || !isFinite(total)) {
@@ -804,28 +1148,26 @@
 
   function maybeSkip() {
     if (!adSegments.length || video.paused) return;
-    const t = video.currentTime;
+    const now = video.currentTime;
     for (const seg of adSegments) {
-      // -0.4 біля кінця: інакше стрибок «на end» іноді лишає плеєр за
-      // пів кадру до межі, і сегмент пропускається двічі підряд.
-      if (seg.done || t < seg.start || t >= seg.end - 0.4) continue;
-      seg.done = true;               // перемотав назад руками — не сваримось
-      const jumped = seg.end - t;
+      // -0.4 near the end: a jump "to end" sometimes lands half a frame
+      // short and the segment gets skipped twice in a row.
+      if (seg.done || now < seg.start || now >= seg.end - 0.4) continue;
+      seg.done = true;               // rewound by hand — don't fight the user
+      const jumped = seg.end - now;
       try { video.currentTime = seg.end; } catch (e) { continue; }
       skippedCount += 1;
       skippedSeconds += Math.max(0, jumped);
       if (settings?.notify_skips !== false) {
-        showSkipped((seg.label || "реклама") + " — " + fmt(jumped));
+        showSkipped(t("player.skipped", { label: seg.label || t("player.ad"), time: fmt(jumped) }));
       }
       pushState();
-      return;                        // за один тік — один стрибок
+      return;                        // one jump per tick
     }
   }
 
   function showSkipped(text) {
     const box = $("skipped");
-    // Іконка + текст окремими вузлами: textContent з emoji попереду давав
-    // кольорову наліпку, яка не слухалась ні кольору теми, ні розміру.
     box.innerHTML = iconSvg("skip") + "<span></span>";
     box.querySelector("span").textContent = text;
     box.classList.add("on");
@@ -833,12 +1175,10 @@
     skipTimer = setTimeout(() => box.classList.remove("on"), 2400);
   }
 
-  /* ---------- звіт стану боту ----------
-
-     Без цього на «а де ми зупинились?» бот міг би тільно вигадати: SSE —
-     канал в одну сторону, від бота до екрана. Шлемо на подіях і раз на
-     5 секунд, поки грає; TTL на бекенді (40 с) сам погасить стан, якщо
-     екран засне або застосунок закриють. */
+  /* ---------- state report to the bot ----------
+     SSE only goes bot -> screen; without this the bot could only invent
+     where we stopped. Sent on events and every 5 s while playing; the
+     backend's 40 s TTL clears it if the screen sleeps. */
 
   function pushState(extra) {
     const payload = Object.assign({
@@ -852,6 +1192,7 @@
       skipped_count: skippedCount,
       skipped_seconds: Math.round(skippedSeconds * 10) / 10,
       segments: adSegments.length,
+      captions: captionsOn,
     }, extra || {});
     fetch("/api/video/state", {
       method: "POST",
@@ -872,33 +1213,30 @@
     stateTimer = 0;
   }
 
-  /* ---------- команди від бота ----------
-
-     Прилітають від батька (screen.js), який отримав SSE-подію video.
-     Плеєр — тут, у iframe, тому виконує їх саме цей код. Невідому дію
-     тихо ігноруємо: новий тул на старому пакеті не мусить нічого ламати. */
+  /* ---------- commands from the bot ----------
+     Arrive from the parent (screen.js) after an SSE video event. Unknown
+     actions are ignored: a new tool on an old package must break nothing. */
 
   async function botCommand(cmd) {
     const action = String(cmd.action || "");
     if (action === "play") {
-      const t = cmd.track || {};
-      if (!t.id) return;
+      const tr = cmd.track || {};
+      if (!tr.id) return;
       setMode("video");
       sheet.classList.remove("on");
       await openVideo({
-        id: t.id,
-        title: t.title || "Відео",
-        uploader: t.uploader || "",
-        duration: Number(t.duration) || 0,
+        id: tr.id,
+        title: tr.title || t("player.untitled"),
+        uploader: tr.uploader || "",
+        duration: Number(tr.duration) || 0,
       }, Number(cmd.position) || 0);
       return;
     }
-    // Решта команд мають сенс лише для відкритого плеєра
     if (!player.classList.contains("on")) return;
     const total = (video.duration > 0 && isFinite(video.duration)) ? video.duration : 0;
 
     if (action === "pause") { video.pause(); }
-    else if (action === "resume") { video.play().catch(() => vsay("Тапни кнопку пуску, щоб продовжити.")); }
+    else if (action === "resume") { video.play().catch(() => vsay("player.tapToResume")); }
     else if (action === "stop") { closeVideo(); return; }
     else if (action === "forward") { nudge(Number(cmd.seconds) || SEEK_STEP_S); return; }
     else if (action === "back") { nudge(-(Number(cmd.seconds) || SEEK_STEP_S)); return; }
@@ -907,7 +1245,7 @@
       video.currentTime = Math.min(total, Math.max(0, Number(cmd.position) || 0));
     }
     else if (action === "restart") {
-      // Дивимо заново — отже і рекламу пропускаємо заново
+      // Watching again means skipping the sponsors again too
       for (const seg of adSegments) seg.done = false;
       skippedCount = 0; skippedSeconds = 0;
       video.currentTime = 0;
@@ -917,40 +1255,48 @@
     else if (action === "speed") { setRateValue(cmd.rate); }
     else if (action === "mute") { video.muted = true; }
     else if (action === "unmute") { video.muted = false; }
+    else if (action === "captions_on") { await setCaptions(true); }
+    else if (action === "captions_off") { await setCaptions(false); }
     else { return; }
     pushState();
   }
 
-  /* Скін екрана і команди бота приходять від батька повідомленням */
   window.addEventListener("message", (e) => {
-    if (e.origin !== window.location.origin) return;
+    if (e.source !== window.parent) return;
     const data = e.data;
     if (!data || typeof data !== "object") return;
     if (data.type === "botSkin") {
-      // Тема — окремо від скіна: скін міняє КОЛЬОРИ, а тема — ще й
-      // color-scheme (нею браузер малює скролбари й системні контроли).
+      // Theme is separate from the skin: it also sets color-scheme, which
+      // paints scrollbars and native controls.
       document.documentElement.dataset.theme = data.theme === "light" ? "light" : "dark";
-      if (data.vars) {
-        for (const k in data.vars) document.documentElement.style.setProperty(k, data.vars[k]);
+      if (data.vars) for (const k in data.vars) document.documentElement.style.setProperty(k, data.vars[k]);
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+        say(statusKey[0], statusKey[1], statusKey[2]);
+        if (vmsgKey) vsay(vmsgKey);
+        if (!lastTracks.length && !player.classList.contains("on")) renderHome();
+        renderSettings();
       }
       return;
     }
-    if (data.type === "botVideo") botCommand(data);
+    // Commands only from the screen itself, never from anything else that
+    // got a handle on this window.
+    if (data.type === "botVideo" && e.origin === window.location.origin) botCommand(data);
   });
 
-  /* Батько закриває застосунок через innerHTML = "" — iframe вмирає разом із
-     потоком. Але якщо його просто ховають, лишити відео грати в тиші не
-     годиться: звук ішов би з невидимого застосунку. */
+  /* Hidden but not closed: do not keep playing sound from an invisible app. */
   document.addEventListener("visibilitychange", () => {
     if (document.hidden && !video.paused) { video.pause(); pushState(); }
   });
 
+  applyI18n();
   paintIcons();
   setPlayIcon(false);
-  setMode(pref(MODE_KEY, "video"));
+  setMode(storageGet(MODE_KEY, "video"));
   loadSettings();
-  q.value = pref(KEY, "");
-  if (q.value) search();
+  q.value = storageGet(KEY, "");
+  if (q.value) search(); else renderHome();
 </script>
 </body>
 </html>

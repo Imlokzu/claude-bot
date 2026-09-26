@@ -76,6 +76,9 @@ ACTIONS: dict[str, str] = {
     "speed": "швидкість",
     "mute": "без звуку",
     "unmute": "зі звуком",
+    # Captions over the video, from the same transcript chain the bot reads.
+    "captions_on": "субтитри увімкнено",
+    "captions_off": "субтитри вимкнено",
 }
 
 # Синоніми: мозок цілком може сказати «стоп» або "play" замість канонічного
@@ -92,6 +95,9 @@ _ALIASES: dict[str, str] = {
     "швидкість": "speed", "rate": "speed", "швидше": "speed",
     "тихо": "mute", "приглуши": "mute", "звук вимкни": "mute",
     "звук": "unmute", "поверни звук": "unmute",
+    "субтитри": "captions_on", "увімкни субтитри": "captions_on", "subtitles": "captions_on",
+    "cc": "captions_on", "captions": "captions_on",
+    "вимкни субтитри": "captions_off", "без субтитрів": "captions_off", "no captions": "captions_off",
 }
 
 

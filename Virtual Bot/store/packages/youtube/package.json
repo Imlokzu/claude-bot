@@ -4,8 +4,15 @@
   "label": "YouTube",
   "icon": "youtube",
   "tint": "#d95a5a",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "author": "Клод Бот",
-  "description": "Відео й музика з YouTube: пошук, плеєр з перемоткою, пропуск вклеєної реклами. Бот керує ним голосом.",
-  "entry": "index.html"
+  "description": "Відео й музика з YouTube: пошук, продовження перегляду, субтитри, пропуск вклеєної реклами. Бот керує голосом.",
+  "entry": "index.html",
+  "category": "media",
+  "locales": {
+    "en": {
+      "label": "YouTube",
+      "description": "YouTube video and music: search, continue watching, captions, sponsor skipping. Voice-controlled by the bot."
+    }
+  }
 }

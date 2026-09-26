@@ -562,3 +562,15 @@ def test_package_supports_light_theme():
     markup = _package_markup()
     assert ':root[data-theme="light"]' in markup
     assert "dataset.theme" in markup
+
+
+def test_captions_commands_resolve():
+    """«увімкни субтитри» must reach the player as a command it knows."""
+    from pathlib import Path
+
+    import app_config
+
+    assert vc.build_command("увімкни субтитри") == {"action": "captions_on"}
+    assert vc.build_command("вимкни субтитри") == {"action": "captions_off"}
+    pkg = (Path(app_config.STORE_DIR) / "packages" / "youtube" / "index.html").read_text("utf-8")
+    assert '"captions_on"' in pkg and '"captions_off"' in pkg

@@ -42,7 +42,7 @@ TIMEOUT_S = 20
 # Дії плеєра — дублюємо контракт video_control.ACTIONS, щоб сервер лишався
 # самодостатнім (його запускають окремим процесом, без імпорту бота).
 ACTIONS = ["pause", "resume", "stop", "forward", "back", "seek",
-           "restart", "end", "speed", "mute", "unmute"]
+           "restart", "end", "speed", "mute", "unmute", "captions_on", "captions_off"]
 
 CATEGORIES = ["sponsor", "selfpromo", "interaction", "intro",
               "outro", "preview", "filler", "music_offtopic"]
@@ -71,7 +71,8 @@ TOOLS = [
             "Керувати відео, яке ВЖЕ грає на екрані: pause (пауза), resume (далі), "
             "stop (зупинити й закрити), forward/back (перемотати на seconds), "
             "seek (стрибнути на position, напр. «5:00»), restart (з початку), "
-            "end (у кінець), speed (швидкість rate), mute/unmute (звук). "
+            "end (у кінець), speed (швидкість rate), mute/unmute (звук), "
+            "captions_on/captions_off (субтитри). "
             "Використовуй на «стоп», «пауза», «перемотай вперед», «на 5 хвилині», «в кінець»."
         ),
         "inputSchema": {
