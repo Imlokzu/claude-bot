@@ -10,7 +10,7 @@ from typing import Awaitable, Callable
 from tools.currency import get_common_rates, get_rate
 from tools.facts import get_fact
 from tools.images import search_images
-from tools import email_tools, fs_tools, music_tools, screen_tools, share_tools, ui_tools, video_tools, workspace_tools
+from tools import email_tools, fs_tools, music_tools, screen_tools, share_tools, timer_tools, ui_tools, video_tools, workspace_tools
 from tools.search import search_web
 from tools.weather import get_weather
 import memory
@@ -139,6 +139,7 @@ _TOOL_SCHEMAS: list[dict] = [
     # Елементи інтерфейсу: питання кнопками, чеклісти, картки вибору
     *ui_tools.SCHEMAS,
     *screen_tools.SCHEMAS,
+    *timer_tools.SCHEMAS,
     # Музика й відео: Now Playing на екрані + транскрайб YouTube
     *music_tools.SCHEMAS,
     # Відео з картинкою в застосунку youtube: показати, керувати, адблок
@@ -146,6 +147,17 @@ _TOOL_SCHEMAS: list[dict] = [
     # Пошта агента (@ag.waveio.me): читання скриньки, очікування OTP кодів
     *email_tools.SCHEMAS,
 ]
+
+async def _weather_handler(city: str) -> dict:
+    """The weather tool, and the screen's weather tile shows the same answer."""
+    result = await get_weather(city)
+    try:
+        import screen_widgets
+        screen_widgets.remember_weather(city, result)
+    except Exception:  # noqa: BLE001 — the tile must never fail the tool
+        log.exception("Could not hand the weather to the screen")
+    return result
+
 
 async def _currency_handler(base: str, target: str = "UAH") -> dict:
     """Обробляє запит курсу: якщо target не вказано, повертає кілька популярних курсів."""
@@ -254,7 +266,7 @@ _SHARE_SCHEMAS: list[dict] = [
 ]
 
 _HANDLERS: dict[str, ToolHandler] = {
-    "weather": get_weather,
+    "weather": _weather_handler,
     "currency": _currency_handler,
     "facts": get_fact,
     "memory_search": _memory_search,
@@ -267,6 +279,7 @@ _HANDLERS: dict[str, ToolHandler] = {
     **fs_tools.HANDLERS,
     **ui_tools.HANDLERS,
     **screen_tools.HANDLERS,
+    **timer_tools.HANDLERS,
     **music_tools.HANDLERS,
     **video_tools.HANDLERS,
     **email_tools.HANDLERS,

@@ -53,6 +53,7 @@ import auth_clerk
 import brain_context
 import brains
 import chat_bubbles
+import screen_widgets
 import chat_store
 import openclaw_config
 import openclaw_models
@@ -1278,6 +1279,7 @@ async def store_app_file(pkg_id: str, file_path: str) -> FileResponse:
         raise HTTPException(status_code=404)
     return FileResponse(target)
 app.include_router(system_status.router)
+app.include_router(screen_widgets.router)
 
 
 # ------------------------------------------------------------------ музика (Now Playing)
