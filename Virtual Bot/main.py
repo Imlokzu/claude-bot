@@ -34,6 +34,7 @@ from threading import Lock
 from typing import Any, Optional, Union
 from urllib.parse import quote
 
+import html
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile
@@ -73,6 +74,7 @@ import asr_whisper
 import emotions
 import events
 import music
+import integrations
 import screen_store
 import ytmusic
 import sponsorblock
@@ -208,6 +210,9 @@ async def lifespan(_app: FastAPI):
     _install_signal_chain()
     # Фоновий «нагляд за життям»: зір, привітання, сум, дрімота
     vision_watcher.start()
+    # Messengers (Telegram, Discord) poll in the background; each one that has
+    # no token configured simply does not start.
+    await integrations.start_all(_messenger_chat, _messenger_transcribe)
     scheduler = None
     try:
         scheduler = AsyncIOScheduler()
@@ -231,6 +236,10 @@ async def lifespan(_app: FastAPI):
                 log.exception("Не вдалося зупинити dream-cycle scheduler")
         # Порядок очистки: SSE → watcher → display-відправки → дочірні процеси.
         events.close_all()
+        try:
+            await integrations.stop_all()
+        except Exception:  # noqa: BLE001 — the rest of the cleanup must run
+            log.exception("Failed to stop integrations")
         try:
             await coding.stop_all()
         except Exception:  # noqa: BLE001 — решта очистки мусить відпрацювати
@@ -2042,6 +2051,22 @@ def _typewriter(text: str) -> list[str]:
 async def api_chat(request: Request, req: ChatRequest):
     """Повідомлення користувача → відповідь бота + емоція (мозок за пріоритетом)."""
     clerk_uid = await _require_user(request)
+    # Хід для окремої консолі (/console): звідки прийшла репліка видно за
+    # Referer — з екрана пристрою чи з панелі.
+    turn_source = "screen" if "/screen" in (request.headers.get("referer") or "") else "chat"
+    return await chat_turn(req, clerk_uid, turn_source)
+
+
+async def chat_turn(req: ChatRequest, clerk_uid: str, turn_source: str = "chat"):
+    """
+    One conversation turn, whoever asked for it.
+
+    The dashboard, the device screen and the messengers (Telegram, Discord)
+    are different windows onto the SAME chat: same brain, same history on
+    disk, same tools. Only the shape of the reply differs, so the turn itself
+    lives here once and each channel only formats what comes back. With
+    stream=False this returns the reply dict; with stream=True an SSE stream.
+    """
     message = req.message.strip()
     images = await asyncio.to_thread(_load_chat_images, req.attachments)
     sid = _get_or_create_session_id(req)
@@ -2059,10 +2084,7 @@ async def api_chat(request: Request, req: ChatRequest):
         pending_reactions = chat_store.take_pending_reactions(sid)
     agent_message = _reactions_note(pending_reactions) + agent_message
     log.info("→ Запит у чат: session=%s user=%s %s", sid, clerk_uid[:8], message[:120])
-    # Хід для окремої консолі (/console): звідки прийшла репліка видно за
-    # Referer — з екрана пристрою чи з панелі. Далі до цього ходу чіпляються
-    # кроки мозків (див. brains.chat) і кроки тулзів.
-    turn_source = "screen" if "/screen" in (request.headers.get("referer") or "") else "chat"
+    # The brains' and tools' steps attach to this turn (see brains.chat).
     turn_text = f"{participant_name}: {message}" if participant_name else message
     turn_id = trace_log.start_turn(turn_source, turn_text, sid)
     try:
@@ -2370,6 +2392,168 @@ async def api_chat(request: Request, req: ChatRequest):
                 await asyncio.gather(chat_task, return_exceptions=True)
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")
+
+
+# ------------------------------------------------------------------ messengers
+#
+# Telegram and Discord run the very same chat_turn as the dashboard; these
+# two functions are the whole adapter. See integrations/.
+
+async def _messenger_chat(message: str, session_id: str, attachments: list, channel: str, meta: dict) -> dict:
+    # With Clerk on, a messenger chat belongs to whoever connected the bot in
+    # the dashboard, so it shows up in THEIR chat list. Dev mode keeps the
+    # local model (empty uid), like every other dev request.
+    clerk_uid = "" if auth_clerk.is_auth_disabled() else str((meta or {}).get("clerk_user_id") or "")
+    req = ChatRequest(message=(message or "…")[:32_000], session_id=session_id, attachments=list(attachments or [])[:8])
+    result = await chat_turn(req, clerk_uid, channel)
+    with brain_context.set_clerk_user(clerk_uid):
+        chat_store.set_channel(session_id, channel)
+    return result if isinstance(result, dict) else {}
+
+
+async def _messenger_transcribe(data: bytes, filename: str, lang: str) -> str:
+    """Voice messages: the same ASR the screen's microphone uses."""
+    provider, backend = _asr_backend()
+    if not backend.is_available() or len(data) > cfg.REGOLO_ASR_MAX_UPLOAD_BYTES:
+        return ""
+    if provider == "whisper_local":
+        text = await asyncio.to_thread(asr_whisper.transcribe, data, Path(filename).suffix or ".ogg")
+    else:
+        text = await asr_regolo.transcribe(data, filename or "voice.ogg", "audio/ogg")
+    return asr_terms.normalize(text or "")
+
+
+class IntegrationConfigRequest(BaseModel):
+    token: str = Field(default="", max_length=200)
+    client_id: str = Field(default="", max_length=200)
+    client_secret: str = Field(default="", max_length=200)
+
+
+def _integration(name: str):
+    bridge = integrations.MESSENGERS.get(name)
+    if bridge is None:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "unknown integration"})
+    return bridge
+
+
+@app.get("/api/integrations")
+async def api_integrations() -> dict:
+    """What is connected. Public fields only: the screen reads this without a
+    token (to offer "send to Telegram"), so no pairing codes here."""
+    public = ("id", "label", "configured", "connected", "account", "can_share_files")
+    return {"integrations": [{k: s.get(k) for k in public} for s in integrations.statuses()]}
+
+
+@app.get("/api/integrations/details")
+async def api_integrations_details(request: Request) -> dict:
+    await _require_user(request)
+    return {"integrations": integrations.statuses()}
+
+
+@app.post("/api/integrations/{name}/config")
+async def api_integration_config(name: str, request: Request, req: IntegrationConfigRequest) -> dict:
+    clerk_uid = await _require_user(request)
+    if name == "google":
+        try:
+            integrations.google.account.set_client(req.client_id, req.client_secret)
+        except integrations.google.GoogleError as exc:
+            raise HTTPException(status_code=400, detail={"code": exc.code, "message": str(exc)}) from exc
+        return integrations.google.account.status()
+    bridge = _integration(name)
+    try:
+        return await bridge.configure(req.token, clerk_uid)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail={"code": str(exc), "message": str(exc)}) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail={"code": "network", "message": str(exc)}) from exc
+
+
+@app.post("/api/integrations/{name}/pair-code")
+async def api_integration_pair_code(name: str, request: Request) -> dict:
+    await _require_user(request)
+    bridge = _integration(name)
+    bridge.new_pair_code()
+    return bridge.status()
+
+
+@app.post("/api/integrations/{name}/disconnect")
+async def api_integration_disconnect(name: str, request: Request) -> dict:
+    await _require_user(request)
+    if name == "google":
+        await integrations.google.account.disconnect()
+        return integrations.google.account.status()
+    bridge = _integration(name)
+    await bridge.disconnect()
+    return bridge.status()
+
+
+@app.post("/api/integrations/{name}/test")
+async def api_integration_test(name: str, request: Request) -> dict:
+    await _require_user(request)
+    bridge = _integration(name)
+    if not bridge.owners():
+        raise HTTPException(status_code=409, detail={"code": "not_paired", "message": "nobody is paired yet"})
+    sent = await bridge.send_to_owners("Claude Bot: test message from the panel.")
+    return {"ok": True, "sent": sent}
+
+
+@app.post("/api/integrations/{name}/share-package")
+async def api_integration_share_package(name: str, req: StorePackageRequest) -> dict:
+    """The screen's "send to Telegram" for a store package. No Clerk gate,
+    like the rest of the store: it can only send a package to the owner."""
+    bridge = _integration(name)
+    if not bridge.owners():
+        raise HTTPException(status_code=409, detail={"code": "not_paired", "message": "nobody is paired yet"})
+    try:
+        sent = await bridge.share_package(req.id)
+    except screen_store.StoreError as exc:
+        raise _store_http_error(exc) from exc
+    return {"ok": True, "sent": sent}
+
+
+def _google_redirect_uri(request: Request) -> str:
+    """Loopback redirect: a Google *Desktop* OAuth client accepts any port on
+    127.0.0.1 without registering it, which is what a self-hosted bot needs."""
+    configured = str(cfg.cfg("integrations", "google_redirect_uri", default="") or "").strip()
+    if configured:
+        return configured
+    port = request.url.port or 8100
+    return f"http://127.0.0.1:{port}/api/integrations/google/callback"
+
+
+@app.get("/api/integrations/google/auth")
+async def api_google_auth(request: Request) -> dict:
+    await _require_user(request)
+    try:
+        return {"url": integrations.google.account.auth_url(_google_redirect_uri(request))}
+    except integrations.google.GoogleError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": str(exc)}) from exc
+
+
+@app.get("/api/integrations/google/callback", include_in_schema=False)
+async def api_google_callback(state: str = Query(default=""), code: str = Query(default=""),
+                              error: str = Query(default="")) -> HTMLResponse:
+    """Google sends the browser back here. The state is a one-time value we
+    minted, so this needs no Clerk token — the browser tab has none."""
+    from integrations.locales import t as it
+
+    lang = "uk"
+    if error or not code:
+        body, ok = it(lang, "google.denied"), False
+    else:
+        try:
+            status = await integrations.google.account.finish(state, code)
+            body, ok = it(lang, "google.connected", email=status.get("account") or "Google"), True
+        except integrations.google.GoogleError as exc:
+            body, ok = it(lang, "google.failed", error=str(exc)), False
+    safe = html.escape(body)
+    color = "#8ca879" if ok else "#d07a6a"
+    return HTMLResponse(
+        f"<!doctype html><meta charset=utf-8><title>Claude Bot</title>"
+        f"<body style='font:16px system-ui;background:#16181a;color:#e8e4dc;display:grid;place-items:center;height:100vh;margin:0'>"
+        f"<p style='max-width:28em;text-align:center;border:1px solid {color};padding:24px;border-radius:14px'>{safe}</p>",
+        status_code=200 if ok else 400,
+    )
 
 
 class SessionReactionRequest(BaseModel):

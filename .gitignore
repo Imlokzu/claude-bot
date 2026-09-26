@@ -80,6 +80,9 @@ Virtual Bot/ytm-helper/target/
 
 # ---- Runtime-стан агентів (МІСТИТЬ credential-и: opencode account.json) ----
 Virtual Bot/runtime/
+# Messenger bot tokens and Google OAuth refresh tokens (integrations/).
+# Covered by runtime/ above; spelled out so moving runtime/ cannot expose them.
+Virtual Bot/runtime/integrations/
 
 # ---- Внутрішній стан AI-інструментів (не джерело проєкту) ----
 .crab/

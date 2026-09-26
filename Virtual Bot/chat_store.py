@@ -452,6 +452,34 @@ def history(session_id: str, limit: int) -> list[dict[str, str]]:
     return history
 
 
+def set_channel(session_id: str, channel: str) -> None:
+    """Remember where a session lives (telegram, discord), once.
+
+    The dashboard lists every chat together; the channel is what lets it
+    show a Telegram chat as one, instead of as an oddly named local chat.
+    """
+    channel = (channel or "").strip().lower()[:16]
+    if not channel or channel in ("chat", "screen"):
+        return
+    try:
+        path = _path(session_id)
+    except ValueError:
+        return
+    if not path.is_file():
+        return
+    data = load(session_id)
+    if data.get("channel") == channel:
+        return
+    data["channel"] = channel
+    tmp = path.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        log.exception("Could not store the channel of chat %s", session_id)
+        tmp.unlink(missing_ok=True)
+
+
 def set_title(session_id: str, title: str) -> None:
     """Замінює заголовок чату (бот придумує його після першого обміну)."""
     clean = " ".join((title or "").split())[:TITLE_LIMIT]
@@ -557,6 +585,8 @@ def list_sessions(limit: int = 50, include_empty: bool = False) -> list[dict]:
             "count": len(data.get("messages") or []),
             "pinned": bool(data.get("pinned")),
             "project": data.get("project") or "",
+            # "telegram" / "discord" for messenger chats, "" for local ones
+            "channel": data.get("channel") or "",
         })
     # Закріплені чати завжди зверху; всередині групи — найсвіжіші першими.
     out.sort(key=lambda s: (not s["pinned"], -s["updated"]))

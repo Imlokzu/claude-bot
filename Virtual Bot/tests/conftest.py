@@ -20,6 +20,14 @@ os.environ.setdefault(
     str(Path(tempfile.gettempdir()) / "virtual-bot-tests" / "no-openclaw.json"),
 )
 
+# Integrations keep their tokens under runtime/integrations/. Point them at an
+# empty folder so a test run never starts a Telegram/Discord poller with the
+# owner's real token (it would steal their bot's updates).
+os.environ.setdefault(
+    "VBOT_INTEGRATIONS_DIR",
+    str(Path(tempfile.mkdtemp(prefix="virtual-bot-integrations-"))),
+)
+
 import chat_store
 
 
