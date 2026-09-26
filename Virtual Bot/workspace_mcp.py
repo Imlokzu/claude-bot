@@ -7,7 +7,15 @@ OpenClaw-агенту його ВЛАСНУ робочу теку на диск�
 Virtual Bot. Коли активний мозок — OpenClaw, він ходить власним набором
 інструментів, тому доступ до теки треба віддати йому так само, як емоції
 (див. emotions_mcp.py). Сервер нічого не робить сам: він лише проксює виклики
-на /api/workspace/* — уся перевірка шляхів лишається на бекенді.
+на /api/tools/call — уся перевірка шляхів лишається на бекенді.
+
+Саме /api/tools/call, а НЕ /api/workspace/* напряму: ці REST-ендпоінти
+призначені для браузера й вимагають справжній Clerk Bearer-токен
+(_require_user). Цей MCP — локальний stdio-процес без браузерної сесії, тож
+токена в нього ніколи не буде — прямий виклик /api/workspace/* впав би на
+401 "Потрібен вхід (Clerk)" завжди, незалежно від того, чи залогінений
+власник у дашборді. /api/tools/call стоїть за _tool_caller, який саме для
+таких локальних мостів (loopback без токена) пускає виклик без 401.
 
 Протокол: MCP поверх stdio = JSON-RPC 2.0, роздільник — новий рядок.
 
@@ -22,7 +30,6 @@ import json
 import os
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
 
 VBOT_URL = os.environ.get("VBOT_URL", "http://127.0.0.1:8100").rstrip("/")
@@ -105,20 +112,18 @@ TOOLS = [
 _TOOL_NAMES = {t["name"] for t in TOOLS}
 
 
-def _request(method: str, path: str, *, params: dict | None = None, body: dict | None = None) -> dict:
-    """Виклик /api/workspace/*; будь-яка помилка → {'error': ...}, MCP не падає."""
-    url = f"{VBOT_URL}{path}"
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
-    data = json.dumps(body).encode("utf-8") if body is not None else None
+def _call(name: str, args: dict) -> dict:
+    """Проксіює виклик на /api/tools/call; будь-яка помилка → {'error': ...}, MCP не падає."""
+    body = {"name": name, "args": args, "session_id": VBOT_SESSION}
+    data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
-        url, data=data,
-        headers={"Content-Type": "application/json"} if data else {},
-        method=method,
+        f"{VBOT_URL}/api/tools/call", data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return json.loads(resp.read().decode("utf-8")).get("result", {})
     except urllib.error.HTTPError as exc:
         try:
             detail = json.loads(exc.read().decode("utf-8")).get("detail", "")
@@ -127,30 +132,6 @@ def _request(method: str, path: str, *, params: dict | None = None, body: dict |
         return {"error": detail or f"HTTP {exc.code}"}
     except Exception as exc:  # noqa: BLE001 — панель могла бути вимкнена
         return {"error": f"Панель недоступна ({type(exc).__name__})"}
-
-
-def _call(name: str, args: dict) -> dict:
-    path = str(args.get("path", "") or "")
-    if name == "workspace_show":
-        return _request("POST", "/api/workspace/show", body={"path": path, "session_id": VBOT_SESSION})
-    if name == "workspace_info":
-        return _request("GET", "/api/workspace/info", params={"session_id": VBOT_SESSION})
-    if name == "workspace_list":
-        return _request("GET", "/api/workspace/list", params={"path": path, "session_id": VBOT_SESSION})
-    if name == "workspace_read":
-        return _request("GET", "/api/workspace/file", params={"path": path, "session_id": VBOT_SESSION})
-    if name == "workspace_write":
-        return _request("POST", "/api/workspace/file", body={
-            "path": path,
-            "content": str(args.get("content", "")),
-            "append": bool(args.get("append", False)),
-            "session_id": VBOT_SESSION,
-        })
-    if name == "workspace_mkdir":
-        return _request("POST", "/api/workspace/mkdir", body={"path": path, "session_id": VBOT_SESSION})
-    if name == "workspace_delete":
-        return _request("POST", "/api/workspace/delete", body={"path": path, "session_id": VBOT_SESSION})
-    return {"error": f"Невідомий інструмент: {name}"}
 
 
 def _send(msg: dict) -> None:
