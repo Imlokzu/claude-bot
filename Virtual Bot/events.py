@@ -101,7 +101,7 @@ def publish_say(text: str, emotion: str) -> None:
     publish({"type": "say", "text": text, "emotion": emotion})
 
 
-def publish_reply(text: str, emotion: str) -> None:
+def publish_reply(text: str, emotion: str, bubbles: list[str] | None = None) -> None:
     """
     Бот ВІДПОВІВ у чаті. Потрібно екрану пристрою (/screen), який показує
     останню репліку, але не бере участі в самому чаті.
@@ -114,7 +114,23 @@ def publish_reply(text: str, emotion: str) -> None:
     # 2000 символів різали довгу відповідь просто посеред слова — і саме цим
     # хвостом екран її й показував. Лишаємо стелю (SSE-подія не має возити
     # мегабайти), але таку, що реальна репліка в неї вміщається.
-    publish({"type": "reply", "text": str(text)[:16000], "emotion": emotion})
+    event: dict = {"type": "reply", "text": str(text)[:16000], "emotion": emotion}
+    # The reply as messenger bubbles: the screen speaks and captions them one
+    # at a time. Same ceiling as the text, so the event cannot grow past it.
+    if bubbles:
+        kept: list[str] = []
+        budget = 16000
+        for bubble in bubbles:
+            piece = str(bubble)[:budget]
+            if not piece.strip():
+                continue
+            kept.append(piece)
+            budget -= len(piece)
+            if budget <= 0:
+                break
+        if kept:
+            event["bubbles"] = kept
+    publish(event)
 
 
 _TOOL_STATES = ("start", "done", "fail")

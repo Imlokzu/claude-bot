@@ -2022,7 +2022,7 @@ async def api_chat(request: Request, req: ChatRequest):
             if reply:
                 try:
                     display_bridge.send_chat_exchange_bg(message, reply, final_emotion)
-                    events.publish_reply(reply, final_emotion)
+                    events.publish_reply(reply, final_emotion, bubbles)
                 except Exception:  # noqa: BLE001
                     log.exception("Не вдалося запустити відправку на дисплей")
             try:
@@ -2253,7 +2253,7 @@ async def api_chat(request: Request, req: ChatRequest):
                 if reply:
                     try:
                         display_bridge.send_chat_exchange_bg(message, reply, final_emotion)
-                        events.publish_reply(reply, final_emotion)
+                        events.publish_reply(reply, final_emotion, bubbles)
                     except Exception:  # noqa: BLE001
                         log.exception("Не вдалося запустити відправку на дисплей")
                 try:

@@ -8,7 +8,7 @@ import * as smd from "./vendor/smd.min.js";
 import { drawGlyphString, makeIcon, paintIcon, hasPixelIcon } from "./pixel-ui.js";
 /* Розбір ключового слова — окремо і без DOM, щоб логіку можна було
    перевіряти напряму, не маючи мікрофона (див. wake.js) */
-import { parseWake } from "./wake.js";
+import { parseWake, findWake } from "./wake.js";
 import { ReplyTurn } from "./reply.js";
 /* Контурні іконки та їхні кольори — у icons.js */
 import { makeSvgIcon, ICON_COLORS } from "./icons.js";
@@ -926,6 +926,7 @@ async function speechPump() {
       musicDucked = false;
       syncMusicVolume();
       captionSpeechEnded();
+      startFollowUp();
     }
   }
 }
@@ -2224,25 +2225,83 @@ function onMicLevel(level) {
 
 /* ---------- Розпізнавання ---------- */
 
+/* How long the bot waits for the command after hearing only its name, and
+   how long it keeps listening without the name after it has answered.
+   The follow-up window is what makes wake mode a conversation: nobody says
+   "Claude" before every sentence of a back-and-forth. */
+const WAKE_ARM_MS = 8000;
+const FOLLOW_UP_MS = 8000;
+let wakeTimer = 0;
+let followUpPending = false;   // a reply finished; open the window once speech ends
+
+function armWake(ms) {
+  wakeArmed = true;
+  clearTimeout(wakeTimer);
+  wakeTimer = setTimeout(disarmWake, ms);
+  setListening(listening);
+}
+
+function disarmWake() {
+  clearTimeout(wakeTimer);
+  if (!wakeArmed) return;
+  wakeArmed = false;
+  setListening(listening);
+}
+
+/* Called by sendChat when a reply is complete (spoken or not) */
+function onReplyFinished() {
+  if (voiceMode !== "wake") return;
+  followUpPending = true;
+  if (!botSpeaking) startFollowUp();
+}
+
+function startFollowUp() {
+  if (!followUpPending) return;
+  followUpPending = false;
+  if (voiceMode === "wake" && listening) armWake(FOLLOW_UP_MS);
+}
+
+/* "Claude, stop" while the bot talks: cut the voice, keep the mic */
+function bargeIn() {
+  followUpPending = false;
+  speechReset();
+  showCaption(t("voice.stopped"), "bot");
+  // Whoever said "stop" usually says the next thing right away
+  if (voiceMode === "wake" && listening) armWake(FOLLOW_UP_MS);
+}
+
 function handleFinalText(said) {
   const text = (said || "").trim();
   if (!text) return;
 
   if (voiceMode === "wake") {
     const { action, text: command } = parseWake(text, wakeWord, wakeArmed);
-    if (action === "ignore") return;             // не до бота — мовчимо
+    if (action === "ignore") {
+      if (!wakeArmed) setListening(listening);   // undo an early "listening" from interim
+      return;
+    }
+    if (action === "stop") { disarmWake(); bargeIn(); return; }
     if (action === "arm") {
-      wakeArmed = true;                          // сказали лише ім'я — чекаємо
-      setListening(listening);
+      armWake(WAKE_ARM_MS);                        // only the name: wait for the command
       showCaption(t("voice.yes"), "bot");
       return;
     }
-    wakeArmed = false;                           // команду прийняли
+    disarmWake();                                  // command taken
     sendChat(command, true);
     return;
   }
 
   sendChat(text, true);
+}
+
+/* While the bot is speaking, the mic still hears — mostly the bot itself.
+   Only one thing gets through: its name with a stop word. Asking for the
+   name as well is what keeps its own voice ("…stop the timer") from
+   silencing it. */
+function heardWhileSpeaking(text) {
+  if (voiceMode === "push") return;
+  const { action } = parseWake(text, wakeWord, false);
+  if (action === "stop") bargeIn();
 }
 
 /* Браузерний SR: єдиний шлях із проміжними результатами */
@@ -2257,8 +2316,14 @@ function startRecognition(continuous) {
   recognition.continuous = !!continuous;
 
   recognition.onresult = (e) => {
-    srRestarts = 0;                              // розпізнавання живе
-    if (botSpeaking) return;                     // це його власний голос
+    srRestarts = 0;                              // recognition is alive
+    if (botSpeaking) {
+      // Mostly its own voice; only "Claude, stop" may get through
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        heardWhileSpeaking(e.results[i][0].transcript);
+      }
+      return;
+    }
     let interim = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const chunk = e.results[i][0].transcript;
@@ -2274,6 +2339,12 @@ function startRecognition(continuous) {
       }
     }
     if (!continuous || interim) showLive(finalText + interim);
+    // The name is already in the interim text: show that the bot heard it
+    // now, not a second later when the phrase is final.
+    if (voiceMode === "wake" && !wakeArmed && interim && findWake(interim, wakeWord)) {
+      crab.setEmotion("listening");
+      micLabel.textContent = t("voice.listening");
+    }
   };
 
   recognition.onerror = () => {
@@ -2471,6 +2542,8 @@ function stopContinuous() {
   }
   mediaRec = null;
   closeMic();
+  clearTimeout(wakeTimer);
+  followUpPending = false;
   wakeArmed = false;
   setListening(false);
 }
