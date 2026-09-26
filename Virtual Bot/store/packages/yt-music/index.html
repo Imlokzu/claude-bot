@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>YT Music</title>
+<style>
+  :root {
+    --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+    --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+    --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+  body { background: var(--bg); color: var(--text);
+    font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+    -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  button, input { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+  svg.i { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; }
+
+  .app { display: flex; flex-direction: column; height: 100%; padding: 6px 8px 6px; gap: 5px; }
+  .bar { display: flex; gap: 5px; flex: none; }
+  input { flex: 1; min-width: 0; height: 28px; padding: 0 10px; border: 1px solid var(--line);
+    border-radius: 14px; background: var(--panel); outline: none; font-size: 12px; }
+  input:focus { border-color: var(--accent); }
+  .btn { flex: none; min-width: 28px; height: 28px; padding: 0 10px; border: 1px solid var(--line);
+    border-radius: 14px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+  .btn.icon { width: 28px; padding: 0; }
+  .btn:active { border-color: var(--accent); color: var(--accent); }
+  .seg { display: flex; flex: none; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--muted); height: 22px; padding: 0 10px;
+    font-size: 10px; font-weight: 700; cursor: pointer; }
+  .seg button.on { background: var(--accent); color: var(--bg); }
+  .row2 { display: flex; align-items: center; gap: 6px; flex: none; }
+  .status { flex: 1; min-width: 0; color: var(--muted); font-size: 10px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .status.now { color: var(--accent); }
+
+  .list { flex: 1; min-height: 0; overflow-y: auto; touch-action: pan-y; scrollbar-width: none;
+    border-top: 1px solid var(--line); padding-top: 3px; }
+  .list::-webkit-scrollbar { display: none; }
+  .shelf { margin: 6px 0 3px; color: var(--muted); font-size: 9.5px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; }
+  /* Albums scroll sideways in one row: a 172px-tall frame cannot spend two
+     rows of covers before the first song. */
+  .albums { display: flex; gap: 7px; overflow-x: auto; touch-action: pan-x; scrollbar-width: none; padding-bottom: 2px; }
+  .albums::-webkit-scrollbar { display: none; }
+  .album { flex: none; width: 76px; border: 0; padding: 0; background: transparent; text-align: left; cursor: pointer; }
+  .album img, .album .ph { width: 76px; height: 76px; border-radius: 6px; display: block; object-fit: cover;
+    background: var(--line); }
+  .album .t { margin-top: 3px; font-size: 10px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .album .s { font-size: 9px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track { display: flex; align-items: center; gap: 7px; width: 100%; min-height: 40px; padding: 3px 0;
+    border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+  .track:active .tt { color: var(--accent); }
+  .track.on .tt { color: var(--accent); }
+  .cover { width: 34px; height: 34px; flex: none; border-radius: 4px; object-fit: cover; background: var(--line); }
+  .num { width: 22px; flex: none; text-align: center; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .ti { flex: 1; min-width: 0; }
+  .tt { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ts { font-size: 9.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini { flex: none; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 9px;
+    background: transparent; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .mini:active { color: var(--accent); border-color: var(--accent); }
+  .hint { padding: 8px 2px; color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+
+  .sheet { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+  .shead { flex: none; display: flex; align-items: center; gap: 7px; padding: 6px 8px 4px; }
+  .shead .t { flex: 1; min-width: 0; font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sbody { flex: 1; min-height: 0; overflow-y: auto; touch-action: pan-y; padding: 2px 8px 10px; scrollbar-width: none; }
+  .sbody::-webkit-scrollbar { display: none; }
+  .ahead { display: flex; gap: 8px; align-items: center; padding: 4px 0 6px; }
+  .ahead img, .ahead .ph { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; background: var(--line); flex: none; }
+  .lyrics { white-space: pre-wrap; font-size: 11.5px; line-height: 1.5; }
+  .source { margin-top: 8px; color: var(--muted); font-size: 9px; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="bar">
+    <input id="q" type="search" data-i18n-placeholder="search.placeholder" data-i18n-aria="search.aria">
+    <button class="btn" id="go" type="button" data-i18n="search.go"></button>
+    <button class="btn icon" id="homeBtn" type="button" data-i18n-aria="home.aria" data-icon="home"></button>
+  </div>
+  <div class="row2">
+    <div class="seg" id="kind" role="group">
+      <button type="button" data-kind="songs" class="on" data-i18n="kind.songs"></button>
+      <button type="button" data-kind="albums" data-i18n="kind.albums"></button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+  <div class="list" id="list"></div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="shead">
+    <button class="btn" id="sheetBack" type="button"><span data-icon="back"></span><span data-i18n="common.back"></span></button>
+    <div class="t" id="sheetTitle"></div>
+  </div>
+  <div class="sbody" id="sheetBody"></div>
+</div>
+
+<script>
+  // YouTube Music on the screen.
+  //   what to play -> /api/ytm/... (the Rust helper on the backend)
+  //   how to play  -> /api/music/play with an up-next queue: the track goes to
+  //                   Now Playing and keeps playing after this app closes
+  //   covers       -> /api/ytm/cover, so the device never calls Google itself
+  const $ = (id) => document.getElementById(id);
+
+  const STR = {
+    uk: {
+      "search.placeholder": "Пісня, виконавець, альбом",
+      "search.aria": "Пошук у YouTube Music",
+      "search.go": "Знайти",
+      "home.aria": "Головна",
+      "kind.songs": "Пісні",
+      "kind.albums": "Альбоми",
+      "common.back": "Назад",
+      "status.home": "YouTube Music",
+      "status.loading": "Завантажую…",
+      "status.searching": "Шукаю «{q}»…",
+      "status.found": "Знайдено: {n}",
+      "status.nothing": "Нічого не знайшлось.",
+      "status.starting": "Вмикаю: {title}",
+      "status.playing": "Грає: {title} · далі {n}",
+      "status.failed": "Не вийшло: {error}",
+      "status.offline": "Бот недоступний.",
+      "status.unavailable": "YouTube Music не підключено: на боті не зібрано ytm-helper.",
+      "shelf.new": "Нові альбоми",
+      "shelf.charts": "Чарт",
+      "shelf.trending": "У тренді",
+      "shelf.newTracks": "Нові кліпи",
+      "shelf.recent": "Нещодавно",
+      "album.play": "Грати все",
+      "lyrics.title": "Текст",
+      "lyrics.none": "Тексту для цієї пісні немає.",
+      "lyrics.aria": "Текст пісні",
+      "hint.empty": "Шукай пісні й альбоми. Тап по пісні вмикає її в Now Playing і додає радіо «далі» — схожі треки, як у YouTube Music.",
+    },
+    en: {
+      "search.placeholder": "Song, artist, album",
+      "search.aria": "Search YouTube Music",
+      "search.go": "Search",
+      "home.aria": "Home",
+      "kind.songs": "Songs",
+      "kind.albums": "Albums",
+      "common.back": "Back",
+      "status.home": "YouTube Music",
+      "status.loading": "Loading…",
+      "status.searching": "Searching “{q}”…",
+      "status.found": "Found {n}",
+      "status.nothing": "Nothing found.",
+      "status.starting": "Starting: {title}",
+      "status.playing": "Playing: {title} · {n} up next",
+      "status.failed": "Failed: {error}",
+      "status.offline": "The bot is offline.",
+      "status.unavailable": "YouTube Music isn't set up: ytm-helper is not built on the bot.",
+      "shelf.new": "New albums",
+      "shelf.charts": "Charts",
+      "shelf.trending": "Trending",
+      "shelf.newTracks": "New videos",
+      "shelf.recent": "Recently played",
+      "album.play": "Play all",
+      "lyrics.title": "Lyrics",
+      "lyrics.none": "No lyrics for this song.",
+      "lyrics.aria": "Lyrics",
+      "hint.empty": "Search songs and albums. Tapping a song plays it in Now Playing with an up-next radio of similar tracks, like YouTube Music.",
+    },
+  };
+
+  function storageGet(key, fallback) {
+    try { const v = localStorage.getItem(key); return v === null ? fallback : v; } catch (e) { return fallback; }
+  }
+  function storageSet(key, value) { try { localStorage.setItem(key, value); } catch (e) {} }
+
+  let lang = storageGet("botScreenLang", "uk") === "en" ? "en" : "uk";
+  function t(key, vars) {
+    let text = (STR[lang] && STR[lang][key]) || STR.uk[key] || key;
+    if (vars) for (const k in vars) text = text.split("{" + k + "}").join(String(vars[k]));
+    return text;
+  }
+  function applyI18n() {
+    document.documentElement.lang = lang;
+    for (const el of document.querySelectorAll("[data-i18n]")) el.textContent = t(el.dataset.i18n);
+    for (const el of document.querySelectorAll("[data-i18n-placeholder]")) el.placeholder = t(el.dataset.i18nPlaceholder);
+    for (const el of document.querySelectorAll("[data-i18n-aria]")) el.setAttribute("aria-label", t(el.dataset.i18nAria));
+  }
+
+  // play/list/music copied verbatim from static/screen/icons.js
+  const ICONS = {
+    play: '<path d="M8 5.4v13.2L19.2 12z"/>',
+    list: '<path d="M4 6.5h.01M4 12h.01M4 17.5h.01M8.5 6.5h11.5M8.5 12h11.5M8.5 17.5h11.5"/>',
+    music: '<path d="M9.2 18V6.2l9.3-2v11.6"/><circle cx="6.9" cy="18" r="2.4"/><circle cx="16.2" cy="15.8" r="2.4"/>',
+    back: '<path d="m14 5-7 7 7 7M7 12h13"/>',
+    home: '<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1z"/>',
+    lyrics: '<path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14 3.5V8.5h5M9 12.5h7M9 16h5"/>',
+  };
+  function icon(name) { return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || ICONS.play) + "</svg>"; }
+  function paintIcons() { for (const el of document.querySelectorAll("[data-icon]")) el.innerHTML = icon(el.dataset.icon); }
+
+  const list = $("list"), status = $("status"), q = $("q");
+  const RECENT_KEY = "yt-music.recent";
+  let kind = "songs";
+  let statusState = ["status.home", null, false];
+  let view = "home";            // what the list shows, for relocalising
+  let lastData = null;
+  let playingId = "";
+
+  function say(key, vars, now) {
+    statusState = [key, vars || null, !!now];
+    status.textContent = t(key, vars);
+    status.className = "status" + (now ? " now" : "");
+  }
+  function fmt(sec) {
+    sec = Math.max(0, Math.floor(Number(sec) || 0));
+    return Math.floor(sec / 60) + ":" + String(sec % 60).padStart(2, "0");
+  }
+  function coverUrl(url) { return url ? "/api/ytm/cover?u=" + encodeURIComponent(url) : ""; }
+  function errorText(payload, fallback) {
+    const d = payload && payload.detail;
+    if (d && typeof d === "object" && d.code === "unavailable") return t("status.unavailable");
+    if (d && typeof d.message === "string") return d.message;
+    if (typeof d === "string") return d;
+    return fallback;
+  }
+
+  async function api(path) {
+    let resp;
+    try { resp = await fetch(path); } catch (e) { throw new Error(t("status.offline")); }
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(errorText(data, String(resp.status)));
+    return data;
+  }
+
+  function img(url, cls) {
+    if (!url) { const ph = document.createElement("div"); ph.className = cls + " ph"; return ph; }
+    const el = document.createElement("img");
+    el.className = cls; el.alt = ""; el.loading = "lazy"; el.decoding = "async";
+    el.src = coverUrl(url);
+    el.addEventListener("error", () => el.removeAttribute("src"), { once: true });
+    return el;
+  }
+
+  function shelf(key) {
+    const el = document.createElement("div");
+    el.className = "shelf";
+    el.textContent = t(key);
+    return el;
+  }
+
+  /* A track row. `queue` is what should follow it: the rest of an album, or
+     nothing — then the YouTube Music radio for that track is fetched. */
+  function trackRow(track, opts) {
+    const row = document.createElement("div");
+    row.className = "track" + (track.id === playingId ? " on" : "");
+    row.setAttribute("role", "button");
+    if (opts && opts.number) {
+      const n = document.createElement("div");
+      n.className = "num"; n.textContent = String(opts.number);
+      row.appendChild(n);
+    } else {
+      row.appendChild(img(track.cover, "cover"));
+    }
+    const info = document.createElement("div");
+    info.className = "ti";
+    const title = document.createElement("div");
+    title.className = "tt"; title.textContent = track.title;
+    const sub = document.createElement("div");
+    sub.className = "ts";
+    sub.textContent = [(track.artists || []).join(", "), track.duration ? fmt(track.duration) : ""].filter(Boolean).join(" · ");
+    info.append(title, sub);
+    row.appendChild(info);
+    const words = document.createElement("button");
+    words.type = "button"; words.className = "mini";
+    words.setAttribute("aria-label", t("lyrics.aria"));
+    words.innerHTML = icon("lyrics");
+    words.addEventListener("click", (e) => { e.stopPropagation(); openLyrics(track); });
+    row.appendChild(words);
+    row.addEventListener("click", () => play(track, opts && opts.queue));
+    return row;
+  }
+
+  function albumCard(album) {
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.className = "album";
+    btn.appendChild(img(album.cover, ""));
+    const title = document.createElement("div");
+    title.className = "t"; title.textContent = album.title;
+    const sub = document.createElement("div");
+    sub.className = "s"; sub.textContent = [(album.artists || []).join(", "), album.year || ""].filter(Boolean).join(" · ");
+    btn.append(title, sub);
+    btn.addEventListener("click", () => openAlbum(album));
+    return btn;
+  }
+
+  /* ---------- play ---------- */
+
+  function toQueueItem(track) {
+    return { id: track.id, title: track.title || "", uploader: (track.artists || []).join(", "), duration: track.duration || 0 };
+  }
+
+  async function play(track, queue) {
+    say("status.starting", { title: track.title }, true);
+    let upNext = queue;
+    if (!upNext) {
+      // Radio first, then play: two plays would restart the stream. The
+      // helper answers in about a second, and the result is cached.
+      try {
+        const radio = await Promise.race([
+          api("/api/ytm/radio?id=" + encodeURIComponent(track.id) + "&limit=25"),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("slow")), 4000)),
+        ]);
+        upNext = radio.tracks || [];
+      } catch (e) { upNext = []; }
+    }
+    try {
+      const resp = await fetch("/api/music/play", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...toQueueItem(track), queue: upNext.filter((x) => x.id && x.id.length === 11).slice(0, 50).map(toQueueItem) }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        say("status.failed", { error: errorText(err, String(resp.status)) });
+        return;
+      }
+      playingId = track.id;
+      remember(track);
+      for (const row of document.querySelectorAll(".track.on")) row.classList.remove("on");
+      say("status.playing", { title: track.title, n: upNext.length }, true);
+    } catch (e) {
+      say("status.offline");
+    }
+  }
+
+  function remember(track) {
+    let recent = [];
+    try { recent = JSON.parse(storageGet(RECENT_KEY, "[]")) || []; } catch (e) {}
+    recent = [track].concat(recent.filter((x) => x.id !== track.id)).slice(0, 8);
+    storageSet(RECENT_KEY, JSON.stringify(recent));
+  }
+  function recentTracks() {
+    try { const v = JSON.parse(storageGet(RECENT_KEY, "[]")); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+  }
+
+  /* ---------- views ---------- */
+
+  async function showHome() {
+    view = "home";
+    list.innerHTML = "";
+    const recent = recentTracks();
+    if (recent.length) {
+      list.appendChild(shelf("shelf.recent"));
+      for (const tr of recent.slice(0, 3)) list.appendChild(trackRow(tr));
+    }
+    say("status.loading");
+    let data;
+    try {
+      data = lastData && view === "home" && lastData.home ? lastData.home : await api("/api/ytm/home?country=UA");
+      lastData = { home: data };
+    } catch (e) {
+      status.textContent = e.message;
+      if (!recent.length) {
+        const hint = document.createElement("div");
+        hint.className = "hint"; hint.textContent = t("hint.empty");
+        list.appendChild(hint);
+      }
+      return;
+    }
+    if (view !== "home") return;
+    if ((data.new_albums || []).length) {
+      list.appendChild(shelf("shelf.new"));
+      const row = document.createElement("div");
+      row.className = "albums";
+      for (const a of data.new_albums) row.appendChild(albumCard(a));
+      list.appendChild(row);
+    }
+    const sections = [["shelf.charts", data.charts], ["shelf.trending", data.trending], ["shelf.newTracks", data.new_tracks]];
+    for (const [key, tracks] of sections) {
+      if (!(tracks || []).length) continue;
+      list.appendChild(shelf(key));
+      for (const tr of tracks.slice(0, 10)) list.appendChild(trackRow(tr));
+    }
+    say("status.home");
+  }
+
+  async function search() {
+    const query = q.value.trim();
+    if (!query) { showHome(); return; }
+    view = "search";
+    storageSet("yt-music.lastQuery", query);
+    list.innerHTML = "";
+    say("status.searching", { q: query });
+    try {
+      const path = kind === "albums" ? "/api/ytm/albums?q=" : "/api/ytm/search?q=";
+      const data = await api(path + encodeURIComponent(query) + "&limit=20");
+      if (view !== "search") return;
+      const items = kind === "albums" ? (data.albums || []) : (data.tracks || []);
+      if (!items.length) { say("status.nothing"); return; }
+      if (kind === "albums") {
+        const grid = document.createElement("div");
+        grid.className = "albums";
+        grid.style.flexWrap = "wrap";
+        grid.style.overflowX = "visible";
+        for (const a of items) grid.appendChild(albumCard(a));
+        list.appendChild(grid);
+      } else {
+        for (const tr of items) list.appendChild(trackRow(tr));
+      }
+      say("status.found", { n: items.length });
+    } catch (e) {
+      status.textContent = e.message;
+    }
+  }
+
+  function openSheet(title) {
+    $("sheetTitle").textContent = title;
+    $("sheetBody").innerHTML = "";
+    $("sheet").hidden = false;
+    return $("sheetBody");
+  }
+  $("sheetBack").addEventListener("click", () => { $("sheet").hidden = true; });
+
+  async function openAlbum(album) {
+    const body = openSheet(album.title);
+    body.textContent = t("status.loading");
+    let data;
+    try { data = await api("/api/ytm/album?id=" + encodeURIComponent(album.id)); }
+    catch (e) { body.textContent = e.message; return; }
+    body.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "ahead";
+    head.appendChild(img(data.cover || album.cover, ""));
+    const info = document.createElement("div");
+    info.className = "ti";
+    const title = document.createElement("div");
+    title.className = "tt"; title.textContent = data.title || album.title;
+    const sub = document.createElement("div");
+    sub.className = "ts"; sub.textContent = [(data.artists || []).join(", "), data.year || ""].filter(Boolean).join(" · ");
+    const all = document.createElement("button");
+    all.type = "button"; all.className = "btn"; all.style.marginTop = "5px";
+    all.innerHTML = icon("play") + "<span></span>";
+    all.querySelector("span").textContent = t("album.play");
+    const tracks = (data.tracks || []).filter((x) => x.id);
+    all.addEventListener("click", () => { if (tracks.length) play(tracks[0], tracks.slice(1)); });
+    info.append(title, sub, all);
+    head.appendChild(info);
+    body.appendChild(head);
+    tracks.forEach((tr, i) => {
+      const withCover = { ...tr, cover: tr.cover || data.cover };
+      body.appendChild(trackRow(withCover, { number: i + 1, queue: tracks.slice(i + 1) }));
+    });
+  }
+
+  async function openLyrics(track) {
+    const body = openSheet(t("lyrics.title") + " · " + track.title);
+    body.textContent = t("status.loading");
+    let data;
+    try { data = await api("/api/ytm/lyrics?id=" + encodeURIComponent(track.id)); }
+    catch (e) { body.textContent = e.message; return; }
+    body.innerHTML = "";
+    const text = document.createElement("div");
+    text.className = "lyrics";
+    text.textContent = data.lyrics ? String(data.lyrics).replace(/\r/g, "") : t("lyrics.none");
+    body.appendChild(text);
+    if (data.lyrics && data.source) {
+      const src = document.createElement("div");
+      src.className = "source"; src.textContent = data.source;
+      body.appendChild(src);
+    }
+  }
+
+  /* ---------- controls ---------- */
+
+  $("go").addEventListener("click", search);
+  q.addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+  $("homeBtn").addEventListener("click", () => { q.value = ""; showHome(); });
+  $("kind").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-kind]");
+    if (!b) return;
+    kind = b.dataset.kind;
+    for (const x of $("kind").querySelectorAll("button")) x.classList.toggle("on", x === b);
+    if (q.value.trim()) search();
+  });
+
+  // Sideways swipe closes the app, like the rest of the screen. Vertical is
+  // left to the lists, which scroll.
+  (function swipeToClose() {
+    let start = null;
+    const root = $("app");
+    root.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("input, .albums")) return;
+      start = { x: e.clientX, y: e.clientY, id: e.pointerId };
+    });
+    root.addEventListener("pointerup", (e) => {
+      if (!start || start.id !== e.pointerId) return;
+      const dx = e.clientX - start.x, dy = e.clientY - start.y;
+      start = null;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2) {
+        window.parent.postMessage({ type: "storeAppSwipe", direction: dx < 0 ? "left" : "right" }, "*");
+      }
+    });
+    root.addEventListener("pointercancel", () => { start = null; });
+  })();
+
+  window.addEventListener("message", (e) => {
+    if (e.source !== window.parent || !e.data || e.data.type !== "botSkin") return;
+    if (e.data.vars) for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
+    document.documentElement.dataset.theme = e.data.theme === "light" ? "light" : "dark";
+    if ((e.data.lang === "uk" || e.data.lang === "en") && e.data.lang !== lang) {
+      lang = e.data.lang;
+      applyI18n();
+      say(statusState[0], statusState[1], statusState[2]);
+      if (view === "home") showHome(); else if (view === "search") search();
+    }
+  });
+
+  applyI18n();
+  paintIcons();
+  q.value = storageGet("yt-music.lastQuery", "");
+  if (q.value) search(); else showHome();
+</script>
+</body>
+</html>

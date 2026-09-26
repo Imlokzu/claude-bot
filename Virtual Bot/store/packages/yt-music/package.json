@@ -1,0 +1,18 @@
+{
+  "id": "yt-music",
+  "type": "app",
+  "label": "YT Music",
+  "icon": "headphones",
+  "tint": "#d95a5a",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "YouTube Music: пошук пісень і альбомів, новинки, тексти, радіо «далі» після кожного треку.",
+  "category": "media",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "YT Music",
+      "description": "YouTube Music: songs and albums, new releases, lyrics, and an up-next radio after every track."
+    }
+  }
+}
