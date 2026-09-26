@@ -81,6 +81,7 @@ import piper_voice
 import memory
 import openclaw_extensions
 import openclaw_store
+import openclaw_usage
 import profile_store
 import services_manager
 import setup_suggestions
@@ -781,6 +782,18 @@ async def api_openclaw_setting_set(req: OpenClawSettingRequest, request: Request
     if not ok:
         raise HTTPException(status_code=502, detail="OpenClaw не прийняв налаштування")
     return {"ok": True}
+
+
+@app.get("/api/openclaw/usage")
+async def api_openclaw_usage(request: Request, session_id: str = Query(default="", max_length=64)) -> dict:
+    """Subscription quota plus the real tokens and API-priced cost of this chat's OpenClaw session."""
+    clerk_uid = await _require_user(request)
+    sid = session_id.strip()
+    if sid and not chat_store.is_valid_id(sid):
+        raise HTTPException(status_code=400, detail="Invalid session id")
+    # The same key the chat sends as x-openclaw-session-key, so this is that thread's transcript.
+    key = _openclaw_session_key(sid, clerk_uid) if sid else None
+    return await openclaw_usage.snapshot(key)
 
 
 @app.post("/api/model")

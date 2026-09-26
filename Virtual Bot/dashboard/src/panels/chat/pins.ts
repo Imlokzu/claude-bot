@@ -1,4 +1,4 @@
-export const PIN_IDS = ['projects', 'vision', 'screen', 'todo', 'usage'] as const;
+export const PIN_IDS = ['projects', 'vision', 'screen', 'todo', 'usage', 'clock', 'openclaw'] as const;
 export type PinId = typeof PIN_IDS[number];
 export const PINS_KEY = 'claudeBotChatPins';
 

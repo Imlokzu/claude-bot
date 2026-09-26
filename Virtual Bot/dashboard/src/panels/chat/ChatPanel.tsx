@@ -209,7 +209,7 @@ export default function ChatPanel() {
                   className="h-[min(78dvh,680px)] p-0"
                   bodyClassName="p-0 sm:p-0"
                 >
-                  <PinnedPanels embedded messages={chat.messages} />
+                  <PinnedPanels embedded messages={chat.messages} sessionId={chat.sessionId} />
                 </DialogContent>
               </Dialog>
             </div>
@@ -239,7 +239,7 @@ export default function ChatPanel() {
         </div>
 
         {isDesk ? (
-          <PinnedPanels messages={chat.messages} />
+          <PinnedPanels messages={chat.messages} sessionId={chat.sessionId} />
         ) : null}
 
         {/* Selecting text in a reply turns it into the next question. */}

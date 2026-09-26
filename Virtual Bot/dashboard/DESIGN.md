@@ -211,3 +211,14 @@ scrolling past all of it.
 - The host is shown under each name, so the copies of one model can be told
   apart.
 
+
+## Clock and OpenClaw usage pins (2026-09-26)
+
+- **Clock** is the /screen clock tile ported as-is: the same 3x5 pixel digits
+  and blinking colon, in the accent colour with a darker drop, like the crab.
+- **OpenClaw usage** shows only what OpenClaw reports: the provider's quota
+  windows (ChatGPT Plus 5-hour and weekly) and this chat's real tokens with the
+  cache split, priced by OpenClaw at API rates. The dollar figure is labelled
+  as what the API would charge; on a subscription the real spend is the plan.
+- Quota bars use the state scale (`ok` / `warn` / `err` at 70% and 90%), not
+  the accent: a limit running out is a state, not emphasis (rule 3).

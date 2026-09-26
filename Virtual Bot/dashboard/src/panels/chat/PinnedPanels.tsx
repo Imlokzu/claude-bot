@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import * as Popover from '@radix-ui/react-popover';
-import { Check, Eye, Folder, ListTodo, Monitor, Plus, ArrowUpRight, Wallet, X } from 'lucide-react';
+import { Check, Clock, Eye, Folder, Gauge, ListTodo, Monitor, Plus, ArrowUpRight, Wallet, X } from 'lucide-react';
 import { get } from '@/lib/api';
 import { t } from '@/locales/workspace';
 import { cn } from '@/lib/cn';
 import { useBotEvents } from '@/hooks/useBotEvents';
 import { estimateTokens, shortNumber } from './tokens';
 import { Face } from './Face';
+import { ClockPin } from './ClockPin';
+import { OpenClawUsagePin } from './OpenClawUsagePin';
 import { PIN_IDS, PINS_KEY, parsePins, type PinId } from './pins';
 import type { ChatMessage } from './types';
 
-const ICONS = { projects: Folder, vision: Eye, screen: Monitor, todo: ListTodo, usage: Wallet };
+const ICONS = { projects: Folder, vision: Eye, screen: Monitor, todo: ListTodo, usage: Wallet, clock: Clock, openclaw: Gauge };
 
 function ProjectsPin() {
   const projects = useQuery({
@@ -132,7 +134,8 @@ function VisionPin() {
   );
 }
 
-export function PinnedPanels({ embedded = false, messages = [] }: { embedded?: boolean; messages?: ChatMessage[] }) {
+export function PinnedPanels({ embedded = false, messages = [], sessionId = '' }: { embedded?: boolean; messages?: ChatMessage[]; sessionId?: string }) {
+  const turn = messages.filter((m) => m.role === 'assistant').length;
   const [pins, setPins] = useState<PinId[]>(() => {
     try { return parsePins(localStorage.getItem(PINS_KEY)); } catch { return []; }
   });
@@ -160,7 +163,7 @@ export function PinnedPanels({ embedded = false, messages = [] }: { embedded?: b
               <header className="mb-2 flex items-center gap-2">
                 <Icon size={14} className="shrink-0 text-ink-3" />
                 <h2 className="min-w-0 flex-1 truncate text-xs font-medium text-ink-2">{name}</h2>
-                {id === 'todo' || id === 'usage' ? null : (
+                {id === 'todo' || id === 'usage' || id === 'clock' || id === 'openclaw' ? null : (
                 <a href={id === 'screen' ? '/screen' : id === 'vision' ? '#/vision' : '#/overview'}
                    target={id === 'screen' ? '_blank' : undefined} rel={id === 'screen' ? 'noreferrer' : undefined}
                    aria-label={t('pins.open', { name })} className="pin-panel-action grid place-items-center rounded-xs text-ink-3 hover:text-ink"><ArrowUpRight size={13} /></a>
@@ -172,6 +175,8 @@ export function PinnedPanels({ embedded = false, messages = [] }: { embedded?: b
                 : id === 'vision' ? <VisionPin />
                 : id === 'todo' ? <TodoPin />
                 : id === 'usage' ? <UsagePin messages={messages} />
+                : id === 'clock' ? <ClockPin />
+                : id === 'openclaw' ? <OpenClawUsagePin sessionId={sessionId} turn={turn} />
                 : (
                 <div className="pin-screen overflow-hidden rounded-sm bg-bg">
                   <iframe src="/screen" title={name} className="pin-screen-frame border-0" />
