@@ -101,6 +101,23 @@ class VoiceAndSpokenFlagTests(unittest.TestCase):
         self.assertIn("asr", both)
         self.assertIn("tts", both)
 
+    def test_voice_block_joins_any_turn_through_the_cascade(self) -> None:
+        """Said into the mic, read aloud, or both: it is a live conversation."""
+        self.assertNotIn("voice", self._keys())
+        for flags in ({"voice": True}, {"spoken": True}, {"voice": True, "spoken": True}):
+            keys = self._keys(**flags)
+            self.assertIn("voice", keys)
+            # The general rule comes first; the specific ones refine it
+            self.assertLess(keys.index("voice"), min(keys.index(k) for k in ("tts", "asr") if k in keys))
+
+    def test_voice_block_names_the_pipeline_and_a_hard_length(self) -> None:
+        rules = brains._VOICE_RULES
+        self.assertIn("speech recognition", rules)
+        self.assertIn("speech synthesis", rules)
+        self.assertIn("40 words", rules)
+        # The dilution budget: a long rule at the end drowns in the tools block
+        self.assertLess(len(rules), 1000)
+
     def test_asr_caveat_stays_closest_to_the_message(self) -> None:
         """Збите розпізнавання ламає розмову, невимовлена одиниця лише дратує."""
         self.assertEqual(self._keys(voice=True, spoken=True)[-1], "asr")

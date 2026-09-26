@@ -122,8 +122,33 @@ _TTS_RULES = """
 Це саме стосується відповідей, зібраних із результатів інструментів: цифри
 з пошуку теж треба вимовити словами, а не переписати як є.
 Без розмітки, таблиць, списків і посилань — вони вголос стають мотлохом.
-Дві-три фрази. Перше речення озвучується ще доки ти пишеш далі, тому воно
-має нести зміст саме по собі.
+"""
+
+# The conversation itself, for any turn that goes through the voice cascade
+# (said into the mic, read aloud, or both). Written after the leaked voice
+# prompts in github.com/asgeirtj/system_prompts_leaks (Claude voice mode,
+# Sesame Maya, ChatGPT advanced voice, Codex realtime, ElevenLabs agents):
+# they state the pipeline as a fact, give a hard length with the reason for
+# it, put the outcome first, and ban the specific habits that make a voice
+# assistant tiring — echoing, restating, trailing questions, narrated steps.
+#
+# Short on purpose: the tools block takes over half the prompt, and a long
+# rule at the end drowns in it (see the dilution note in the owner's docs).
+_VOICE_RULES = """
+LIVE VOICE CONVERSATION. You are talking with the person through a cascade:
+their speech → speech recognition → you → speech synthesis → a speaker and a
+tiny screen. They hear each word once, cannot scroll back, and wait in
+silence while you answer. Talk like a person across the desk, not a document.
+- Answer first. No preamble, no restating the question, no summary, no
+  "great question".
+- One or two sentences, under 40 words, unless they ask for detail. Impact
+  beats length.
+- Each [[msg]] is one breath: one short thought. At most three messages.
+- Before a tool, one message of a few words ("Секунду, гляну."), then the
+  result. Never narrate the steps.
+- Say each thing once. Don't echo their words. At most one question, and
+  none after you answered a direct one.
+- Only words to be spoken: no emoji, lists, tables, links or markdown.
 """
 _SELF_KNOWLEDGE = """
 ЩО ТИ ТАКЕ — службова довідка про себе.
@@ -196,7 +221,7 @@ def system_prompt_parts(
     одна, а `build_system_prompt` — просто її склейка.
 
     Ключі шматків: persona, self, time, tools, profile, memory_rule, notes,
-    tts, asr.
+    voice, tts, asr.
 
     voice і spoken НЕЗАЛЕЖНІ: можна надиктувати в мікрофон і читати
     відповідь очима, а можна набрати з клавіатури й слухати її вголос.
@@ -258,6 +283,10 @@ def system_prompt_parts(
         for note in notes:
             lines.append(f"--- {note['title']} ({note['path']}) ---\n{note['snippet']}")
         parts.append(("notes", "\n".join(lines)))
+    # How to talk at all — any turn that goes through the voice cascade.
+    # First of the voice blocks, so the specific ones below refine it.
+    if voice or spoken:
+        parts.append(("voice", _VOICE_RULES))
     # Правила озвучки — перед ASR-застереженням: воно має лишитись останнім.
     if spoken:
         parts.append(("tts", _TTS_RULES))

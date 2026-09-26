@@ -2432,6 +2432,7 @@ _CONTEXT_PART_LABELS = {
     "profile": "Профіль користувача",
     "memory_rule": "Правило памʼяті",
     "notes": "Нотатки з памʼяті",
+    "voice": "Voice conversation",
     "tts": "Правила озвучки",
     "asr": "Застереження про мікрофон",
 }
