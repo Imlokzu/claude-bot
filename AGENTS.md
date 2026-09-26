@@ -190,6 +190,20 @@ matters, not just assertions.
 Then exercise the real thing, not only the test: start the server, hit the
 endpoint, look at the screen. Tests pass on code that is wired to nothing.
 
+### Mute the Mac first — every time
+
+Agents work at night, and the owner has been woken at 3am by a test that
+spoke. Before anything that can make a sound — tests, TTS, music, video, a
+browser session, starting the server — mute the output:
+
+```bash
+osascript -e "set volume output muted true"
+```
+
+Never unmute it afterwards. `tests/conftest.py` already mutes at the start of
+every pytest run (opt out only with `VIRTUAL_BOT_TEST_SOUND=1`), but a manual
+`curl /api/tts` or a browser test is on you.
+
 ### Screen apps (`Virtual Bot/store/packages/`)
 
 A new app is just a new folder — no build step, no registration:

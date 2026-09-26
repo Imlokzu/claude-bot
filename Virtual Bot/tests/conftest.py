@@ -23,6 +23,27 @@ os.environ.setdefault(
 import chat_store
 
 
+def pytest_sessionstart(session):
+    """
+    Mute the Mac before anything runs. Agents run this suite at night, and a
+    test that reaches TTS, music or video once woke the owner at 3am. A rule
+    in the docs was not enough — agents forget it — so the suite does it
+    itself. Opt out with VIRTUAL_BOT_TEST_SOUND=1 when a test must be heard.
+    """
+    import subprocess
+    import sys
+
+    if sys.platform != "darwin" or os.environ.get("VIRTUAL_BOT_TEST_SOUND") == "1":
+        return
+    try:
+        subprocess.run(
+            ["osascript", "-e", "set volume output muted true"],
+            timeout=5, check=False, capture_output=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass  # no osascript (CI, a stripped Mac): nothing to mute
+
+
 @pytest.fixture(autouse=True)
 def isolated_chat_store():
     """
