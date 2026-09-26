@@ -43,6 +43,7 @@ SENSITIVE = {
     "tools__unshare_site",
     "workspace__workspace_delete",
     "workspace__workspace_write",
+    "workspace__fs_approve",
 }
 
 # Server name in OpenClaw config → tool schemas that bridge declares.
