@@ -21,7 +21,8 @@
     <section class="tile tile-face" data-tile="face" data-emotion="idle">
       <div class="face-top">
         <span class="link-dot" id="linkDot" data-i18n-title="face.link" title="Звʼязок із ботом"></span>
-        <canvas class="face-clock" id="faceClockCanvas" width="76" height="20"></canvas>
+        <span class="face-timer hidden" id="faceTimer"></span>
+      <canvas class="face-clock" id="faceClockCanvas" width="76" height="20"></canvas>
       </div>
       <canvas class="crab" id="crabCanvas" width="300" height="152"></canvas>
       <div class="face-label" id="faceLabel" data-i18n="emo.idle">Очікування</div>
@@ -62,6 +63,35 @@
     <section class="tile tile-clock" data-tile="clock">
       <canvas class="clock-pixels" id="clockCanvas" width="288" height="96"></canvas>
       <div class="clock-date" id="clockDate">—</div>
+    </section>
+
+    <!-- Timers: set by voice through the bot ("put a ten minute timer on")
+         or with the buttons here. The nearest one is big; the rest are a
+         line below it. -->
+    <section class="tile tile-timer" data-tile="timer">
+      <div class="tile-head" data-i18n="timer.head">Таймер</div>
+      <canvas class="timer-pixels" id="timerCanvas" width="288" height="64"></canvas>
+      <div class="timer-label" id="timerLabel" data-i18n="timer.empty">Скажи «постав таймер на 5 хвилин»</div>
+      <div class="timer-more" id="timerMore"></div>
+      <div class="timer-bar" id="timerBar">
+        <button class="chip-btn" type="button" data-timer-add="60">+1</button>
+        <button class="chip-btn" type="button" data-timer-add="300">+5</button>
+        <button class="chip-btn" type="button" data-timer-add="600">+10</button>
+        <button class="chip-btn icon-only" type="button" id="timerPause" data-i18n-aria="timer.pause" aria-label="Пауза"><span class="ico-slot" id="timerPauseIco"></span></button>
+        <button class="chip-btn" type="button" id="timerCancel" data-i18n="timer.cancel">Скасувати</button>
+      </div>
+    </section>
+
+    <!-- Weather: whatever the bot last looked up, or the home city -->
+    <section class="tile tile-weather" data-tile="weather">
+      <div class="tile-head"><span data-i18n="weather.head">Погода</span> · <span id="weatherCity">—</span></div>
+      <div class="weather-now">
+        <span class="weather-temp" id="weatherTemp">—</span>
+        <span class="weather-cond" id="weatherCond"></span>
+      </div>
+      <div class="weather-meta" id="weatherMeta"></div>
+      <div class="weather-days" id="weatherDays"></div>
+      <div class="tile-foot" id="weatherAge"></div>
     </section>
 
     <!-- Тайл 2 — остання репліка бота -->

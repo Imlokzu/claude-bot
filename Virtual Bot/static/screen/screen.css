@@ -1900,3 +1900,115 @@ html, body {
 
 /* Коли назва влазить — друга (роликова) копія тексту зайва */
 .np-track.single .np-text:nth-child(2) { display: none; }
+
+/* ---------- Tiles the person can hide (Settings → Screens) ---------- */
+.tile.tile-off { display: none; }
+
+/* ---------- Timer tile ---------- */
+.tile-timer { align-items: center; }
+.tile-timer .tile-head { align-self: stretch; }
+.timer-pixels { display: block; image-rendering: pixelated; margin-top: 2px; }
+.timer-label {
+  margin-top: 6px;
+  max-width: 100%;
+  font-size: 13px;
+  color: var(--text);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timer-more {
+  min-height: 14px;
+  margin-top: 3px;
+  max-width: 100%;
+  font: 400 10px/1.3 var(--mono);
+  color: var(--muted);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.timer-bar {
+  margin-top: auto;
+  display: flex;
+  gap: 6px;                                /* resistive touch: room between targets */
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.chip-btn {
+  min-width: 34px;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: transparent;
+  color: var(--text);
+  font: 600 11px/1 var(--font);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.chip-btn:active { border-color: var(--accent); color: var(--accent); }
+.chip-btn:disabled { opacity: 0.35; }
+.chip-btn.icon-only { padding: 0 8px; }
+
+/* The nearest timer, next to the clock on the face */
+.face-timer {
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: 600 10px/1.3 var(--mono);
+  color: var(--accent);
+}
+
+/* ---------- Weather tile ---------- */
+.weather-now { display: flex; align-items: baseline; gap: 10px; margin-top: 2px; }
+.weather-temp { font: 700 40px/1 var(--font); color: var(--accent); letter-spacing: -0.02em; }
+.weather-cond { font-size: 13px; color: var(--text); }
+.weather-meta { margin-top: 6px; font-size: 11px; color: var(--muted); }
+.weather-days {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  cursor: pointer;                         /* a tap refreshes */
+}
+.weather-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.weather-day .d { font-size: 10px; color: var(--muted); }
+.weather-day .r { font: 600 10px/1.2 var(--mono); color: var(--text); }
+
+/* ---------- Settings → Screens ---------- */
+.tiles-list { display: flex; flex-direction: column; gap: 4px; }
+.tiles-row { display: flex; align-items: center; gap: 5px; }
+.tiles-row.off .tiles-name { color: var(--muted); }
+.tiles-name { flex: 1; font-size: 10px; font-weight: 600; }
+.tiles-move {
+  width: 27px;
+  height: 27px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.tiles-move:disabled { opacity: 0.3; }
+.tiles-move svg { width: 14px; height: 14px; stroke: currentColor; }
+/* The set has left/right chevrons only; turned, they point up and down */
+.tiles-move.up svg { transform: rotate(90deg); }
+.tiles-move.down svg { transform: rotate(90deg); }
+.tiles-row .settings-switch { min-width: 60px; }

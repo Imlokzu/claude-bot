@@ -120,6 +120,7 @@ function goTile(i, wrapped) {
   renderDots();
   // Дані підтягуємо лише для видимого тайла — на Pi це не дрібниця
   if (tiles[tileIndex].dataset.tile === "state") refreshStatus();
+  if (tiles[tileIndex].dataset.tile === "weather") loadWeather(false);
 }
 
 /* ---------- «Матове скло» під шарами ----------
@@ -184,6 +185,82 @@ function goTileCyclic(step) {
   if (next > last) { next = 0; wrapped = true; }
   else if (next < 0) { next = last; wrapped = true; }
   goTile(next, wrapped);
+}
+
+/* ---------- Which tiles, in what order ----------
+   The carousel is the person's, not ours: they choose which screens it
+   shows and in what order (Settings → Screens). The face is always first —
+   it is home, where idle returns and where the conversation happens.
+   Stored as {order, hidden} so a tile added in a later version shows up
+   (at the end) instead of being silently hidden by an old saved list. */
+
+const TILES_KEY = "botScreenTiles";
+const HOME_TILE = "face";
+// New tiles start hidden only if the person never saw them in the order:
+// people who set up their carousel should not find it rearranged.
+const DEFAULT_HIDDEN_TILES = [];
+
+function tileLayout() {
+  const ids = allTiles.map((el) => el.dataset.tile);
+  let saved = null;
+  try { saved = JSON.parse(readPref(TILES_KEY, "null")); } catch (e) { saved = null; }
+  const order = [];
+  const known = new Set(ids);
+  for (const id of (saved && Array.isArray(saved.order) ? saved.order : [])) {
+    if (known.has(id) && !order.includes(id)) order.push(id);
+  }
+  for (const id of ids) if (!order.includes(id)) order.push(id);
+  const hidden = new Set(
+    (saved && Array.isArray(saved.hidden) ? saved.hidden : DEFAULT_HIDDEN_TILES).filter((id) => known.has(id)),
+  );
+  hidden.delete(HOME_TILE);
+  const home = order.indexOf(HOME_TILE);
+  if (home > 0) { order.splice(home, 1); order.unshift(HOME_TILE); }
+  return { order, hidden };
+}
+
+function saveTileLayout(layout) {
+  writePref(TILES_KEY, JSON.stringify({ order: layout.order, hidden: Array.from(layout.hidden) }));
+}
+
+/* Rebuilds the carousel from the saved layout. Moving the DOM nodes (not
+   cloning) keeps every listener and canvas inside the tiles alive. */
+function applyTileLayout() {
+  const current = tiles[tileIndex] ? tiles[tileIndex].dataset.tile : HOME_TILE;
+  const layout = tileLayout();
+  const byId = new Map(allTiles.map((el) => [el.dataset.tile, el]));
+  tiles = [];
+  for (const id of layout.order) {
+    const el = byId.get(id);
+    if (!el) continue;
+    rail.appendChild(el);
+    const off = layout.hidden.has(id);
+    el.classList.toggle("tile-off", off);
+    if (!off) tiles.push(el);
+  }
+  const back = tiles.findIndex((el) => el.dataset.tile === current);
+  goTile(back === -1 ? 0 : back);
+}
+
+function moveTile(id, step) {
+  const layout = tileLayout();
+  const at = layout.order.indexOf(id);
+  const to = at + step;
+  // Nothing moves above home, and home itself does not move
+  if (id === HOME_TILE || at < 0 || to < 1 || to >= layout.order.length) return;
+  layout.order.splice(at, 1);
+  layout.order.splice(to, 0, id);
+  saveTileLayout(layout);
+  applyTileLayout();
+}
+
+function setTileShown(id, shown) {
+  if (id === HOME_TILE) return;
+  const layout = tileLayout();
+  if (shown) layout.hidden.delete(id);
+  else layout.hidden.add(id);
+  saveTileLayout(layout);
+  applyTileLayout();
 }
 
 /* ---------- Бездіяльність: додому → сон ---------- */
@@ -433,6 +510,14 @@ setLink(false);
     if (ev.type === "music") {
       // Мозок увімкнув музику (тул play_music) або зупинив — Now Playing
       onMusicEvent(ev);
+      return;
+    }
+    if (ev.type === "timer") {
+      onTimerEvent(ev);
+      return;
+    }
+    if (ev.type === "weather") {
+      onWeatherEvent(ev);
       return;
     }
     if (ev.type === "video") {
@@ -2761,6 +2846,8 @@ const SCREENS = [
   { id: "face", labelKey: "screen.face", icon: "face" },
   { id: "clock", labelKey: "screen.clock", icon: "clock" },
   { id: "chat", labelKey: "screen.chat", icon: "mic" },
+  { id: "timer", labelKey: "screen.timer", icon: "timer" },
+  { id: "weather", labelKey: "screen.weather", icon: "sun" },
   { id: "say", labelKey: "screen.say", icon: "bubble" },
   { id: "state", labelKey: "screen.state", icon: "gauge" },
   { id: "quick", labelKey: "screen.quick", icon: "sliders" },
@@ -2854,7 +2941,13 @@ function showScreen(id) {
     const entry = installedApps.find((a) => a.id === id);
     if (entry) { closeApps(); openStoreApp(entry); return; }
   }
-  const idx = tiles.findIndex((t) => t.dataset.tile === id);
+  let idx = tiles.findIndex((t) => t.dataset.tile === id);
+  if (idx === -1 && allTiles.some((t) => t.dataset.tile === id)) {
+    // Hidden from the carousel, but asked for by name ("show the timer"):
+    // the person clearly wants it back, so it rejoins the carousel.
+    setTileShown(id, true);
+    idx = tiles.findIndex((t) => t.dataset.tile === id);
+  }
   if (idx === -1) return;
   closeApps();
   openLayer(null);
@@ -3347,7 +3440,7 @@ function openPanel() {
 }
 
 function resetScreenPrefs() {
-  [THEME_KEY, BRIGHT_KEY, VOL_KEY, VOICE_KEY, ORDER_KEY, ICON_KEY, ICON_TINT_KEY,
+  [THEME_KEY, BRIGHT_KEY, VOL_KEY, VOICE_KEY, ORDER_KEY, ICON_KEY, ICON_TINT_KEY, TILES_KEY,
     IDLE_HOME_KEY, IDLE_SLEEP_KEY, CLOCK_FORMAT_KEY, CLOCK_DATE_KEY, MOTION_KEY,
     SKIN_KEY, SKIN_VARS_KEY, PROVIDER_KEY]
     .forEach(removePref);
@@ -3376,6 +3469,7 @@ function resetScreenPrefs() {
   voiceAudio.pause();
   rebuildIcons();
   renderQuickTiles();
+  applyTileLayout();
 }
 
 function openSettings() {
@@ -3553,6 +3647,69 @@ function openSettings() {
     brightRow.appendChild(brightRangeSettings);
     brightValue.className = "settings-value";
     brightRow.appendChild(brightValue);
+
+    /* Screens: which tiles the carousel shows and in what order. Arrows,
+       not drag-and-drop — a resistive panel misreads drags. Rebuilt in
+       place after each change, since the order is the list itself. */
+    const screensBox = section(t("set.screens"), t("set.screens.hint"));
+    const screensList = document.createElement("div");
+    screensList.className = "tiles-list";
+    screensBox.appendChild(screensList);
+    function renderScreensList() {
+      screensList.innerHTML = "";
+      const layout = tileLayout();
+      layout.order.forEach((id, i) => {
+        const line = document.createElement("div");
+        line.className = "tiles-row" + (layout.hidden.has(id) ? " off" : "");
+        const name = document.createElement("span");
+        name.className = "tiles-name";
+        name.textContent = t("screen." + id);
+        line.appendChild(name);
+        const home = id === HOME_TILE;
+        const arrow = (icon, step, disabled, key) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "tiles-move " + (step < 0 ? "up" : "down");
+          btn.disabled = disabled;
+          btn.setAttribute("aria-label", t(key));
+          btn.appendChild(makeSvgIcon(icon));
+          btn.addEventListener("click", () => { moveTile(id, step); renderScreensList(); wake(); });
+          return btn;
+        };
+        line.appendChild(arrow("prev", -1, home || i <= 1, "set.screens.up"));
+        line.appendChild(arrow("next", 1, home || i === layout.order.length - 1, "set.screens.down"));
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "settings-switch" + (layout.hidden.has(id) ? "" : " on");
+        toggle.disabled = home;
+        toggle.textContent = home ? t("set.screens.home") : t(layout.hidden.has(id) ? "set.screens.hidden" : "set.screens.shown");
+        toggle.setAttribute("aria-pressed", String(!layout.hidden.has(id)));
+        toggle.addEventListener("click", () => { setTileShown(id, layout.hidden.has(id)); renderScreensList(); wake(); });
+        line.appendChild(toggle);
+        screensList.appendChild(line);
+      });
+    }
+    renderScreensList();
+
+    // The weather tile's home city. A short list instead of typing: this
+    // screen has no keyboard. Any other city — ask the bot, and the tile
+    // shows its answer.
+    const cityRow = row(screensBox, t("set.weatherCity"), t("set.weatherCity.hint"));
+    const cityGrid = document.createElement("div");
+    cityGrid.className = "settings-choices";
+    for (const item of WEATHER_CITIES) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "settings-choice";
+      button.textContent = t(item.key);
+      button.addEventListener("click", () => {
+        cityGrid.querySelectorAll(".settings-choice").forEach((b) => b.classList.toggle("on", b === button));
+        setWeatherCity(item.city);
+        wake();
+      });
+      cityGrid.appendChild(button);
+    }
+    cityRow.appendChild(cityGrid);
 
     const behavior = section(t("set.behavior"), t("set.behavior.hint"));
     const homeRow = row(behavior, t("set.home"), t("set.home.hint"));
@@ -4764,7 +4921,294 @@ crab.setEmotion(crab.emotion);
 // «Поки тиша» лишається під керуванням JS (щоб applyStatic не затирав
 // справжню репліку бота), тож першу підстановку робимо тут
 $("sayText").textContent = t("say.empty");
+/* ---------- Timers ----------
+   Set by voice through the bot (tools/timer_tools.py) or with the buttons
+   on the timer tile; the state lives on the server (screen_widgets.py), so
+   "how long is left?" asked of the bot and the numbers here agree. The
+   server only stores when a timer ends — this screen counts down and rings. */
+
+const timerCanvas = $("timerCanvas");
+const timerCtx = timerCanvas.getContext("2d");
+const faceTimer = $("faceTimer");
+let timers = [];               // {id, label, seconds, ends_at, left, state}
+let timerSkew = 0;             // server clock minus ours, in seconds
+const timerRung = new Set();   // ids that already rang: never twice
+let ringTimer = 0;
+let ringUntil = 0;
+let alarmAudio = null;
+
+function timerLeft(tm) {
+  if (tm.state === "paused") return Math.max(0, tm.left);
+  return Math.max(0, tm.ends_at - (Date.now() / 1000 + timerSkew));
+}
+
+function fmtLeft(sec) {
+  const s = Math.ceil(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return (h ? h + ":" + two(m) : two(m)) + ":" + two(s % 60);
+}
+
+/* The timer the tile and the face chip talk about: the nearest one still
+   counting (or paused); a rung one only while it is ringing. */
+function nearestTimer() {
+  const live = timers.filter((tm) => tm.state === "paused" || timerLeft(tm) > 0);
+  live.sort((a, b) => timerLeft(a) - timerLeft(b));
+  return live[0] || null;
+}
+
+function setTimers(list, serverNow) {
+  timers = Array.isArray(list) ? list : [];
+  if (typeof serverNow === "number") timerSkew = serverNow - Date.now() / 1000;
+  // Finished before we heard of it (screen was asleep or closed): it is
+  // over, ringing now would only confuse.
+  for (const tm of timers) if (tm.state === "done") timerRung.add(tm.id);
+  renderTimers();
+}
+
+function renderTimers() {
+  const tm = nearestTimer();
+  const ringing = Date.now() < ringUntil;
+  drawGlyphString(timerCtx, tm ? fmtLeft(timerLeft(tm)) : "00:00", {
+    body: tm || ringing ? crab.colors.body : crab.colors.shadow,
+    shadow: crab.colors.shadow,
+    // A paused timer blinks its colon, like a paused microwave
+    skip: tm && tm.state === "paused" && new Date().getSeconds() % 2 ? ":" : "",
+  });
+  const label = $("timerLabel");
+  if (tm) label.textContent = (tm.label || t("timer.unnamed")) + (tm.state === "paused" ? " · " + t("timer.paused") : "");
+  else if (ringing) label.textContent = t("timer.ringing");
+  else label.textContent = t("timer.empty");
+  const others = timers.filter((x) => x !== tm && (x.state === "paused" || timerLeft(x) > 0));
+  $("timerMore").textContent = others.map((x) => (x.label || t("timer.unnamed")) + " " + fmtLeft(timerLeft(x))).join(" · ");
+  $("timerPause").disabled = !tm;
+  $("timerCancel").disabled = !tm && !ringing;
+  const pauseIco = $("timerPauseIco");
+  const want = tm && tm.state === "paused" ? "play" : "pause";
+  if (pauseIco.dataset.icon !== want) {
+    pauseIco.dataset.icon = want;
+    pauseIco.innerHTML = "";
+    pauseIco.appendChild(uiIcon(want, { cell: 2 }));
+  }
+  // The face shows the nearest timer next to the clock, so a running
+  // timer is visible from home without switching tiles
+  faceTimer.classList.toggle("hidden", !tm);
+  if (tm) faceTimer.textContent = fmtLeft(timerLeft(tm));
+}
+
+function alarmBeep() {
+  // A short three-tone chirp made on the spot: no audio file to ship, and
+  // it plays even when the voice (TTS) is switched off — an alarm the
+  // person set must be heard.
+  try {
+    alarmAudio = alarmAudio || new (window.AudioContext || window.webkitAudioContext)();
+    const at = alarmAudio.currentTime;
+    const loud = Math.max(0.05, 0.3 * (volume / 100));
+    for (let i = 0; i < 3; i++) {
+      const osc = alarmAudio.createOscillator();
+      const gain = alarmAudio.createGain();
+      osc.frequency.value = i === 2 ? 1175 : 880;
+      gain.gain.setValueAtTime(0.0001, at + i * 0.22);
+      gain.gain.exponentialRampToValueAtTime(loud, at + i * 0.22 + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, at + i * 0.22 + 0.17);
+      osc.connect(gain).connect(alarmAudio.destination);
+      osc.start(at + i * 0.22);
+      osc.stop(at + i * 0.22 + 0.2);
+    }
+  } catch (e) { /* no audio output: the caption and the face still show it */ }
+}
+
+const RING_MS = 30000;
+const RING_EVERY_MS = 2500;
+
+function ringTimerDone(tm) {
+  timerRung.add(tm.id);
+  wake();
+  ringUntil = Date.now() + RING_MS;
+  const label = tm.label || t("timer.unnamed");
+  setEmotion("surprised");
+  showCaption(t("timer.done", { label }), "bot");
+  speechSay(t("timer.doneSpoken", { label }));
+  clearInterval(ringTimer);
+  alarmBeep();
+  ringTimer = setInterval(() => {
+    if (Date.now() >= ringUntil) { stopRing(); return; }
+    alarmBeep();
+  }, RING_EVERY_MS);
+  renderTimers();
+}
+
+function stopRing() {
+  if (!ringUntil) return;
+  clearInterval(ringTimer);
+  ringUntil = 0;
+  renderTimers();
+}
+
+// Any touch silences the alarm, like any alarm clock
+stage.addEventListener("pointerdown", stopRing, true);
+
+function tickTimers() {
+  for (const tm of timers) {
+    if (tm.state === "running" && !timerRung.has(tm.id) && timerLeft(tm) <= 0) ringTimerDone(tm);
+  }
+  // Redraw only when someone can see it: the tile or the face chip
+  if (timers.length || ringUntil) renderTimers();
+}
+setInterval(tickTimers, 1000);
+
+async function timerAction(body) {
+  try {
+    const r = await fetch("/api/screen/timers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (r.ok) setTimers(d.timers, d.now);
+  } catch (e) { /* offline: the tile keeps the last known state */ }
+}
+
+document.querySelectorAll("[data-timer-add]").forEach((btn) => {
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    wake();
+    const seconds = Number(btn.dataset.timerAdd);
+    const tm = nearestTimer();
+    // With nothing running, "+5" starts a five minute timer: fewer buttons
+    // than a separate "new" flow, on a screen with room for five.
+    timerAction(tm ? { action: "add", id: tm.id, seconds } : { action: "set", seconds });
+  });
+});
+$("timerPause").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const tm = nearestTimer();
+  if (tm) timerAction({ action: tm.state === "paused" ? "resume" : "pause", id: tm.id });
+});
+$("timerCancel").addEventListener("click", (e) => {
+  e.stopPropagation();
+  stopRing();
+  const tm = nearestTimer();
+  if (tm) timerAction({ action: "cancel", id: tm.id });
+});
+
+function onTimerEvent(ev) {
+  setTimers(ev.timers);
+}
+
+(async function loadTimers() {
+  try {
+    const r = await fetch("/api/screen/timers");
+    const d = await r.json();
+    setTimers(d.timers, d.now);
+  } catch (e) {
+    renderTimers();
+  }
+})();
+
+/* ---------- Weather ----------
+   The home city by default; whatever the bot just looked up when it did
+   (the weather tool publishes its answer). Loaded only when the tile is on
+   screen and older than WEATHER_STALE_MS — on a Pi every request counts,
+   and the free services behind it ask for restraint. */
+
+const WEATHER_STALE_MS = 15 * 60 * 1000;
+// City names go to the geocoder as written, so they are data, not labels
+const WEATHER_CITIES = [
+  { city: "Kyiv", key: "city.kyiv" },
+  { city: "Lviv", key: "city.lviv" },
+  { city: "Kharkiv", key: "city.kharkiv" },
+  { city: "Odesa", key: "city.odesa" },
+  { city: "Dnipro", key: "city.dnipro" },
+  { city: "Warsaw", key: "city.warsaw" },
+];
+let weatherAt = 0;
+let weatherBusy = false;
+
+/* The weather tool sends ISO dates ("2026-09-27"); the weekday is named
+   here, in the screen's language, rather than trusting a server string. */
+function weekdayName(day) {
+  const text = String(day || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  try {
+    return new Date(text + "T12:00:00").toLocaleDateString(t("speech.lang"), { weekday: "short" });
+  } catch (e) {
+    return text.slice(5);
+  }
+}
+
+function renderWeather(w, city) {
+  // The geocoder's own name for the place comes in the right language
+  // ("Київ" for "Kyiv"); the query string is the fallback.
+  const place = w && typeof w.display === "string" ? w.display.split(",")[0].trim() : "";
+  $("weatherCity").textContent = place || (w && w.city) || city || "—";
+  if (!w || w.error) {
+    $("weatherTemp").textContent = "—";
+    $("weatherCond").textContent = w && w.error ? t("weather.failed") : "";
+    $("weatherMeta").textContent = "";
+    $("weatherDays").innerHTML = "";
+    return;
+  }
+  const temp = Number(w.temperature);
+  $("weatherTemp").textContent = Number.isFinite(temp) ? (temp > 0 ? "+" : "") + temp + "°" : "—";
+  $("weatherCond").textContent = w.condition || "";
+  const meta = [];
+  if (w.humidity != null) meta.push(t("weather.humidity", { n: Math.round(w.humidity) }));
+  if (w.wind_speed != null) meta.push(t("weather.wind", { n: Math.round(w.wind_speed) }));
+  $("weatherMeta").textContent = meta.join(" · ");
+  const days = $("weatherDays");
+  days.innerHTML = "";
+  for (const day of (w.forecast || []).slice(0, 5)) {
+    const cell = document.createElement("div");
+    cell.className = "weather-day";
+    const name = document.createElement("span");
+    name.className = "d";
+    name.textContent = weekdayName(day.day);
+    const range = document.createElement("span");
+    range.className = "r";
+    range.textContent = (day.max != null ? day.max + "°" : "") + (day.min != null ? " " + day.min + "°" : "");
+    cell.appendChild(name);
+    cell.appendChild(range);
+    days.appendChild(cell);
+  }
+  weatherAt = w.fetched_at ? w.fetched_at * 1000 : Date.now();
+  $("weatherAge").textContent = t("ago.updated", { ago: ago(weatherAt) });
+}
+
+async function loadWeather(force) {
+  if (weatherBusy || (!force && Date.now() - weatherAt < WEATHER_STALE_MS)) return;
+  weatherBusy = true;
+  try {
+    const r = await fetch("/api/screen/weather" + (force ? "?fresh=true" : ""));
+    const d = await r.json();
+    renderWeather(d.weather, d.city);
+  } catch (e) {
+    renderWeather({ error: "offline" });
+  } finally {
+    weatherBusy = false;
+  }
+}
+
+async function setWeatherCity(city) {
+  try {
+    const r = await fetch("/api/screen/weather/city", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ city }),
+    });
+    const d = await r.json();
+    if (r.ok) renderWeather(d.weather, d.city);
+  } catch (e) { /* keep the old city */ }
+}
+
+function onWeatherEvent(ev) {
+  if (ev && ev.weather) renderWeather(ev.weather);
+}
+
+$("weatherDays").addEventListener("click", (e) => { e.stopPropagation(); wake(); loadWeather(true); });
+
 renderDots();
+applyTileLayout();
 goTile(0);
 syncQuickButtons();
 wake();
