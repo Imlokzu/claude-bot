@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """
 «Клод Бот» — workspace-MCP: stdio-MCP-сервер (без залежностей), який дає
-OpenClaw-агенту його ВЛАСНУ робочу теку на диску.
+OpenClaw-агенту його ВЛАСНУ робочу теку на диску, а також (fs_*) читання
+довільних локальних проєктів на диску власника, з дозволом на першу спробу.
 
 Навіщо окремий сервер: тули з tools/registry.py бачить лише локальний мозок
 Virtual Bot. Коли активний мозок — OpenClaw, він ходить власним набором
 інструментів, тому доступ до теки треба віддати йому так само, як емоції
 (див. emotions_mcp.py). Сервер нічого не робить сам: він лише проксює виклики
-на /api/tools/call — уся перевірка шляхів лишається на бекенді.
+на /api/tools/call — уся перевірка шляхів (і дозволів для fs_*) лишається на
+бекенді (tools/workspace_tools.py, tools/fs_tools.py).
 
 Саме /api/tools/call, а НЕ /api/workspace/* напряму: ці REST-ендпоінти
 призначені для браузера й вимагають справжній Clerk Bearer-токен
@@ -101,6 +103,40 @@ TOOLS = [
     {
         "name": "workspace_delete",
         "description": "Прибрати файл або теку в .trash (назавжди нічого не стирається).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "fs_list",
+        "description": (
+            "Показати вміст ДОВІЛЬНОЇ теки на диску власника (поза робочою текою бота), "
+            "напр. реальний проєкт із file:// посилання. Перший виклик для нової теки "
+            "поверне needs_approval — спитай дозволу карткою ask_question і повтори."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Абсолютний шлях, напр. '/Users/hhh/projects/foo'."}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "fs_read",
+        "description": "Прочитати текстовий файл за довільним абсолютним шляхом на диску (те саме правило дозволу, що й fs_list).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "Абсолютний шлях до файлу."}},
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "fs_approve",
+        "description": (
+            "Позначити шлях (і всі підтеки під ним) дозволеним для fs_list/fs_read НАЗАВЖДИ. "
+            "Клич лише одразу після того, як користувач відповів «Дозволити» на картку ask_question."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"path": {"type": "string"}},

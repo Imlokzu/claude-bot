@@ -10,7 +10,7 @@ from typing import Awaitable, Callable
 from tools.currency import get_common_rates, get_rate
 from tools.facts import get_fact
 from tools.images import search_images
-from tools import email_tools, music_tools, screen_tools, share_tools, ui_tools, video_tools, workspace_tools
+from tools import email_tools, fs_tools, music_tools, screen_tools, share_tools, ui_tools, video_tools, workspace_tools
 from tools.search import search_web
 from tools.weather import get_weather
 import memory
@@ -134,6 +134,8 @@ _TOOL_SCHEMAS: list[dict] = [
     {"type": "function", "function": {"name": "list_brain_navigation", "description": "Regenerate and return brain navigation.", "parameters": {"type": "object", "properties": {}}}},
     # Власна тека бота на диску: файли, проєкти, ігри, тека сесії
     *workspace_tools.SCHEMAS,
+    # Довільні локальні проєкти поза текою бота: тільки читання, з дозволом
+    *fs_tools.SCHEMAS,
     # Елементи інтерфейсу: питання кнопками, чеклісти, картки вибору
     *ui_tools.SCHEMAS,
     *screen_tools.SCHEMAS,
@@ -262,6 +264,7 @@ _HANDLERS: dict[str, ToolHandler] = {
     "create_brain_file": _create_brain_file,
     "list_brain_navigation": _list_brain_navigation,
     **workspace_tools.HANDLERS,
+    **fs_tools.HANDLERS,
     **ui_tools.HANDLERS,
     **screen_tools.HANDLERS,
     **music_tools.HANDLERS,
