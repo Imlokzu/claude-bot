@@ -39,19 +39,17 @@ def test_failed_screenshot_does_not_report_success(tmp_path):
 
 @pytest.mark.parametrize("exit_code", [0, 1])
 def test_native_button_launches_helper_and_restores_controls(tmp_path, exit_code):
-    # A fake repository exercises real Process/stdout handling, never live services.
-    script = tmp_path / "launcher/launcher.py"
-    script.parent.mkdir()
-    script.write_text(
-        "import sys, time\n"
-        "assert sys.argv[1:] == ['--start', 'web', '--lang', 'uk']\n"
-        "time.sleep(0.1)\n"
-        "print('fixture result', flush=True)\n"
-        f"sys.exit({exit_code})\n", encoding="utf-8",
+    # A fake Go helper exercises real Process/stdout handling, never live services.
+    helper = tmp_path / "launcher/build/claude-bot-launcher"
+    helper.parent.mkdir(parents=True)
+    helper.write_text(
+        "#!/bin/sh\n"
+        f"[ \"$*\" = '--start web --lang uk --repo {tmp_path}' ] || exit 9\n"
+        "sleep 0.1\n"
+        "echo 'fixture result'\n"
+        f"exit {exit_code}\n", encoding="utf-8",
     )
-    python = tmp_path / "Virtual Bot/.venv/bin/python"
-    python.parent.mkdir(parents=True)
-    python.symlink_to(sys.executable)
+    helper.chmod(0o755)
     args = [str(BINARY), "--smoke-test", "--repo", str(tmp_path), "--test-action", "web"]
     if exit_code:
         args.append("--expect-failure")

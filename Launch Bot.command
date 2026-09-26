@@ -5,8 +5,5 @@ if [ "$#" -eq 0 ]; then
   APP_DIR=$(sh launcher/build-macos.sh) || exit 1
   exec open "$APP_DIR"
 fi
-if [ -x "Virtual Bot/.venv/bin/python" ]; then
-  "Virtual Bot/.venv/bin/python" launcher/launcher.py "$@"
-else
-  python3 launcher/launcher.py "$@"
-fi
+LAUNCHER=$(sh launcher/build-cli.sh) || exit 1
+exec "$LAUNCHER" "$@"

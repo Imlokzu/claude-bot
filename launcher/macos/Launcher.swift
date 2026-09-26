@@ -11,7 +11,7 @@ let sourceRoot = URL(fileURLWithPath: #filePath)
 let bundleRoot = Bundle.main.bundleURL
     .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 let root = argument("--repo").map { URL(fileURLWithPath: $0) }
-    ?? (FileManager.default.fileExists(atPath: bundleRoot.appendingPathComponent("launcher/launcher.py").path) ? bundleRoot : sourceRoot)
+    ?? (FileManager.default.fileExists(atPath: bundleRoot.appendingPathComponent("launcher/go.mod").path) ? bundleRoot : sourceRoot)
 let language = argument("--lang") == "en" ? "en" : "uk"
 let localeURL = Bundle.main.url(forResource: "locales", withExtension: "json")
     ?? root.appendingPathComponent("launcher/locales.json")
@@ -126,8 +126,9 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
     @objc func start(_ sender: NSButton) {
         guard !busy, actions.indices.contains(sender.tag) else { return }
         let action = actions[sender.tag]
-        let script = root.appendingPathComponent("launcher/launcher.py")
-        guard FileManager.default.fileExists(atPath: script.path) else {
+        // build-macos.sh builds this Go helper next to the app bundle.
+        let helper = root.appendingPathComponent("launcher/build/claude-bot-launcher")
+        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
             showFailure(t("gui.missing"))
             return
         }
@@ -138,13 +139,11 @@ final class LauncherDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
 
         let process = Process()
         currentProcess = process
-        let python = root.appendingPathComponent("Virtual Bot/.venv/bin/python")
-        process.executableURL = FileManager.default.isExecutableFile(atPath: python.path) ? python : URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [script.path, "--start", action, "--lang", language]
+        process.executableURL = helper
+        process.arguments = ["--start", action, "--lang", language, "--repo", root.path]
         process.currentDirectoryURL = root
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
-        environment["PYTHONUNBUFFERED"] = "1"
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
         let output = Pipe()

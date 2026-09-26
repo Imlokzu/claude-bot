@@ -2,7 +2,7 @@
 Klod Bot — tunnel guard: a password in front of the bot when it leaves the LAN.
 
 The bot itself has no access control. The launcher starts it with
-CLERK_DISABLED=1 (launcher/launcher.py), so every endpoint answers without a
+CLERK_DISABLED=1 (launcher/main.go), so every endpoint answers without a
 token — fine while it only listens on a home network, fatal the moment a
 tunnel gives it a public address. Chat, the workspace, the file tools and the
 OpenClaw tool switches would all be one URL away from anyone.
