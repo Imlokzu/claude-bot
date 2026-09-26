@@ -786,14 +786,21 @@ async def api_openclaw_setting_set(req: OpenClawSettingRequest, request: Request
 
 @app.get("/api/openclaw/usage")
 async def api_openclaw_usage(request: Request, session_id: str = Query(default="", max_length=64)) -> dict:
-    """Subscription quota plus the real tokens and API-priced cost of this chat's OpenClaw session."""
+    """Real tokens and API-priced cost of this chat's OpenClaw session."""
     clerk_uid = await _require_user(request)
     sid = session_id.strip()
     if sid and not chat_store.is_valid_id(sid):
         raise HTTPException(status_code=400, detail="Invalid session id")
     # The same key the chat sends as x-openclaw-session-key, so this is that thread's transcript.
     key = _openclaw_session_key(sid, clerk_uid) if sid else None
-    return await openclaw_usage.snapshot(key)
+    return await openclaw_usage.chat_snapshot(key)
+
+
+@app.get("/api/openclaw/accounts")
+async def api_openclaw_accounts(request: Request) -> dict:
+    """Every provider account OpenClaw uses: quota windows and last-30-days traffic."""
+    await _require_user(request)
+    return await openclaw_usage.accounts_snapshot()
 
 
 @app.post("/api/model")

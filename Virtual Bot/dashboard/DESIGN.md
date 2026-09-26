@@ -212,13 +212,21 @@ scrolling past all of it.
   apart.
 
 
-## Clock and OpenClaw usage pins (2026-09-26)
+## Clock, chat usage and model accounts pins (2026-09-26)
 
 - **Clock** is the /screen clock tile ported as-is: the same 3x5 pixel digits
   and blinking colon, in the accent colour with a darker drop, like the crab.
-- **OpenClaw usage** shows only what OpenClaw reports: the provider's quota
-  windows (ChatGPT Plus 5-hour and weekly) and this chat's real tokens with the
-  cache split, priced by OpenClaw at API rates. The dollar figure is labelled
-  as what the API would charge; on a subscription the real spend is the plan.
+- **This chat** (pin id `usage`) shows this chat's real tokens from OpenClaw
+  with the cache split, priced by OpenClaw at API rates, plus what the same
+  traffic would cost without the cache. When OpenClaw never answered the chat,
+  it falls back to the old text estimate and says so.
+- **Model accounts** (pin id `openclaw`) lists every provider account OpenClaw
+  holds: quota windows where the provider reports them (ChatGPT Plus 5-hour and
+  weekly), the auth kind, and 30 days of traffic. Accounts whose provider sends
+  no token counts say that instead of showing a false zero; replies on models
+  missing from the price table are counted as unpriced.
+- The dollar figure is labelled as what the API would charge; on a
+  subscription the real spend is the plan. The numbers were checked against
+  the raw transcript and OpenAI's published price list.
 - Quota bars use the state scale (`ok` / `warn` / `err` at 70% and 90%), not
   the accent: a limit running out is a state, not emphasis (rule 3).

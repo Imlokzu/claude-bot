@@ -6,14 +6,13 @@ import { get } from '@/lib/api';
 import { t } from '@/locales/workspace';
 import { cn } from '@/lib/cn';
 import { useBotEvents } from '@/hooks/useBotEvents';
-import { estimateTokens, shortNumber } from './tokens';
 import { Face } from './Face';
 import { ClockPin } from './ClockPin';
-import { OpenClawUsagePin } from './OpenClawUsagePin';
+import { AccountsPin, ChatUsagePin } from './UsagePins';
 import { PIN_IDS, PINS_KEY, parsePins, type PinId } from './pins';
 import type { ChatMessage } from './types';
 
-const ICONS = { projects: Folder, vision: Eye, screen: Monitor, todo: ListTodo, usage: Wallet, clock: Clock, openclaw: Gauge };
+const ICONS = { projects: Folder, vision: Eye, screen: Monitor, todo: ListTodo, usage: Gauge, clock: Clock, openclaw: Wallet };
 
 function ProjectsPin() {
   const projects = useQuery({
@@ -80,38 +79,6 @@ function TodoPin() {
   );
 }
 
-/* Витрати поточної розмови: вхідні/вихідні токени та груба оцінка в грошах.
-   Це ОЦІНКА з видимої історії — точні числа знає лише провайдер, тож підпис
-   чесно каже про це, а не видає похибку за факт. */
-function UsagePin({ messages }: { messages: ChatMessage[] }) {
-  const userMessages = messages.filter((m) => m.role === 'user');
-  const botMessages = messages.filter((m) => m.role === 'assistant');
-  const input = estimateTokens(userMessages);
-  const output = estimateTokens(botMessages);
-  // Середня ціна типового API (~$3 / $15 за мільйон). Більшість провайдерів
-  // у ланцюгу безкоштовні, тож це стеля «скільки б це коштувало», а не рахунок.
-  const cost = (input / 1_000_000) * 3 + (output / 1_000_000) * 15;
-  return (
-    <div className="space-y-1.5 text-[12.5px]">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-ink-3">{t('pins.usageIn')}</span>
-        <span className="u-data text-ink-2">≈{shortNumber(input)}</span>
-      </div>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-ink-3">{t('pins.usageOut')}</span>
-        <span className="u-data text-ink-2">≈{shortNumber(output)}</span>
-      </div>
-      <div className="flex items-center justify-between gap-2 border-t border-line pt-1.5">
-        <span className="text-ink-3">{t('pins.usageCost')}</span>
-        <span className="u-data text-ink-2">
-          {cost < 0.01 ? '<$0.01' : `$${cost.toFixed(2)}`}
-        </span>
-      </div>
-      <p className="text-[10.5px] leading-snug text-ink-3">{t('pins.usageNote')}</p>
-    </div>
-  );
-}
-
 function VisionPin() {
   const [streaming, setStreaming] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -135,7 +102,6 @@ function VisionPin() {
 }
 
 export function PinnedPanels({ embedded = false, messages = [], sessionId = '' }: { embedded?: boolean; messages?: ChatMessage[]; sessionId?: string }) {
-  const turn = messages.filter((m) => m.role === 'assistant').length;
   const [pins, setPins] = useState<PinId[]>(() => {
     try { return parsePins(localStorage.getItem(PINS_KEY)); } catch { return []; }
   });
@@ -174,9 +140,9 @@ export function PinnedPanels({ embedded = false, messages = [], sessionId = '' }
               {id === 'projects' ? <ProjectsPin />
                 : id === 'vision' ? <VisionPin />
                 : id === 'todo' ? <TodoPin />
-                : id === 'usage' ? <UsagePin messages={messages} />
+                : id === 'usage' ? <ChatUsagePin sessionId={sessionId} messages={messages} />
                 : id === 'clock' ? <ClockPin />
-                : id === 'openclaw' ? <OpenClawUsagePin sessionId={sessionId} turn={turn} />
+                : id === 'openclaw' ? <AccountsPin />
                 : (
                 <div className="pin-screen overflow-hidden rounded-sm bg-bg">
                   <iframe src="/screen" title={name} className="pin-screen-frame border-0" />

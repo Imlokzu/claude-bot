@@ -6,8 +6,13 @@ provider's own quota report (for a ChatGPT subscription: the 5-hour and weekly
 windows). `sessions.usage` reads one session's transcript and prices every turn
 with OpenClaw's model price table, cache reads and writes included, so the
 panel can show what the same traffic would cost at API prices even when it
-actually runs on a flat subscription. `usage.cost` is the same pricing summed
-over recent days.
+actually runs on a flat subscription. Over a date range the same call also
+aggregates by provider, which gives each account's traffic and cost.
+
+Checked against the raw transcript (token sums match exactly) and against
+OpenAI's published Standard prices (gpt-6-luna: $0.10 / $0.01 cached / $0.50
+per 1M). Models missing from OpenClaw's price table are counted in
+`missingCostEntries` rather than priced at zero silently.
 
 Everything goes through `openclaw gateway call`, like the rest of the panel's
 OpenClaw access: the CLI already knows the gateway address and token.
@@ -132,37 +137,106 @@ async def session(key: str) -> dict | None:
     }
 
 
-async def totals() -> dict | None:
-    """Last 30 days across every session. OpenClaw indexes transcripts lazily."""
+# Internal delivery bookkeeping, not a model account.
+_INTERNAL_PROVIDERS = {"openclaw"}
+
+
+async def _configured_providers() -> dict[str, str] | None:
+    """Provider -> auth kind for every account OpenClaw holds credentials for.
+
+    Only the kind leaves this function; the profile labels carry masked keys
+    and e-mail addresses and are never passed on.
+    """
+    code, out, err = await openclaw_models._run_cli("models", "status", "--json", timeout=45)
+    if code != 0:
+        log.warning("openclaw models status: code %d (%s)", code, err.strip()[:160])
+        return None
+    try:
+        auth = (json.loads(out).get("auth") or {})
+    except (ValueError, AttributeError):
+        return None
+    kinds: dict[str, str] = {}
+    for item in auth.get("providers") or []:
+        if not isinstance(item, dict) or not item.get("provider"):
+            continue
+        profiles = item.get("profiles") if isinstance(item.get("profiles"), dict) else {}
+        kind = "oauth" if profiles.get("oauth") else "api_key" if profiles.get("apiKey") else "token"
+        kinds[str(item["provider"])] = kind
+    return kinds
+
+
+async def accounts() -> dict | None:
+    """Every provider account with its last-30-days traffic, priced at API rates."""
     async def load():
-        data = await _call("usage.cost", timeout=45)
-        if data is None:
+        today = dt.date.today()
+        usage, configured = await asyncio.gather(
+            _call("sessions.usage", {
+                "startDate": (today - dt.timedelta(days=_SESSION_DAYS)).isoformat(),
+                "endDate": today.isoformat(),
+                "agentScope": "all",
+                # Aggregates cover the whole range whatever the limit; one row keeps the payload small.
+                "limit": 1,
+            }, timeout=60),
+            _configured_providers(),
+        )
+        if usage is None:
             return None
-        status = data.get("cacheStatus") if isinstance(data.get("cacheStatus"), dict) else {}
+        aggregates = usage.get("aggregates") if isinstance(usage.get("aggregates"), dict) else {}
+        by_provider = {
+            str(item.get("provider")): item
+            for item in aggregates.get("byProvider") or []
+            if isinstance(item, dict) and item.get("provider")
+        }
+        names = (set(configured or {}) | set(by_provider)) - _INTERNAL_PROVIDERS
+        rows = []
+        for name in names:
+            item = by_provider.get(name) or {}
+            rows.append({
+                "provider": name,
+                "auth": (configured or {}).get(name, ""),
+                "replies": item.get("count", 0) or 0,
+                **_costs(item.get("totals")),
+            })
+        rows.sort(key=lambda row: (-row["replies"], row["provider"]))
+        status = usage.get("cacheStatus") if isinstance(usage.get("cacheStatus"), dict) else {}
         return {
-            "days": data.get("days"),
-            **_costs(data.get("totals")),
+            "days": _SESSION_DAYS,
+            "accounts": rows,
+            "totals": _costs(usage.get("totals")),
             # "refreshing" means the index is still being built: zeros are not real yet.
             "indexing": status.get("status") == "refreshing",
         }
-    return await _cached("totals", _TOTALS_TTL_S, load)
+    return await _cached("accounts", _TOTALS_TTL_S, load)
 
 
-async def snapshot(session_key: str | None) -> dict:
-    session_task = session(session_key) if session_key else asyncio.sleep(0, result=None)
-    quota_value, session_value, totals_value = await asyncio.gather(
-        quota(), session_task, totals(), return_exceptions=True,
+def _ok(value):
+    if isinstance(value, BaseException):
+        log.warning("OpenClaw usage part failed: %s", type(value).__name__)
+        return None
+    return value
+
+
+async def accounts_snapshot() -> dict:
+    quota_value, accounts_value = await asyncio.gather(quota(), accounts(), return_exceptions=True)
+    quota_list = _ok(quota_value) or []
+    data = _ok(accounts_value) or {"days": _SESSION_DAYS, "accounts": [], "totals": None, "indexing": False}
+    quotas = {item["provider"]: item for item in quota_list}
+    for row in data["accounts"]:
+        row["quota"] = quotas.pop(row["provider"], None)
+    # A provider with a quota report but no traffic in the range is still an account.
+    for provider, item in quotas.items():
+        data["accounts"].insert(0, {"provider": provider, "auth": "", "replies": 0, **_costs(None), "quota": item})
+    data["accounts"].sort(key=lambda row: (row.get("quota") is None, -row["replies"], row["provider"]))
+    data["available"] = accounts_value is not None and not isinstance(accounts_value, BaseException)
+    return data
+
+
+async def chat_snapshot(session_key: str | None) -> dict:
+    value = await asyncio.gather(
+        session(session_key) if session_key else asyncio.sleep(0, result=None),
+        return_exceptions=True,
     )
-
-    def ok(value):
-        if isinstance(value, BaseException):
-            log.warning("OpenClaw usage part failed: %s", type(value).__name__)
-            return None
-        return value
-
     return {
         "model": openclaw_models.get_selected() or str(openclaw_config.get("agents.defaults.model.primary", "") or ""),
-        "quota": ok(quota_value),
-        "session": ok(session_value),
-        "totals": ok(totals_value),
+        "session": _ok(value[0]),
     }
