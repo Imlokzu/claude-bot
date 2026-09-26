@@ -342,6 +342,59 @@ curl -X POST localhost:8100/api/screen-store/install \
 субтитри теж). Якщо прямий timedtext закритий для IP — фолбек на
 Invidious-капшени (WebVTT парситься своїм кодом).
 
+## 4a. Live tiles, conversation and wake word
+
+### Carousel the owner arranges
+
+Settings → Screens lists every tile with up/down arrows and a show/hide
+switch (no drag-and-drop: a resistive panel misreads drags). The face is
+always first — it is home. Stored per device in `localStorage`
+(`botScreenTiles` = `{order, hidden}`), so a tile added in a later version
+appears at the end instead of vanishing. A hidden tile asked for by name
+(`open_screen`, the drawer) rejoins the carousel. In code, look tiles up by
+`data-tile`, never by index: `tiles` changes at runtime (`chatTile()`).
+
+### Timer tile
+
+State is shared by the bot and the screen (`screen_widgets.py`, stored in
+`runtime/screen-widgets.json`):
+
+| Who | How |
+|---|---|
+| bot | tools `set_timer {hours, minutes, seconds, label}`, `timer_control {action: cancel\|cancel_all\|pause\|resume\|add}`, `timer_status {}` |
+| screen | `GET /api/screen/timers`, `POST /api/screen/timers {action: set\|cancel\|pause\|resume\|add, id\|label, seconds}` |
+| push | SSE `{"type": "timer", "action", "timer", "timers"}` |
+
+The server only stores when a timer ends; the screen counts down and rings
+(a generated chirp — heard even with TTS off — plus the spoken label and a
+caption; any touch silences it). One clock, not two.
+
+### Weather tile
+
+`GET /api/screen/weather` (cached 20 min), `POST /api/screen/weather/city`.
+Loads only while the tile is on screen. When the bot's `weather` tool runs,
+its answer is published as SSE `{"type": "weather"}` and the tile shows it.
+
+### Replies as messenger bubbles
+
+The chat stream carries `delta`, `break` (next bubble), `note` (narration
+while working, full snapshot) and `reaction`; `done.bubbles` is the
+authority. `static/screen/reply.js` turns that into bubbles without any DOM
+(tested through node in `tests/test_screen_js.py`). With voice on, the face
+caption follows the voice one message at a time; with voice off it shows the
+whole reply. The `reply` SSE event also carries `bubbles`.
+
+### Wake word (`static/screen/wake.js`)
+
+Words are reduced to a rough phonetic key, so recognition spellings of the
+name wake the bot — "Клоде" (vocative), "Claude", "клауд", "клот" — while
+everyday near-misses ("код", "кіт") and mentions deep in a sentence do not.
+The name counts near the start (after fillers like "хей") or as the last
+word. "Клод, стоп" silences the voice mid-sentence (the only thing heard
+while the bot talks — its own voice must not stop it). After only the name
+the bot waits 8 s for the command; after each answer it keeps listening 8 s
+without the name, so a back-and-forth does not need "Claude" every time.
+
 ## 5. API довідник (нові ендпоінти)
 
 ### Магазин екрана
