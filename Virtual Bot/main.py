@@ -74,6 +74,7 @@ import emotions
 import events
 import music
 import screen_store
+import ytmusic
 import sponsorblock
 import system_status
 import video_control
@@ -562,6 +563,13 @@ class StorePackageRequest(BaseModel):
     id: str = Field(min_length=1, max_length=40)
 
 
+class MusicQueueTrack(BaseModel):
+    id: str = Field(min_length=11, max_length=11)
+    title: str = Field(default="", max_length=300)
+    uploader: str = Field(default="", max_length=200)
+    duration: int = Field(default=0, ge=0, le=200_000)
+
+
 class MusicPlayRequest(BaseModel):
     # Трек, який треба показати на екрані (Now Playing). Або id відео,
     # або запит для пошуку; title/uploader/duration — з результатів пошуку
@@ -571,6 +579,10 @@ class MusicPlayRequest(BaseModel):
     title: str = Field(default="", max_length=300)
     uploader: str = Field(default="", max_length=200)
     duration: int = Field(default=0, ge=0, le=200_000)
+    # What plays after this track ("up next" from YouTube Music radio). It
+    # replaces the Now Playing queue; without it the queue keeps growing
+    # from what was played before.
+    queue: list[MusicQueueTrack] = Field(default_factory=list, max_length=50)
 
 
 class VideoPlayRequest(BaseModel):
@@ -1442,8 +1454,82 @@ async def api_music_play(req: MusicPlayRequest) -> dict:
         track = tracks[0]
     else:
         raise HTTPException(status_code=400, detail="Вкажи id або query")
-    events.publish_music(track)
-    return {"ok": True, "track": track}
+    queue = [
+        {"provider": "youtube", "id": item.id, "title": item.title, "uploader": item.uploader, "duration": item.duration}
+        for item in req.queue if music.parse_video_id(item.id)
+    ]
+    if queue:
+        events.publish_music(track, queue=queue)
+    else:
+        events.publish_music(track)
+    return {"ok": True, "track": track, "queue": len(queue)}
+
+
+# ------------------------------------------------------------------ YouTube Music
+#
+# Metadata from the Rust helper (ytmusic.py); audio through /api/music/stream.
+# No Clerk gate, like the rest of /api/music/*: the screen has no token.
+
+def _ytm_error(exc: "ytmusic.YtmError") -> HTTPException:
+    status = {"unavailable": 503, "timeout": 504, "bad_request": 400}.get(exc.code, 502)
+    return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.get("/api/ytm/status")
+async def api_ytm_status() -> dict:
+    return {"available": ytmusic.available(), "helper": bool(ytmusic.helper_path())}
+
+
+@app.get("/api/ytm/home")
+async def api_ytm_home(country: str = Query(default="", max_length=2)) -> dict:
+    try:
+        return await ytmusic.home(country)
+    except ytmusic.YtmError as exc:
+        raise _ytm_error(exc) from exc
+
+
+_YTM_COVER_HOSTS = ("yt3.googleusercontent.com", "lh3.googleusercontent.com", "i.ytimg.com", "yt3.ggpht.com")
+
+
+@app.get("/api/ytm/cover")
+async def api_ytm_cover(u: str = Query(min_length=12, max_length=1000)) -> Response:
+    """Album covers through the bot, like video previews: the device itself
+    never talks to Google. Only Google's image hosts, so this is not an open
+    proxy."""
+    from urllib.parse import urlparse
+
+    host = (urlparse(u).hostname or "").lower()
+    if not u.startswith("https://") or host not in _YTM_COVER_HOSTS:
+        raise HTTPException(status_code=400, detail="not a cover URL")
+    try:
+        data, media = await image_proxy.fetch(u)
+    except image_proxy.ImageProxyError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
+    return Response(content=data, media_type=media, headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/api/ytm/{command}")
+async def api_ytm_command(
+    command: str,
+    q: str = Query(default="", max_length=200),
+    id: str = Query(default="", max_length=64),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> dict:
+    """search/albums take ?q=; album/playlist/radio/lyrics take ?id=."""
+    if command in ("search", "albums"):
+        arg = q
+    elif command in ("album", "playlist", "radio", "lyrics"):
+        arg = id
+        if not arg or not all(c.isalnum() or c in "-_" for c in arg):
+            raise HTTPException(status_code=400, detail={"code": "bad_request", "message": "bad id"})
+    else:
+        raise HTTPException(status_code=404, detail={"code": "not_found", "message": "unknown command"})
+    if not arg.strip():
+        raise HTTPException(status_code=400, detail={"code": "bad_request", "message": "missing q or id"})
+    try:
+        return await ytmusic.run(command, arg, limit)
+    except ytmusic.YtmError as exc:
+        raise _ytm_error(exc) from exc
 
 
 @app.post("/api/music/stop")

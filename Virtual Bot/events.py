@@ -162,7 +162,7 @@ def publish_screen(screen: str) -> None:
     publish({"type": "screen", "screen": str(screen)[:20]})
 
 
-def publish_music(track: dict, action: str = "play") -> None:
+def publish_music(track: dict, action: str = "play", queue: list | None = None) -> None:
     """
     Керувати Now Playing на екрані пристрою: почати грати трек (play) або
     зупинити (stop). Тул play_music шле мозок — екран підхоплює і грає
@@ -170,11 +170,15 @@ def publish_music(track: dict, action: str = "play") -> None:
     url?} — url потрібен лише для живих радіо-потоків.
     """
     clean = dict(track or {})
-    publish({
+    event = {
         "type": "music",
         "action": "stop" if action == "stop" else "play",
         "track": clean,
-    })
+    }
+    if queue:
+        # Up next: the screen replaces its queue with [track, *queue].
+        event["queue"] = [dict(item) for item in queue]
+    publish(event)
 
 
 def publish_video(command: dict) -> None:

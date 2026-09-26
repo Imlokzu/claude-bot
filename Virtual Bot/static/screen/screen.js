@@ -42,10 +42,15 @@ const SWIPE_MIN = 28;         // поріг жесту в пікселях сц�
 
 const stage = $("stage");
 const rail = $("rail");
-const tiles = Array.from(rail.querySelectorAll(".tile"));
-// Індекс шукаємо за data-tile, а не пишемо числом: секції в HTML ще
-// переставлятимуть, і «4» тихо поїхала б на чужий тайл.
-const CHAT_TILE = Math.max(0, tiles.findIndex((el) => el.dataset.tile === "chat"));
+// Every tile in the page, and the ones the carousel shows right now. The
+// person picks which tiles appear and in what order (Settings → Screens),
+// so `tiles` changes at runtime; look tiles up by data-tile, never by a
+// fixed index.
+const allTiles = Array.from(rail.querySelectorAll(".tile"));
+let tiles = allTiles.slice();
+function chatTile() {
+  return Math.max(0, tiles.findIndex((el) => el.dataset.tile === "chat"));
+}
 const layerQuick = $("layerQuick");
 const dimmer = $("dimmer");
 
@@ -783,7 +788,7 @@ const QUICK_TILES = {
   chatNew: { labelKey: "quick.chatNew", icon: "plus",
              toggle: () => { openLayer(null); startNewChat(); }, isOn: () => false },
   chatPick: { labelKey: "quick.chatPick", icon: "list",
-              toggle: () => { openLayer(null); goTile(CHAT_TILE); showSessions(); }, isOn: () => false },
+              toggle: () => { openLayer(null); goTile(chatTile()); showSessions(); }, isOn: () => false },
   full:   { labelKey: "quick.full", icon: "expand", toggle: toggleFullscreen, isOn: () => !!document.fullscreenElement },
   reload: { labelKey: "quick.reload", icon: "power", toggle: () => location.reload(), isOn: () => false },
 };
@@ -2726,7 +2731,7 @@ function startNewChat() {
   setSessionTitle("");
   renderHistory([]);
   sessionsPanel.classList.add("hidden");
-  goTile(CHAT_TILE);               // нова розмова — одразу в тайл розмови
+  goTile(chatTile());               // нова розмова — одразу в тайл розмови
 }
 
 $("chatNew").addEventListener("click", () => { wake(); startNewChat(); });
@@ -4095,6 +4100,15 @@ function onMusicEvent(ev) {
   }
   const track = ev.track && typeof ev.track === "object" ? ev.track : null;
   if (!track || !track.id) return;
+  if (Array.isArray(ev.queue) && ev.queue.length && track.provider !== "radio") {
+    // An app handed over "up next" (YouTube Music radio): that becomes the
+    // queue, instead of appending to whatever played an hour ago.
+    musicState.queue = [{ ...track, provider: "youtube" }].concat(
+      ev.queue.filter((x) => x && x.id).slice(0, 49).map((x) => ({ ...x, provider: "youtube" })),
+    );
+    musicPlayTrack({ ...track, provider: "youtube" }, { queue: false });
+    return;
+  }
   if (track.provider !== "radio") {
     track.provider = "youtube";
     if (musicState.track && musicState.track.id === track.id) {

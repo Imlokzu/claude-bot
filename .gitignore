@@ -75,6 +75,8 @@ Virtual Bot/code/
 Virtual Bot/store/installed/
 # Packages imported from .cbp files — the owner's runtime data, not source
 Virtual Bot/store/shared/
+# Rust build output of the YouTube Music helper
+Virtual Bot/ytm-helper/target/
 
 # ---- Runtime-стан агентів (МІСТИТЬ credential-и: opencode account.json) ----
 Virtual Bot/runtime/

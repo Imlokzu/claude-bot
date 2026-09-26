@@ -1,0 +1,24 @@
+[package]
+name = "ytm-helper"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "Tiny YouTube Music metadata helper for Claude Bot (search, radio, lyrics, charts) on top of rustypipe"
+publish = false
+
+# rustypipe is GPL-3.0, so this helper is too. It runs as its own process and
+# talks JSON over stdout, which keeps the rest of the bot under its own licence.
+
+[dependencies]
+rustypipe = { version = "=0.11.4", default-features = false, features = ["rustls-tls-webpki-roots"] }
+tokio = { version = "1", features = ["macros", "rt"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+# Built for a Raspberry Pi 3 as much as for a Mac: small beats fast here.
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
