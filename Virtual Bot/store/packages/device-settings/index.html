@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-  <title>Підключення — Клод Бот</title>
+  <title>Device settings</title>
   <style>
     :root {
       --bg: #16181a;
@@ -140,14 +140,69 @@
 <body>
   <div class="app">
     <section class="summary" id="summary"></section>
-    <nav class="tabs" aria-label="Налаштування пристрою">
-      <button class="tab active" type="button" data-tab="connections">Звʼязок</button>
-      <button class="tab" type="button" data-tab="audio">Звук</button>
+    <nav class="tabs" data-i18n-aria="nav">
+      <button class="tab active" type="button" data-tab="connections" data-i18n="tabConnections"></button>
+      <button class="tab" type="button" data-tab="audio" data-i18n="tabAudio"></button>
     </nav>
     <main class="content" id="content"></main>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <script>
+    const STR = {
+      uk: {
+        title: "Підключення", nav: "Налаштування пристрою", tabConnections: "Звʼязок", tabAudio: "Звук",
+        signal: "Сигнал {v}%", botName: "Клод Бот", virtualDevice: "віртуальний пристрій", systemConnected: "система підключена",
+        charging: "заряджається", onBattery: "від батареї", connections: "Підключення", demoMode: "DEMO MODE", live: "LIVE",
+        noNetwork: "Мережу не вибрано", noIp: "без IP", connected: "підключено", ready: "готово", readyToPair: "готовий до підключення",
+        enabled: "увімкнено", off: "вимкнено", audioNow: "Аудіо зараз", inOut: "вхід · вихід", builtinSpeaker: "Вбудований динамік",
+        builtinMic: "Вбудований мікрофон", voiceOutput: "Вихід для голосу бота", asrInput: "Вхід для розпізнавання", active: "активний",
+        refresh: "Оновити стан", noteConnections: "У віртуальному режимі підключення імітуються. На Raspberry Pi ці самі картки покажуть реальний стан.",
+        back: "Назад до підключень", wifiNetworks: "Wi‑Fi мережі", secured: "Захищена мережа", open: "Відкрита мережа",
+        activeNet: "активна", choose: "обрати", noteWifi: "Тап по мережі збереже вибір локально у virtual mode. Реальне підключення додасть native-адаптер.",
+        btDevices: "Bluetooth пристрої", notConnected: "не підключено", battery: "заряд {n}%", connect: "підключити", scan: "Сканувати ще раз",
+        noteBt: "Пошук і сполучення стануть реальними після підключення Bluetooth-модуля бота.",
+        audioRoutes: "Аудіомаршрути", perSource: "окремо для кожного джерела", playbackOutput: "Вихід відтворення", change: "змінити",
+        configure: "налаштувати", perApp: "Гучність по застосунках", sliderHint: "Тап по повзунку — точний рівень",
+        volumeOf: "Гучність: {label}", unmute: "Увімкнути {label}", mute: "Вимкнути {label}",
+        noteAudio: "Налаштування зберігаються локально у virtual mode. Пізніше вони передаватимуться реальному мікшеру бота.",
+        routeBot: "Голос бота", routeAlarm: "Будильник", toastVirtual: "Поки показую virtual mode",
+        toastPickOutput: "Оберіть вихід у Bluetooth-пристроях", toastMic: "Мікрофон налаштовано для ASR",
+        toastPairRequest: "Запит на підключення збережено", toastNetwork: "Мережу {ssid} обрано",
+      },
+      en: {
+        title: "Connections", nav: "Device settings", tabConnections: "Network", tabAudio: "Sound",
+        signal: "Signal {v}%", botName: "Claude Bot", virtualDevice: "virtual device", systemConnected: "system connected",
+        charging: "charging", onBattery: "on battery", connections: "Connections", demoMode: "DEMO MODE", live: "LIVE",
+        noNetwork: "No network chosen", noIp: "no IP", connected: "connected", ready: "ready", readyToPair: "ready to pair",
+        enabled: "on", off: "off", audioNow: "Audio now", inOut: "in · out", builtinSpeaker: "Built-in speaker",
+        builtinMic: "Built-in microphone", voiceOutput: "Output for the bot's voice", asrInput: "Input for speech recognition", active: "active",
+        refresh: "Refresh status", noteConnections: "In virtual mode connections are simulated. On a Raspberry Pi the same cards show the real state.",
+        back: "Back to connections", wifiNetworks: "Wi‑Fi networks", secured: "Secured network", open: "Open network",
+        activeNet: "active", choose: "choose", noteWifi: "Tapping a network saves the choice locally in virtual mode. A native adapter will make it real.",
+        btDevices: "Bluetooth devices", notConnected: "not connected", battery: "battery {n}%", connect: "connect", scan: "Scan again",
+        noteBt: "Search and pairing become real once the bot's Bluetooth module is connected.",
+        audioRoutes: "Audio routes", perSource: "per source", playbackOutput: "Playback output", change: "change",
+        configure: "configure", perApp: "Volume per app", sliderHint: "Tap the slider for an exact level",
+        volumeOf: "Volume: {label}", unmute: "Unmute {label}", mute: "Mute {label}",
+        noteAudio: "Settings are stored locally in virtual mode. Later they will go to the bot's real mixer.",
+        routeBot: "Bot voice", routeAlarm: "Alarm", toastVirtual: "Showing virtual mode for now",
+        toastPickOutput: "Pick an output among the Bluetooth devices", toastMic: "Microphone set up for ASR",
+        toastPairRequest: "Pairing request saved", toastNetwork: "Network {ssid} chosen",
+      },
+    };
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") === "en" ? "en" : "uk"; } catch (_) {}
+    function t(key, vars) {
+      let text = STR[lang][key] ?? STR.uk[key] ?? key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+    }
     const $ = (selector) => document.querySelector(selector);
     const state = { data: null, tab: "connections", detail: null, toastTimer: null };
     const storageKey = "device-settings.audio-routes";
@@ -186,7 +241,9 @@
       clearTimeout(state.toastTimer);
       state.toastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
     }
-    function post(type, payload = {}) { window.parent.postMessage({ type, ...payload }, window.location.origin); }
+    // "*" because a shared package runs with an opaque origin, where naming
+    // our own origin as the target would drop the message.
+    function post(type, payload = {}) { try { window.parent.postMessage({ type, ...payload }, "*"); } catch (_) {} }
     const appRoot = $(".app");
     let swipeStart = null;
     function releaseSwipe(pointerId) {
@@ -229,7 +286,7 @@
     });
     function signal(value) {
       const filled = Math.max(0, Math.min(4, Math.round(Number(value || 0) / 25)));
-      return `<span class="signal" aria-label="Сигнал ${value}%">${[1, 2, 3, 4].map((item) => `<i class="${item <= filled ? "on" : ""}"></i>`).join("")}</span>`;
+      return `<span class="signal" aria-label="${escapeHtml(t("signal", { v: value }))}">${[1, 2, 3, 4].map((item) => `<i class="${item <= filled ? "on" : ""}"></i>`).join("")}</span>`;
     }
     function renderIconNodes() {
       document.querySelectorAll("[data-icon]").forEach((node) => { node.innerHTML = icon(node.dataset.icon); });
@@ -239,10 +296,10 @@
       const device = data.device || {};
       const battery = device.battery || {};
       $("#summary").innerHTML = `
-        <div class="summary-copy"><div class="summary-name">${escapeHtml(device.name || "Клод Бот")}</div>
-          <div class="summary-sub"><span class="dot"></span>${data.mode === "virtual" ? "віртуальний пристрій" : "система підключена"}</div></div>
+        <div class="summary-copy"><div class="summary-name">${escapeHtml(device.name || t("botName"))}</div>
+          <div class="summary-sub"><span class="dot"></span>${t(data.mode === "virtual" ? "virtualDevice" : "systemConnected")}</div></div>
         <div class="battery"><div class="battery-top"><span>${battery.level ?? 82}%</span><span class="battery-shell"><span class="battery-fill" style="width:${Math.max(0, Math.min(100, battery.level ?? 82))}%"></span></span></div>
-          <span class="charge">${battery.charging ? "заряджається" : "від батареї"}</span></div>`;
+          <span class="charge">${t(battery.charging ? "charging" : "onBattery")}</span></div>`;
     }
     function renderConnections() {
       const data = state.data || {};
@@ -252,32 +309,33 @@
       const bluetooth = data.bluetooth || {};
       const headphones = (bluetooth.devices || []).find((device) => device.kind === "headphones");
       $("#content").innerHTML = `<div class="stack">
-        <div class="section-label"><span>Підключення</span><span class="virtual-badge">${data.mode === "virtual" ? "DEMO MODE" : "LIVE"}</span></div>
-        <button class="connection-card" type="button" data-detail="wifi"><span class="icon-box green">${icon("wifi")}</span><span class="copy"><span class="title">Wi‑Fi</span><span class="subtitle">${escapeHtml(wifi.ssid || "Мережу не вибрано")} · ${escapeHtml(wifi.ip || "без IP")}</span></span><span class="state"><span class="state-text">${wifi.status === "connected" ? "підключено" : "готово"}</span>${signal(wifi.signal)}</span><span class="chevron">${icon("arrow")}</span></button>
-        <button class="connection-card" type="button" data-detail="bluetooth"><span class="icon-box ${headphones?.connected ? "green" : ""}">${icon("bluetooth")}</span><span class="copy"><span class="title">Bluetooth</span><span class="subtitle">${headphones?.connected ? escapeHtml(headphones.name) + " · " + (headphones.battery ?? 0) + "%" : "готовий до підключення"}</span></span><span class="state"><span class="state-text ${headphones?.connected ? "" : "ready"}">${headphones?.connected ? "підключено" : "увімкнено"}</span></span><span class="chevron">${icon("arrow")}</span></button>
-        <div class="card audio-card"><div class="section-label" style="padding:0"><span>Аудіо зараз</span><span class="virtual-badge">вхід · вихід</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box">${icon((data.audio || {}).output?.icon || "speaker")}</span><span class="copy"><span class="title">${escapeHtml((data.audio || {}).output?.name || "Вбудований динамік")}</span><span class="subtitle">Вихід для голосу бота</span></span><span class="device-meta">активний</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box amber">${icon("mic")}</span><span class="copy"><span class="title">${escapeHtml((data.audio || {}).input?.name || "Вбудований мікрофон")}</span><span class="subtitle">Вхід для розпізнавання</span></span><span class="device-meta">активний</span></div></div>
-        <button class="action" type="button" data-action="refresh">${icon("refresh")} &nbsp;Оновити стан</button>
-        <div class="note">У віртуальному режимі підключення імітуються. На Raspberry Pi ці самі картки покажуть реальний стан.</div>
+        <div class="section-label"><span>${t("connections")}</span><span class="virtual-badge">${t(data.mode === "virtual" ? "demoMode" : "live")}</span></div>
+        <button class="connection-card" type="button" data-detail="wifi"><span class="icon-box green">${icon("wifi")}</span><span class="copy"><span class="title">Wi‑Fi</span><span class="subtitle">${escapeHtml(wifi.ssid || t("noNetwork"))} · ${escapeHtml(wifi.ip || t("noIp"))}</span></span><span class="state"><span class="state-text">${t(wifi.status === "connected" ? "connected" : "ready")}</span>${signal(wifi.signal)}</span><span class="chevron">${icon("arrow")}</span></button>
+        <button class="connection-card" type="button" data-detail="bluetooth"><span class="icon-box ${headphones?.connected ? "green" : ""}">${icon("bluetooth")}</span><span class="copy"><span class="title">Bluetooth</span><span class="subtitle">${headphones?.connected ? escapeHtml(headphones.name) + " · " + (headphones.battery ?? 0) + "%" : t("readyToPair")}</span></span><span class="state"><span class="state-text ${headphones?.connected ? "" : "ready"}">${t(headphones?.connected ? "connected" : "enabled")}</span></span><span class="chevron">${icon("arrow")}</span></button>
+        <div class="card audio-card"><div class="section-label" style="padding:0"><span>${t("audioNow")}</span><span class="virtual-badge">${t("inOut")}</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box">${icon((data.audio || {}).output?.icon || "speaker")}</span><span class="copy"><span class="title">${escapeHtml((data.audio || {}).output?.name || t("builtinSpeaker"))}</span><span class="subtitle">${t("voiceOutput")}</span></span><span class="device-meta">${t("active")}</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box amber">${icon("mic")}</span><span class="copy"><span class="title">${escapeHtml((data.audio || {}).input?.name || t("builtinMic"))}</span><span class="subtitle">${t("asrInput")}</span></span><span class="device-meta">${t("active")}</span></div></div>
+        <button class="action" type="button" data-action="refresh">${icon("refresh")} &nbsp;${t("refresh")}</button>
+        <div class="note">${t("noteConnections")}</div>
       </div>`;
     }
     function renderWifiDetail(wifi) {
       const networks = wifi.networks || [];
-      $("#content").innerHTML = `<div class="stack"><button class="back" type="button" data-action="back">${icon("back")} Назад до підключень</button><div class="section-label"><span>Wi‑Fi мережі</span><span class="virtual-badge">${wifi.status === "connected" ? "підключено" : "вимкнено"}</span></div><div class="card device-list">${networks.map((network) => `<button class="device-row" type="button" data-network="${escapeHtml(network.ssid)}"><span class="icon-box ${network.known ? "green" : ""}">${icon("wifi")}</span><span class="copy"><span class="title">${escapeHtml(network.ssid)}</span><span class="subtitle">${network.secured ? "Захищена мережа" : "Відкрита мережа"}</span></span>${signal(network.signal)}<span class="device-action">${network.known ? "активна" : "обрати"}</span></button>`).join("")}</div><div class="note">Тап по мережі збереже вибір локально у virtual mode. Реальне підключення додасть native-адаптер.</div></div>`;
+      $("#content").innerHTML = `<div class="stack"><button class="back" type="button" data-action="back">${icon("back")} ${t("back")}</button><div class="section-label"><span>${t("wifiNetworks")}</span><span class="virtual-badge">${t(wifi.status === "connected" ? "connected" : "off")}</span></div><div class="card device-list">${networks.map((network) => `<button class="device-row" type="button" data-network="${escapeHtml(network.ssid)}"><span class="icon-box ${network.known ? "green" : ""}">${icon("wifi")}</span><span class="copy"><span class="title">${escapeHtml(network.ssid)}</span><span class="subtitle">${t(network.secured ? "secured" : "open")}</span></span>${signal(network.signal)}<span class="device-action">${t(network.known ? "activeNet" : "choose")}</span></button>`).join("")}</div><div class="note">${t("noteWifi")}</div></div>`;
     }
     function renderBluetoothDetail(bluetooth) {
       const devices = bluetooth.devices || [];
-      $("#content").innerHTML = `<div class="stack"><button class="back" type="button" data-action="back">${icon("back")} Назад до підключень</button><div class="section-label"><span>Bluetooth пристрої</span><span class="virtual-badge">${bluetooth.enabled ? "увімкнено" : "вимкнено"}</span></div><div class="card device-list">${devices.map((device) => `<button class="device-row" type="button" data-device="${escapeHtml(device.id)}"><span class="icon-box ${device.connected ? "green" : ""}">${icon(device.icon)}</span><span class="copy"><span class="title">${escapeHtml(device.name)}</span><span class="subtitle">${device.battery == null ? "не підключено" : "заряд " + device.battery + "%"}</span></span><span class="device-action">${device.connected ? "підключено" : "підключити"}</span></button>`).join("")}</div><button class="action" type="button" data-action="scan">${icon("refresh")} &nbsp;Сканувати ще раз</button><div class="note">Пошук і сполучення стануть реальними після підключення Bluetooth-модуля бота.</div></div>`;
+      $("#content").innerHTML = `<div class="stack"><button class="back" type="button" data-action="back">${icon("back")} ${t("back")}</button><div class="section-label"><span>${t("btDevices")}</span><span class="virtual-badge">${t(bluetooth.enabled ? "enabled" : "off")}</span></div><div class="card device-list">${devices.map((device) => `<button class="device-row" type="button" data-device="${escapeHtml(device.id)}"><span class="icon-box ${device.connected ? "green" : ""}">${icon(device.icon)}</span><span class="copy"><span class="title">${escapeHtml(device.name)}</span><span class="subtitle">${device.battery == null ? t("notConnected") : t("battery", { n: device.battery })}</span></span><span class="device-action">${t(device.connected ? "connected" : "connect")}</span></button>`).join("")}</div><button class="action" type="button" data-action="scan">${icon("refresh")} &nbsp;${t("scan")}</button><div class="note">${t("noteBt")}</div></div>`;
     }
     function routes() {
       const defaults = (state.data?.audio?.routes || []).map((route) => ({ ...route }));
       const saved = loadJson(storageKey, {});
-      return defaults.map((route) => ({ ...route, ...(saved[route.id] || {}) }));
+      // Demo data carries keys, not text, so a language switch relabels it.
+      return defaults.map((route) => ({ ...route, ...(saved[route.id] || {}), label: route.label || t(route.labelKey) }));
     }
     function renderAudio() {
       const audio = state.data?.audio || {};
       const devices = (audio.devices || []).filter((device) => device.kind === "output");
-      const output = audio.output || devices[0] || { name: "Вбудований динамік", icon: "speaker" };
-      $("#content").innerHTML = `<div class="stack"><div class="section-label"><span>Аудіомаршрути</span><span class="virtual-badge">окремо для кожного джерела</span></div><div class="card audio-card"><div class="audio-device"><span class="icon-box">${icon(output.icon || "speaker")}</span><span class="copy"><span class="title">${escapeHtml(output.name)}</span><span class="subtitle">Вихід відтворення</span></span><span class="select-pill" data-action="output">змінити</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box amber">${icon(audio.input?.icon || "mic")}</span><span class="copy"><span class="title">${escapeHtml(audio.input?.name || "Вбудований мікрофон")}</span><span class="subtitle">Вхід розпізнавання</span></span><span class="select-pill" data-action="input">налаштувати</span></div></div><div class="card audio-card"><div class="mixer-head"><span class="mixer-title">Гучність по застосунках</span><span class="mixer-hint">Тап по повзунку — точний рівень</span></div><div class="route-list">${routes().map((route) => `<div class="route-row"><span class="route-icon">${icon(route.icon)}</span><span class="route-copy"><span class="route-name">${escapeHtml(route.label)}</span><input class="route-range" type="range" min="0" max="100" value="${Math.max(0, Math.min(100, route.volume ?? 0))}" data-route="${escapeHtml(route.id)}" aria-label="Гучність: ${escapeHtml(route.label)}"></span><span class="route-controls"><span class="route-value" data-value="${escapeHtml(route.id)}">${route.muted ? "—" : route.volume}%</span><button class="mute ${route.muted ? "on" : ""}" type="button" data-mute="${escapeHtml(route.id)}" aria-label="${route.muted ? "Увімкнути" : "Вимкнути"} ${escapeHtml(route.label)}">${icon(route.muted ? "mute" : "volume")}</button></span></div>`).join("")}</div></div><div class="note">Налаштування зберігаються локально у virtual mode. Пізніше вони передаватимуться реальному мікшеру бота.</div></div>`;
+      const output = audio.output || devices[0] || { icon: "speaker" };
+      $("#content").innerHTML = `<div class="stack"><div class="section-label"><span>${t("audioRoutes")}</span><span class="virtual-badge">${t("perSource")}</span></div><div class="card audio-card"><div class="audio-device"><span class="icon-box">${icon(output.icon || "speaker")}</span><span class="copy"><span class="title">${escapeHtml(output.name || t("builtinSpeaker"))}</span><span class="subtitle">${t("playbackOutput")}</span></span><span class="select-pill" data-action="output">${t("change")}</span></div><div class="divider"></div><div class="audio-device"><span class="icon-box amber">${icon(audio.input?.icon || "mic")}</span><span class="copy"><span class="title">${escapeHtml(audio.input?.name || t("builtinMic"))}</span><span class="subtitle">${t("asrInput")}</span></span><span class="select-pill" data-action="input">${t("configure")}</span></div></div><div class="card audio-card"><div class="mixer-head"><span class="mixer-title">${t("perApp")}</span><span class="mixer-hint">${t("sliderHint")}</span></div><div class="route-list">${routes().map((route) => `<div class="route-row"><span class="route-icon">${icon(route.icon)}</span><span class="route-copy"><span class="route-name">${escapeHtml(route.label)}</span><input class="route-range" type="range" min="0" max="100" value="${Math.max(0, Math.min(100, route.volume ?? 0))}" data-route="${escapeHtml(route.id)}" aria-label="${escapeHtml(t("volumeOf", { label: route.label }))}"></span><span class="route-controls"><span class="route-value" data-value="${escapeHtml(route.id)}">${route.muted ? "—" : route.volume}%</span><button class="mute ${route.muted ? "on" : ""}" type="button" data-mute="${escapeHtml(route.id)}" aria-label="${escapeHtml(t(route.muted ? "unmute" : "mute", { label: route.label }))}">${icon(route.muted ? "mute" : "volume")}</button></span></div>`).join("")}</div></div><div class="note">${t("noteAudio")}</div></div>`;
     }
     function render() {
       renderSummary();
@@ -291,8 +349,8 @@
         if (!response.ok) throw new Error("status");
         state.data = await response.json();
       } catch (_) {
-        state.data = { mode: "virtual", device: { name: "Клод Бот", battery: { level: 82, charging: true } }, wifi: { status: "connected", ssid: "Claude-Bot", ip: "192.168.1.42", signal: 86, networks: [] }, bluetooth: { enabled: true, devices: [] }, audio: { output: { name: "Вбудований динамік", icon: "speaker" }, input: { name: "Вбудований мікрофон", icon: "mic" }, routes: [{ id: "bot", label: "Голос бота", icon: "bot", volume: 72 }, { id: "youtube", label: "YouTube", icon: "youtube", volume: 58 }, { id: "alarm", label: "Будильник", icon: "alarm", volume: 84 }] } };
-        showToast("Поки показую virtual mode", true);
+        state.data = { mode: "virtual", device: { battery: { level: 82, charging: true } }, wifi: { status: "connected", ssid: "Claude-Bot", ip: "192.168.1.42", signal: 86, networks: [] }, bluetooth: { enabled: true, devices: [] }, audio: { output: { icon: "speaker" }, input: { icon: "mic" }, routes: [{ id: "bot", labelKey: "routeBot", icon: "bot", volume: 72 }, { id: "youtube", label: "YouTube", icon: "youtube", volume: 58 }, { id: "alarm", labelKey: "routeAlarm", icon: "alarm", volume: 84 }] } };
+        showToast(t("toastVirtual"), true);
       }
       render();
     }
@@ -311,8 +369,8 @@
       if (action) {
         if (action.dataset.action === "back") { state.detail = null; render(); }
         if (action.dataset.action === "refresh" || action.dataset.action === "scan") refresh();
-        if (action.dataset.action === "output") { state.tab = "connections"; state.detail = "bluetooth"; render(); showToast("Оберіть вихід у Bluetooth-пристроях"); }
-        if (action.dataset.action === "input") showToast("Мікрофон налаштовано для ASR");
+        if (action.dataset.action === "output") { state.tab = "connections"; state.detail = "bluetooth"; render(); showToast(t("toastPickOutput")); }
+        if (action.dataset.action === "input") showToast(t("toastMic"));
         return;
       }
       const mute = event.target.closest("[data-mute]");
@@ -322,9 +380,9 @@
         render();
       }
       const device = event.target.closest("[data-device]");
-      if (device) { post("botBluetoothDevice", { deviceId: device.dataset.device }); showToast("Запит на підключення збережено"); }
+      if (device) { post("botBluetoothDevice", { deviceId: device.dataset.device }); showToast(t("toastPairRequest")); }
       const network = event.target.closest("[data-network]");
-      if (network) { post("botWifiNetwork", { ssid: network.dataset.network }); showToast(`Мережу ${network.dataset.network} обрано`); }
+      if (network) { post("botWifiNetwork", { ssid: network.dataset.network }); showToast(t("toastNetwork", { ssid: network.dataset.network })); }
     });
     document.addEventListener("input", (event) => {
       const range = event.target.closest("[data-route]");
@@ -336,10 +394,17 @@
       updateRoute(range.dataset.route, { volume: value, muted: false });
     });
     window.addEventListener("message", (event) => {
-      if (event.source !== window.parent || event.origin !== window.location.origin || event.data?.type !== "botSkin") return;
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent || event.data?.type !== "botSkin") return;
       if (event.data.vars) Object.entries(event.data.vars).forEach(([key, value]) => document.documentElement.style.setProperty(key, value));
       document.documentElement.dataset.theme = event.data.theme === "light" ? "light" : "dark";
+      if ((event.data.lang === "uk" || event.data.lang === "en") && event.data.lang !== lang) {
+        lang = event.data.lang;
+        applyI18n();
+        if (state.data) render();
+      }
     });
+    applyI18n();
     refresh();
   </script>
 </body>

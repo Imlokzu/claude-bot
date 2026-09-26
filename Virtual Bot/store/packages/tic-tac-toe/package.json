@@ -1,0 +1,18 @@
+{
+  "id": "tic-tac-toe",
+  "type": "app",
+  "label": "Хрестики-нулики",
+  "icon": "puzzle",
+  "tint": "#86a8ff",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Хрестики-нулики проти бота: легкий рівень іноді помиляється, складний не програє.",
+  "category": "games",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Tic-tac-toe",
+      "description": "Tic-tac-toe against the bot: easy mode slips up now and then, hard mode never loses."
+    }
+  }
+}

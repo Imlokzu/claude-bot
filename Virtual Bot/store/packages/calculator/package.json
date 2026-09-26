@@ -1,0 +1,18 @@
+{
+  "id": "calculator",
+  "type": "app",
+  "label": "Калькулятор",
+  "icon": "calc",
+  "tint": "#7fa3c7",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Простий калькулятор з великими кнопками і пʼятьма останніми результатами.",
+  "category": "tools",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Calculator",
+      "description": "A simple calculator with big keys and your last five results."
+    }
+  }
+}

@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Tic-tac-toe</title>
+  <style>
+    /* Shared look of the bot's own apps: the screen palette (skins overwrite
+       these eight variables at runtime), one bar, one button, one segment. */
+    :root {
+      --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+      --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+      --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 6px 8px 8px; gap: 6px; }
+    .bar { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+    .bar-title { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: baseline; gap: 4px; flex: none; padding: 4px 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .chip b { color: var(--text); font-size: 12px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-width: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .btn:active { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    .btn.primary:active { opacity: .75; color: var(--bg); }
+    .btn.icon { width: 28px; padding: 0; }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .35; pointer-events: none; }
+    .seg { display: flex; gap: 6px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+    .seg button { flex: 1; min-width: 0; min-height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .seg button.on { background: var(--panel); color: var(--text); }
+    .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    [hidden] { display: none !important; }
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+    .main { display: flex; flex: 1; min-height: 0; gap: 8px; }
+    .board-box { display: grid; place-items: center; flex: 1; min-width: 0; min-height: 0; }
+    .board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .cell { position: relative; display: grid; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); cursor: pointer; touch-action: manipulation; }
+    .cell:active:not(:disabled) { border-color: var(--accent); }
+    .cell:disabled { cursor: default; }
+    .cell.win { border-color: var(--accent); }
+    .mark { width: 62%; height: 62%; fill: none; stroke-width: 2.6; stroke-linecap: round; animation: markIn .18s ease-out; transition: opacity .2s ease; }
+    .mark.x { stroke: var(--accent); }
+    .mark.o { stroke: var(--ok); }
+    .board.done .cell:not(.win) .mark { opacity: .3; }
+    @keyframes markIn { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: scale(1); } }
+    .side { display: flex; flex-direction: column; gap: 6px; width: 108px; flex: none; }
+    .tally { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; padding: 5px 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); text-align: center; }
+    .tally b { display: block; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .tally span { color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .tally .you b { color: var(--accent); }
+    .tally .bot b { color: var(--ok); }
+    .status { display: flex; align-items: center; flex: none; max-width: 55%; overflow: hidden; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .tmark { display: inline-block; width: 6px; height: 6px; margin-right: 3px; border-radius: 50%; vertical-align: 1px; }
+    .tmark.x { background: var(--accent); }
+    .tmark.o { background: var(--ok); }
+    .status.thinking { color: var(--muted); }
+    .side .seg button { padding: 0 2px; font-size: 8px; letter-spacing: .02em; }
+    .side .spacer { flex: 1; }
+    .side .btn { width: 100%; }
+    .dots { display: inline-flex; gap: 3px; margin-left: 5px; }
+    .dots i { width: 3px; height: 3px; border-radius: 50%; background: currentColor; animation: blink 1s ease-in-out infinite; }
+    .dots i:nth-child(2) { animation-delay: .15s; }
+    .dots i:nth-child(3) { animation-delay: .3s; }
+    @keyframes blink { 0%, 100% { opacity: .2; } 50% { opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="bar">
+      <span class="bar-title" data-i18n="title"></span>
+      <span class="status" id="status"></span>
+    </header>
+    <main class="main">
+      <div class="board-box" id="boardBox"><div class="board" id="board"></div></div>
+      <aside class="side">
+        <div class="tally">
+          <div class="you"><b id="sYou">0</b><span><em class="tmark x"></em><span data-i18n="you"></span></span></div>
+          <div><b id="sDraw">0</b><span data-i18n="draw"></span></div>
+          <div class="bot"><b id="sBot">0</b><span><em class="tmark o"></em><span data-i18n="bot"></span></span></div>
+        </div>
+        <div class="seg" id="level">
+          <button type="button" data-level="easy" data-i18n="easy"></button>
+          <button type="button" data-level="hard" data-i18n="hard"></button>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn primary" id="again" type="button"><span data-icon="reset"></span><span data-i18n="again"></span></button>
+      </aside>
+    </main>
+  </div>
+  <script>
+    const APP_ID = "tic-tac-toe";
+    const STR = {
+      uk: {
+        title: "Хрестики-нулики", you: "Ти", draw: "Нічия", bot: "Бот",
+        easy: "Легко", hard: "Складно", again: "Ще раунд",
+        yourTurn: "Твій хід", botTurn: "Бот думає", youWin: "Ти виграв!", botWin: "Бот виграв", tie: "Нічия",
+        cell: "Клітинка {n}",
+      },
+      en: {
+        title: "Tic-tac-toe", you: "You", draw: "Draw", bot: "Bot",
+        easy: "Easy", hard: "Hard", again: "New round",
+        yourTurn: "Your move", botTurn: "Bot is thinking", youWin: "You win!", botWin: "Bot wins", tie: "It's a draw",
+        cell: "Cell {n}",
+      },
+    };
+    const ICONS = {
+      reset: '<path d="M20 11a8 8 0 0 0-14.8-3L3 11m0 0V6m0 5h5M4 13a8 8 0 0 0 14.8 3L21 13m0 0v5m0-5h-5"/>'
+    };
+    /* ---- shared app runtime: storage, i18n, skin, parent messages ---- */
+
+    // Storage throws inside a sandboxed iframe (a shared .cbp runs with an
+    // opaque origin), so every access is guarded and the app keeps its state
+    // in memory instead of failing.
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(APP_ID + "." + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (_) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(APP_ID + "." + key, JSON.stringify(value)); } catch (_) {}
+    }
+
+    // Start in the screen's language; botSkin carries it later, which also
+    // covers the sandbox where localStorage is not readable.
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") || "uk"; } catch (_) {}
+    if (lang !== "en") lang = "uk";
+
+    function t(key, vars) {
+      let text = STR[lang][key];
+      if (text == null) text = STR.uk[key];
+      if (text == null) return key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function icon(name, cls) {
+      return '<svg class="i' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+    }
+    function fillIcons(root) {
+      (root || document).querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+      if (typeof onLang === "function") onLang();
+    }
+    // "*" on purpose: in a sandbox our origin is "null", and naming a real
+    // origin as the target would silently drop the message.
+    function post(message) {
+      try { window.parent.postMessage(message, "*"); } catch (_) {}
+    }
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    let skinKeys = [];
+    window.addEventListener("message", (event) => {
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.type !== "botSkin") return;
+      const root = document.documentElement;
+      // Drop the previous skin first, otherwise removing a skin would leave
+      // its colours behind.
+      skinKeys.forEach((key) => root.style.removeProperty(key));
+      skinKeys = [];
+      if (data.vars && typeof data.vars === "object") {
+        for (const key in data.vars) {
+          if (!/^--[a-z-]+$/.test(key)) continue;
+          root.style.setProperty(key, String(data.vars[key]));
+          skinKeys.push(key);
+        }
+      }
+      root.dataset.theme = data.theme === "light" ? "light" : "dark";
+      if (typeof onTheme === "function") onTheme();
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) post({ type: "closeStoreApp" });
+    });
+    // Swipe left/right/down closes the app, same gesture as the screen's own
+    // layers. Pointer capture keeps the swipe alive when the finger leaves a
+    // small element; a native scroll cancels the pointer and is not a swipe.
+    function enableSwipeClose(root) {
+      let start = null;
+      root.addEventListener("pointerdown", (event) => {
+        if (start || event.target.closest("input, select, textarea, [data-noswipe]")) return;
+        start = { x: event.clientX, y: event.clientY, id: event.pointerId };
+        if (!event.target.closest("button")) {
+          try { root.setPointerCapture(event.pointerId); } catch (_) {}
+        }
+      });
+      function finish(event) {
+        if (!start || start.id !== event.pointerId) return;
+        const s = start;
+        start = null;
+        try { if (root.hasPointerCapture(s.id)) root.releasePointerCapture(s.id); } catch (_) {}
+        if (event.type === "pointercancel") return;
+        const dx = event.clientX - s.x;
+        const dy = event.clientY - s.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+        if (Math.abs(dx) >= Math.abs(dy)) post({ type: "storeAppSwipe", direction: dx < 0 ? "left" : "right" });
+        else if (dy > 0) post({ type: "storeAppSwipe", direction: "down" });
+      }
+      root.addEventListener("pointerup", finish);
+      root.addEventListener("pointercancel", finish);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+      root.addEventListener("lostpointercapture", (event) => { if (start && start.id === event.pointerId) start = null; });
+    }
+
+    const LINES = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]];
+    const MARK = {
+      x: '<svg class="mark x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>',
+      o: '<svg class="mark o" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/></svg>',
+    };
+    const boardEl = document.getElementById("board");
+    const boxEl = document.getElementById("boardBox");
+    let cells = Array(9).fill(null);
+    let tally = Object.assign({ you: 0, draw: 0, bot: 0 }, load("tally", {}));
+    let level = load("level", "easy") === "hard" ? "hard" : "easy";
+    let youStart = true, turn = "x", result = null, winLine = null, botTimer = 0;
+
+    function winner(b) {
+      for (const [a, c, d] of LINES) if (b[a] && b[a] === b[c] && b[a] === b[d]) return { who: b[a], line: [a, c, d] };
+      return b.every(Boolean) ? { who: "tie", line: null } : null;
+    }
+
+    // Minimax with depth, so the bot prefers quick wins and slow losses.
+    function minimax(b, player, depth) {
+      const w = winner(b);
+      if (w) return { score: w.who === "o" ? 10 - depth : w.who === "x" ? depth - 10 : 0 };
+      let bestMove = null, bestScore = player === "o" ? -Infinity : Infinity;
+      for (let i = 0; i < 9; i++) {
+        if (b[i]) continue;
+        b[i] = player;
+        const { score } = minimax(b, player === "o" ? "x" : "o", depth + 1);
+        b[i] = null;
+        if (player === "o" ? score > bestScore : score < bestScore) { bestScore = score; bestMove = i; }
+      }
+      return { score: bestScore, move: bestMove };
+    }
+
+    function botMove() {
+      const free = cells.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0);
+      // Easy mode blunders about 40% of the time, but still takes a win
+      // that is sitting right there, or it feels broken rather than easy.
+      if (level === "easy" && Math.random() < .4) {
+        const win = free.find((i) => { const b = cells.slice(); b[i] = "o"; return winner(b)?.who === "o"; });
+        return win != null ? win : free[Math.floor(Math.random() * free.length)];
+      }
+      if (free.length === 9) return [0, 2, 4, 6, 8][Math.floor(Math.random() * 5)];
+      return minimax(cells.slice(), "o", 0).move;
+    }
+
+    function play(i, who) {
+      if (cells[i] || result) return;
+      cells[i] = who;
+      const w = winner(cells);
+      if (w) {
+        result = w.who; winLine = w.line;
+        tally[w.who === "x" ? "you" : w.who === "o" ? "bot" : "draw"] += 1;
+        save("tally", tally);
+      } else {
+        turn = who === "x" ? "o" : "x";
+      }
+      render();
+      if (!result && turn === "o") botTimer = setTimeout(() => play(botMove(), "o"), 380 + Math.random() * 250);
+    }
+
+    function newRound() {
+      clearTimeout(botTimer);
+      cells = Array(9).fill(null);
+      result = null; winLine = null;
+      turn = youStart ? "x" : "o";
+      youStart = !youStart;
+      render();
+      if (turn === "o") botTimer = setTimeout(() => play(botMove(), "o"), 450);
+    }
+
+    function layout() {
+      const size = Math.max(120, Math.floor(Math.min(boxEl.clientWidth, boxEl.clientHeight)));
+      const cell = Math.floor((size - 12) / 3);
+      boardEl.style.gridTemplateColumns = "repeat(3," + cell + "px)";
+      boardEl.style.gridAutoRows = cell + "px";
+    }
+
+    function render() {
+      if (boardEl.children.length !== 9) {
+        boardEl.innerHTML = "";
+        for (let i = 0; i < 9; i++) {
+          const b = document.createElement("button");
+          b.type = "button"; b.className = "cell"; b.dataset.i = i;
+          boardEl.appendChild(b);
+        }
+      }
+      [...boardEl.children].forEach((b, i) => {
+        const want = cells[i] || "";
+        if (b.dataset.mark !== want) { b.dataset.mark = want; b.innerHTML = want ? MARK[want] : ""; }
+        b.disabled = !!cells[i] || !!result || turn !== "x";
+        b.classList.toggle("win", !!winLine && winLine.includes(i));
+        b.setAttribute("aria-label", t("cell", { n: i + 1 }));
+      });
+      boardEl.classList.toggle("done", !!winLine);
+      document.getElementById("sYou").textContent = tally.you;
+      document.getElementById("sDraw").textContent = tally.draw;
+      document.getElementById("sBot").textContent = tally.bot;
+      document.querySelectorAll("[data-level]").forEach((b) => b.classList.toggle("on", b.dataset.level === level));
+      const status = document.getElementById("status");
+      status.className = "status";
+      status.style.color = result === "x" ? "var(--accent)" : result === "o" ? "var(--ok)" : "";
+      if (result === "x") status.textContent = t("youWin");
+      else if (result === "o") status.textContent = t("botWin");
+      else if (result === "tie") status.textContent = t("tie");
+      else if (turn === "x") status.textContent = t("yourTurn");
+      else {
+        status.innerHTML = '<span></span><span class="dots"><i></i><i></i><i></i></span>';
+        status.firstChild.textContent = t("botTurn");
+        status.classList.add("thinking");
+      }
+    }
+
+    boardEl.addEventListener("click", (event) => {
+      const b = event.target.closest(".cell");
+      if (b && turn === "x") play(Number(b.dataset.i), "x");
+    });
+    document.getElementById("level").addEventListener("click", (event) => {
+      const b = event.target.closest("[data-level]");
+      if (!b) return;
+      level = b.dataset.level;
+      save("level", level);
+      render();
+    });
+    document.getElementById("again").addEventListener("click", newRound);
+    window.addEventListener("resize", layout);
+
+    function onLang() { render(); }
+
+    enableSwipeClose(document.getElementById("app"));
+    fillIcons();
+    layout();
+    applyI18n();
+    newRound();
+  </script>
+</body>
+</html>

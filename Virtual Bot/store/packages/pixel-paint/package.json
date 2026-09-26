@@ -4,8 +4,15 @@
   "label": "Піксель-майстерня",
   "icon": "pencil",
   "tint": "#5fb0a8",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Клод Бот",
   "description": "Малювання 16×16: палітра з кольорів бота, олівець і гумка. Малюнок зберігається.",
-  "entry": "index.html"
+  "category": "fun",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Pixel Paint",
+      "description": "16×16 drawing: a palette of the bot's colours, a pencil and an eraser. The drawing is saved."
+    }
+  }
 }

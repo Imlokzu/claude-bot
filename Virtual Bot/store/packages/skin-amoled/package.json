@@ -4,7 +4,7 @@
   "label": "AMOLED",
   "icon": "moon",
   "tint": "#101010",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Клод Бот",
   "description": "Чистий чорний: для різких контрастів і меншого споживання AMOLED.",
   "vars": {
@@ -16,5 +16,11 @@
     "--accent": "#d17a58",
     "--ok": "#8ca879",
     "--off": "#5f5f5f"
+  },
+  "locales": {
+    "en": {
+      "label": "AMOLED",
+      "description": "Pure black: sharp contrast and less power on AMOLED panels."
+    }
   }
 }

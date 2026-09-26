@@ -4,8 +4,15 @@
   "label": "Метроном",
   "icon": "clock",
   "tint": "#d7a65b",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Клод Бот",
   "description": "Клацає темп: 40–208 BPM, підсвітка на кожен бит. Працює офлайн.",
-  "entry": "index.html"
+  "category": "tools",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Metronome",
+      "description": "Clicks a tempo: 40–208 BPM with a light on every beat. Works offline."
+    }
+  }
 }

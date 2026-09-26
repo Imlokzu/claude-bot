@@ -1,0 +1,18 @@
+{
+  "id": "breathe",
+  "type": "app",
+  "label": "Дихання",
+  "icon": "leaf",
+  "tint": "#5fb0a8",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Дихальна вправа: квадрат 4-4-4-4 або 4-7-8, коло підказує вдих і видих.",
+  "category": "health",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Breathe",
+      "description": "Guided breathing: box 4-4-4-4 or 4-7-8, a circle paces each breath."
+    }
+  }
+}

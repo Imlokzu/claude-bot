@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>World clock</title>
+  <style>
+    /* Shared look of the bot's own apps: the screen palette (skins overwrite
+       these eight variables at runtime), one bar, one button, one segment. */
+    :root {
+      --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+      --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+      --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 6px 8px 8px; gap: 6px; }
+    .bar { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+    .bar-title { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: baseline; gap: 4px; flex: none; padding: 4px 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .chip b { color: var(--text); font-size: 12px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-width: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .btn:active { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    .btn.primary:active { opacity: .75; color: var(--bg); }
+    .btn.icon { width: 28px; padding: 0; }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .35; pointer-events: none; }
+    .seg { display: flex; gap: 6px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+    .seg button { flex: 1; min-width: 0; min-height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .seg button.on { background: var(--panel); color: var(--text); }
+    .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    [hidden] { display: none !important; }
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+    .list { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
+    .city { display: flex; align-items: center; gap: 8px; flex: 1; min-height: 0; max-height: 54px; padding: 0 10px 0 8px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+    .city .dn { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 8px; background: var(--bg); }
+    .city .dn.day { color: var(--accent); }
+    .city .dn.night { color: var(--muted); }
+    .city-copy { flex: 1; min-width: 0; }
+    .city-name { overflow: hidden; font-size: 12px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+    .city-sub { margin-top: 1px; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .city-time { font-size: 22px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .city .btn { color: var(--muted); }
+    .add-row { justify-content: center; gap: 6px; border-style: dashed; background: transparent; color: var(--muted); font-size: 11px; font-weight: 700; cursor: pointer; }
+    .add-row:active { border-color: var(--accent); color: var(--accent); }
+    .empty { margin: auto; color: var(--muted); font-size: 11px; }
+    .bar .btn.on { border-color: var(--accent); color: var(--accent); }
+    .picker { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 6px; padding: 6px 8px 8px; background: var(--bg); opacity: 0; pointer-events: none; transform: translateY(8px); transition: opacity .16s ease, transform .16s ease; }
+    .picker.show { opacity: 1; pointer-events: auto; transform: none; }
+    .picks { display: grid; grid-template-columns: 1fr 1fr; align-content: start; gap: 6px; flex: 1; min-height: 0; overflow-y: auto; touch-action: pan-y; scrollbar-width: none; }
+    .picks::-webkit-scrollbar { display: none; }
+    .pick { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; min-height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); text-align: left; cursor: pointer; }
+    .pick:active { border-color: var(--accent); }
+    .pick span { overflow: hidden; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    .pick small { flex: none; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+    @media (max-height: 200px) { .city-time { font-size: 17px; } .city .dn { width: 22px; height: 22px; } .city-sub { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="bar">
+      <span class="bar-title" data-i18n="title"></span>
+      <span class="chip"><span data-i18n="here"></span><b id="local">00:00</b></span>
+      <button class="btn icon" id="editBtn" type="button" data-icon="pencil" data-i18n-aria="edit"></button>
+    </header>
+    <main class="list" id="list"></main>
+  </div>
+  <div class="picker" id="picker">
+    <header class="bar">
+      <span class="bar-title" data-i18n="pickTitle"></span>
+      <button class="btn icon ghost" id="pickClose" type="button" data-icon="x" data-i18n-aria="close"></button>
+    </header>
+    <div class="picks" id="picks"></div>
+  </div>
+  <script>
+    const APP_ID = "world-clock";
+    const CITIES = {
+      kyiv: ["Europe/Kyiv", "Europe/Kiev"], london: ["Europe/London"], lisbon: ["Europe/Lisbon"], paris: ["Europe/Paris"],
+      berlin: ["Europe/Berlin"], warsaw: ["Europe/Warsaw"], rome: ["Europe/Rome"], madrid: ["Europe/Madrid"],
+      reykjavik: ["Atlantic/Reykjavik"], istanbul: ["Europe/Istanbul"], tbilisi: ["Asia/Tbilisi"], dubai: ["Asia/Dubai"],
+      cairo: ["Africa/Cairo"], nairobi: ["Africa/Nairobi"], johannesburg: ["Africa/Johannesburg"], delhi: ["Asia/Kolkata", "Asia/Calcutta"],
+      bangkok: ["Asia/Bangkok"], singapore: ["Asia/Singapore"], hongkong: ["Asia/Hong_Kong"], beijing: ["Asia/Shanghai"],
+      seoul: ["Asia/Seoul"], tokyo: ["Asia/Tokyo"], sydney: ["Australia/Sydney"], auckland: ["Pacific/Auckland"],
+      honolulu: ["Pacific/Honolulu"], losangeles: ["America/Los_Angeles"], denver: ["America/Denver"], chicago: ["America/Chicago"],
+      newyork: ["America/New_York"], toronto: ["America/Toronto"], mexico: ["America/Mexico_City"], saopaulo: ["America/Sao_Paulo"],
+      buenosaires: ["America/Argentina/Buenos_Aires"],
+    };
+    const STR = {
+      uk: {
+        title: "Світовий час", here: "Тут", edit: "Змінити список", close: "Закрити", pickTitle: "Додати місто",
+        add: "Додати місто", remove: "Прибрати", empty: "Додай до чотирьох міст",
+        today: "Сьогодні", tomorrow: "Завтра", yesterday: "Вчора", same: "як тут", hours: "{sign}{h} год", hoursMin: "{sign}{h}:{m} год",
+        day: "День", night: "Ніч",
+        kyiv: "Київ", london: "Лондон", lisbon: "Лісабон", paris: "Париж", berlin: "Берлін", warsaw: "Варшава", rome: "Рим",
+        madrid: "Мадрид", reykjavik: "Рейкʼявік", istanbul: "Стамбул", tbilisi: "Тбілісі", dubai: "Дубай", cairo: "Каїр",
+        nairobi: "Найробі", johannesburg: "Йоганнесбург", delhi: "Делі", bangkok: "Бангкок", singapore: "Сингапур",
+        hongkong: "Гонконг", beijing: "Пекін", seoul: "Сеул", tokyo: "Токіо", sydney: "Сідней", auckland: "Окленд",
+        honolulu: "Гонолулу", losangeles: "Лос-Анджелес", denver: "Денвер", chicago: "Чикаго", newyork: "Нью-Йорк",
+        toronto: "Торонто", mexico: "Мехіко", saopaulo: "Сан-Паулу", buenosaires: "Буенос-Айрес",
+      },
+      en: {
+        title: "World clock", here: "Here", edit: "Edit list", close: "Close", pickTitle: "Add a city",
+        add: "Add a city", remove: "Remove", empty: "Add up to four cities",
+        today: "Today", tomorrow: "Tomorrow", yesterday: "Yesterday", same: "same as here", hours: "{sign}{h} h", hoursMin: "{sign}{h}:{m} h",
+        day: "Day", night: "Night",
+        kyiv: "Kyiv", london: "London", lisbon: "Lisbon", paris: "Paris", berlin: "Berlin", warsaw: "Warsaw", rome: "Rome",
+        madrid: "Madrid", reykjavik: "Reykjavik", istanbul: "Istanbul", tbilisi: "Tbilisi", dubai: "Dubai", cairo: "Cairo",
+        nairobi: "Nairobi", johannesburg: "Johannesburg", delhi: "Delhi", bangkok: "Bangkok", singapore: "Singapore",
+        hongkong: "Hong Kong", beijing: "Beijing", seoul: "Seoul", tokyo: "Tokyo", sydney: "Sydney", auckland: "Auckland",
+        honolulu: "Honolulu", losangeles: "Los Angeles", denver: "Denver", chicago: "Chicago", newyork: "New York",
+        toronto: "Toronto", mexico: "Mexico City", saopaulo: "Sao Paulo", buenosaires: "Buenos Aires",
+      },
+    };
+    const ICONS = {
+      pencil: '<path d="M4 20h4l10-10a2.1 2.1 0 0 0-3-3L5 17z"/>',
+      x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+      plus: '<path d="M12 5v14M5 12h14"/>',
+      sun: '<circle cx="12" cy="12" r="3.8"/><path d="M12 3v2M12 19v2M21 12h-2M5 12H3M18.4 5.6l-1.4 1.4M7 17l-1.4 1.4M18.4 18.4 17 17M7 7 5.6 5.6"/>',
+      moon: '<path d="M20 14.2A8.5 8.5 0 0 1 9.8 4a8.5 8.5 0 1 0 10.2 10.2z"/>'
+    };
+    /* ---- shared app runtime: storage, i18n, skin, parent messages ---- */
+
+    // Storage throws inside a sandboxed iframe (a shared .cbp runs with an
+    // opaque origin), so every access is guarded and the app keeps its state
+    // in memory instead of failing.
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(APP_ID + "." + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (_) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(APP_ID + "." + key, JSON.stringify(value)); } catch (_) {}
+    }
+
+    // Start in the screen's language; botSkin carries it later, which also
+    // covers the sandbox where localStorage is not readable.
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") || "uk"; } catch (_) {}
+    if (lang !== "en") lang = "uk";
+
+    function t(key, vars) {
+      let text = STR[lang][key];
+      if (text == null) text = STR.uk[key];
+      if (text == null) return key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function icon(name, cls) {
+      return '<svg class="i' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+    }
+    function fillIcons(root) {
+      (root || document).querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+      if (typeof onLang === "function") onLang();
+    }
+    // "*" on purpose: in a sandbox our origin is "null", and naming a real
+    // origin as the target would silently drop the message.
+    function post(message) {
+      try { window.parent.postMessage(message, "*"); } catch (_) {}
+    }
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    let skinKeys = [];
+    window.addEventListener("message", (event) => {
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.type !== "botSkin") return;
+      const root = document.documentElement;
+      // Drop the previous skin first, otherwise removing a skin would leave
+      // its colours behind.
+      skinKeys.forEach((key) => root.style.removeProperty(key));
+      skinKeys = [];
+      if (data.vars && typeof data.vars === "object") {
+        for (const key in data.vars) {
+          if (!/^--[a-z-]+$/.test(key)) continue;
+          root.style.setProperty(key, String(data.vars[key]));
+          skinKeys.push(key);
+        }
+      }
+      root.dataset.theme = data.theme === "light" ? "light" : "dark";
+      if (typeof onTheme === "function") onTheme();
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) post({ type: "closeStoreApp" });
+    });
+    // Swipe left/right/down closes the app, same gesture as the screen's own
+    // layers. Pointer capture keeps the swipe alive when the finger leaves a
+    // small element; a native scroll cancels the pointer and is not a swipe.
+    function enableSwipeClose(root) {
+      let start = null;
+      root.addEventListener("pointerdown", (event) => {
+        if (start || event.target.closest("input, select, textarea, [data-noswipe]")) return;
+        start = { x: event.clientX, y: event.clientY, id: event.pointerId };
+        if (!event.target.closest("button")) {
+          try { root.setPointerCapture(event.pointerId); } catch (_) {}
+        }
+      });
+      function finish(event) {
+        if (!start || start.id !== event.pointerId) return;
+        const s = start;
+        start = null;
+        try { if (root.hasPointerCapture(s.id)) root.releasePointerCapture(s.id); } catch (_) {}
+        if (event.type === "pointercancel") return;
+        const dx = event.clientX - s.x;
+        const dy = event.clientY - s.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+        if (Math.abs(dx) >= Math.abs(dy)) post({ type: "storeAppSwipe", direction: dx < 0 ? "left" : "right" });
+        else if (dy > 0) post({ type: "storeAppSwipe", direction: "down" });
+      }
+      root.addEventListener("pointerup", finish);
+      root.addEventListener("pointercancel", finish);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+      root.addEventListener("lostpointercapture", (event) => { if (start && start.id === event.pointerId) start = null; });
+    }
+
+    const MAX = 4;
+    const formatters = {};
+    let chosen = load("cities", ["kyiv", "london", "newyork", "tokyo"]);
+    if (!Array.isArray(chosen)) chosen = ["kyiv"];
+    chosen = chosen.filter((id, i) => CITIES[id] && chosen.indexOf(id) === i).slice(0, MAX);
+    let editing = false, lastMinute = -1;
+
+    // The first zone name the browser's ICU knows wins: Europe/Kyiv only
+    // exists in newer builds, older Chromium on the Pi still says Kiev.
+    function formatter(id) {
+      if (formatters[id] !== undefined) return formatters[id];
+      formatters[id] = null;
+      for (const zone of CITIES[id]) {
+        try {
+          formatters[id] = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric" });
+          break;
+        } catch (_) {}
+      }
+      return formatters[id];
+    }
+    function partsIn(id, date) {
+      const f = formatter(id);
+      if (!f) return null;
+      const out = {};
+      f.formatToParts(date).forEach((p) => { if (p.type !== "literal") out[p.type] = Number(p.value); });
+      out.hour %= 24;
+      return out;
+    }
+    function offsetMin(p, date) { return Math.round((Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - date.getTime()) / 60000); }
+
+    function describe(id, date) {
+      const p = partsIn(id, date);
+      if (!p) return null;
+      const diff = offsetMin(p, date) + date.getTimezoneOffset();
+      const localDay = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+      const cityDay = Date.UTC(p.year, p.month - 1, p.day);
+      const dayKey = cityDay > localDay ? "tomorrow" : cityDay < localDay ? "yesterday" : "today";
+      let rel = t("same");
+      if (diff) {
+        const abs = Math.abs(diff), h = Math.floor(abs / 60), m = abs % 60;
+        rel = t(m ? "hoursMin" : "hours", { sign: diff > 0 ? "+" : "−", h, m: String(m).padStart(2, "0") });
+      }
+      return {
+        time: String(p.hour).padStart(2, "0") + ":" + String(p.minute).padStart(2, "0"),
+        day: p.hour >= 6 && p.hour < 18,
+        sub: t(dayKey) + ", " + rel,
+      };
+    }
+
+    function render() {
+      const now = new Date(Math.floor(Date.now() / 60000) * 60000);
+      lastMinute = now.getTime();
+      document.getElementById("local").textContent = String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+      document.getElementById("editBtn").classList.toggle("on", editing);
+      const list = document.getElementById("list");
+      list.innerHTML = "";
+      chosen.forEach((id, i) => {
+        const d = describe(id, now);
+        if (!d) return;
+        const row = document.createElement("div");
+        row.className = "city";
+        row.innerHTML = '<span class="dn ' + (d.day ? "day" : "night") + '">' + icon(d.day ? "sun" : "moon") + '</span><div class="city-copy"><div class="city-name"></div><div class="city-sub"></div></div>' +
+          (editing ? '<button class="btn icon" type="button" data-remove="' + i + '">' + icon("x") + "</button>" : '<span class="city-time"></span>');
+        row.querySelector(".dn").setAttribute("aria-label", t(d.day ? "day" : "night"));
+        row.querySelector(".city-name").textContent = t(id);
+        row.querySelector(".city-sub").textContent = d.sub;
+        if (editing) row.querySelector("[data-remove]").setAttribute("aria-label", t("remove"));
+        else row.querySelector(".city-time").textContent = d.time;
+        list.appendChild(row);
+      });
+      if ((editing || !chosen.length) && chosen.length < MAX) {
+        const add = document.createElement("button");
+        add.type = "button"; add.className = "city add-row"; add.id = "addRow";
+        add.innerHTML = icon("plus") + "<span></span>";
+        add.lastChild.textContent = t("add");
+        list.appendChild(add);
+      }
+      if (!chosen.length && !editing) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = t("empty");
+        list.prepend(empty);
+      }
+    }
+
+    function openPicker(open) {
+      const picker = document.getElementById("picker");
+      if (open) {
+        const now = new Date();
+        const picks = document.getElementById("picks");
+        picks.innerHTML = "";
+        Object.keys(CITIES)
+          .filter((id) => !chosen.includes(id) && formatter(id))
+          .sort((a, b) => t(a).localeCompare(t(b), lang))
+          .forEach((id) => {
+            const d = describe(id, now);
+            const b = document.createElement("button");
+            b.type = "button"; b.className = "pick"; b.dataset.city = id;
+            b.innerHTML = "<span></span><small></small>";
+            b.firstChild.textContent = t(id);
+            b.lastChild.textContent = d.time;
+            picks.appendChild(b);
+          });
+        picks.scrollTop = 0;
+      }
+      picker.classList.toggle("show", open);
+    }
+
+    document.getElementById("editBtn").addEventListener("click", () => { editing = !editing; render(); });
+    document.getElementById("list").addEventListener("click", (event) => {
+      const rm = event.target.closest("[data-remove]");
+      if (rm) { chosen.splice(Number(rm.dataset.remove), 1); save("cities", chosen); render(); return; }
+      if (event.target.closest("#addRow")) openPicker(true);
+    });
+    document.getElementById("picks").addEventListener("click", (event) => {
+      const b = event.target.closest("[data-city]");
+      if (!b || chosen.length >= MAX) return;
+      chosen.push(b.dataset.city);
+      save("cities", chosen);
+      if (chosen.length >= MAX) editing = false;
+      openPicker(false);
+      render();
+    });
+    document.getElementById("pickClose").addEventListener("click", () => openPicker(false));
+    // Minute resolution is all a clock face needs; checking every 5s keeps
+    // the flip close to the real minute without waking the CPU each second.
+    setInterval(() => { if (!document.hidden && Math.floor(Date.now() / 60000) * 60000 !== lastMinute) render(); }, 5000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) render(); });
+
+    function onLang() { render(); if (document.getElementById("picker").classList.contains("show")) openPicker(true); }
+
+    enableSwipeClose(document.getElementById("app"));
+    fillIcons();
+    applyI18n();
+  </script>
+</body>
+</html>

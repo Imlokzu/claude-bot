@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Snake</title>
+  <style>
+    /* Shared look of the bot's own apps: the screen palette (skins overwrite
+       these eight variables at runtime), one bar, one button, one segment. */
+    :root {
+      --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+      --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+      --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 6px 8px 8px; gap: 6px; }
+    .bar { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+    .bar-title { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: baseline; gap: 4px; flex: none; padding: 4px 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .chip b { color: var(--text); font-size: 12px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-width: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .btn:active { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    .btn.primary:active { opacity: .75; color: var(--bg); }
+    .btn.icon { width: 28px; padding: 0; }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .35; pointer-events: none; }
+    .seg { display: flex; gap: 6px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+    .seg button { flex: 1; min-width: 0; min-height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .seg button.on { background: var(--panel); color: var(--text); }
+    .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    [hidden] { display: none !important; }
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+    .game { display: flex; flex: 1; min-height: 0; gap: 8px; }
+    .field { position: relative; display: grid; place-items: center; flex: 1; min-width: 0; min-height: 0; touch-action: none; }
+    canvas { display: block; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+    .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 10px; text-align: center; opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+    .overlay.show { opacity: 1; pointer-events: auto; }
+    .overlay-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+    .ov-title { font-size: 15px; font-weight: 800; letter-spacing: -.01em; }
+    .ov-sub { color: var(--muted); font-size: 10px; }
+    .ov-sub.hot { color: var(--accent); font-weight: 700; }
+    .pad { display: grid; grid-template-columns: repeat(3, 32px); grid-template-rows: repeat(3, 32px); gap: 6px; align-self: center; flex: none; }
+    .pad .btn { width: 32px; min-height: 32px; padding: 0; }
+    .pad .btn svg.i { width: 18px; height: 18px; }
+    .pad .up { grid-column: 2; grid-row: 1; }
+    .pad .left { grid-column: 1; grid-row: 2; }
+    .pad .right { grid-column: 3; grid-row: 2; }
+    .pad .down { grid-column: 2; grid-row: 3; }
+    .pad .hub { grid-column: 2; grid-row: 2; display: grid; place-items: center; color: var(--off); }
+    .pad .hub i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="bar">
+      <span class="bar-title" data-i18n="title"></span>
+      <span class="chip"><span data-i18n="score"></span><b id="score">0</b></span>
+      <span class="chip"><span data-i18n="best"></span><b id="best">0</b></span>
+      <button class="btn icon" id="pauseBtn" type="button" data-i18n-aria="pause"></button>
+      <button class="btn icon ghost" type="button" data-close data-icon="x" data-i18n-aria="close"></button>
+    </header>
+    <main class="game">
+      <div class="field" id="field">
+        <canvas id="cv"></canvas>
+        <div class="overlay" id="overlay">
+          <div class="overlay-card">
+            <div class="ov-title" id="ovTitle"></div>
+            <div class="ov-sub" id="ovSub"></div>
+            <button class="btn primary" id="ovBtn" type="button"></button>
+          </div>
+        </div>
+      </div>
+      <div class="pad" id="pad">
+        <button class="btn up" type="button" data-dir="up" data-icon="up" data-i18n-aria="up"></button>
+        <button class="btn left" type="button" data-dir="left" data-icon="left" data-i18n-aria="left"></button>
+        <span class="hub"><i></i></span>
+        <button class="btn right" type="button" data-dir="right" data-icon="right" data-i18n-aria="right"></button>
+        <button class="btn down" type="button" data-dir="down" data-icon="down" data-i18n-aria="down"></button>
+      </div>
+    </main>
+  </div>
+  <script>
+    const APP_ID = "snake";
+    const STR = {
+      uk: {
+        title: "Змійка", score: "Очки", best: "Рекорд", pause: "Пауза", resume: "Далі", close: "Закрити",
+        up: "Вгору", down: "Вниз", left: "Ліворуч", right: "Праворуч",
+        readyTitle: "Змійка", readySub: "Свайп по полю або кнопки", play: "Грати",
+        pausedTitle: "Пауза", pausedSub: "Змійка чекає",
+        overTitle: "Кінець гри", overSub: "Рахунок: {score}", newBest: "Новий рекорд!", again: "Ще раз",
+      },
+      en: {
+        title: "Snake", score: "Score", best: "Best", pause: "Pause", resume: "Resume", close: "Close",
+        up: "Up", down: "Down", left: "Left", right: "Right",
+        readyTitle: "Snake", readySub: "Swipe the field or use the pad", play: "Play",
+        pausedTitle: "Paused", pausedSub: "The snake is waiting",
+        overTitle: "Game over", overSub: "Score: {score}", newBest: "New best!", again: "Again",
+      },
+    };
+    const ICONS = {
+      x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+      up: '<path d="m6 15 6-6 6 6"/>',
+      down: '<path d="m6 9 6 6 6-6"/>',
+      left: '<path d="m15 6-6 6 6 6"/>',
+      right: '<path d="m9 6 6 6-6 6"/>',
+      play: '<path d="M8 5.4v13.2L19.2 12z"/>',
+      pause: '<path d="M8.6 5.5v13M15.4 5.5v13"/>'
+    };
+    /* ---- shared app runtime: storage, i18n, skin, parent messages ---- */
+
+    // Storage throws inside a sandboxed iframe (a shared .cbp runs with an
+    // opaque origin), so every access is guarded and the app keeps its state
+    // in memory instead of failing.
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(APP_ID + "." + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (_) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(APP_ID + "." + key, JSON.stringify(value)); } catch (_) {}
+    }
+
+    // Start in the screen's language; botSkin carries it later, which also
+    // covers the sandbox where localStorage is not readable.
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") || "uk"; } catch (_) {}
+    if (lang !== "en") lang = "uk";
+
+    function t(key, vars) {
+      let text = STR[lang][key];
+      if (text == null) text = STR.uk[key];
+      if (text == null) return key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function icon(name, cls) {
+      return '<svg class="i' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+    }
+    function fillIcons(root) {
+      (root || document).querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+      if (typeof onLang === "function") onLang();
+    }
+    // "*" on purpose: in a sandbox our origin is "null", and naming a real
+    // origin as the target would silently drop the message.
+    function post(message) {
+      try { window.parent.postMessage(message, "*"); } catch (_) {}
+    }
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    let skinKeys = [];
+    window.addEventListener("message", (event) => {
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.type !== "botSkin") return;
+      const root = document.documentElement;
+      // Drop the previous skin first, otherwise removing a skin would leave
+      // its colours behind.
+      skinKeys.forEach((key) => root.style.removeProperty(key));
+      skinKeys = [];
+      if (data.vars && typeof data.vars === "object") {
+        for (const key in data.vars) {
+          if (!/^--[a-z-]+$/.test(key)) continue;
+          root.style.setProperty(key, String(data.vars[key]));
+          skinKeys.push(key);
+        }
+      }
+      root.dataset.theme = data.theme === "light" ? "light" : "dark";
+      if (typeof onTheme === "function") onTheme();
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) post({ type: "closeStoreApp" });
+    });
+
+    const cv = document.getElementById("cv");
+    const ctx = cv.getContext("2d");
+    const field = document.getElementById("field");
+    const overlay = document.getElementById("overlay");
+    const DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+    const OPPOSITE = { up: "down", down: "up", left: "right", right: "left" };
+
+    let cols = 20, rows = 18, cell = 10;
+    let snake = [], dir = "right", queue = [], food = null;
+    let score = 0, best = load("best", 0), newBest = false;
+    let state = "ready";           // ready | running | paused | over
+    let acc = 0, last = 0, rafId = 0;
+    let colors = {};
+
+    function readColors() {
+      colors = { bg: cssVar("--panel"), snake: cssVar("--accent"), food: cssVar("--ok"), eye: cssVar("--bg"), grid: cssVar("--line") };
+    }
+
+    // The grid is fixed for a whole game; only the cell size follows the
+    // box, so resizing mid-game rescales instead of moving walls.
+    function layout(regrid) {
+      const w = field.clientWidth - 2, h = field.clientHeight - 2;
+      if (regrid) {
+        cell = w >= 180 && h >= 150 ? 10 : 8;
+        cols = Math.max(10, Math.floor(w / cell));
+        rows = Math.max(8, Math.floor(h / cell));
+      } else {
+        cell = Math.max(4, Math.floor(Math.min(w / cols, h / rows)));
+      }
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      cv.style.width = cols * cell + "px";
+      cv.style.height = rows * cell + "px";
+      cv.width = Math.round(cols * cell * dpr);
+      cv.height = Math.round(rows * cell * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+
+    function reset() {
+      layout(true);
+      const y = Math.floor(rows / 2), x = Math.floor(cols / 3);
+      snake = [[x, y], [x - 1, y], [x - 2, y]];
+      dir = "right";
+      queue = [];
+      score = 0;
+      newBest = false;
+      placeFood();
+      updateHud();
+    }
+
+    function placeFood() {
+      const free = [];
+      const taken = new Set(snake.map(([x, y]) => y * cols + x));
+      for (let i = 0; i < cols * rows; i++) if (!taken.has(i)) free.push(i);
+      const pick = free[Math.floor(Math.random() * free.length)];
+      food = pick == null ? null : [pick % cols, Math.floor(pick / cols)];
+    }
+
+    // Speeds up with every bite, down to a floor that is still playable
+    // on a resistive screen.
+    function interval() { return Math.max(65, 140 - score * 4); }
+
+    function step() {
+      if (queue.length) dir = queue.shift();
+      const [dx, dy] = DIRS[dir];
+      const head = [snake[0][0] + dx, snake[0][1] + dy];
+      const eats = food && head[0] === food[0] && head[1] === food[1];
+      const body = eats ? snake : snake.slice(0, -1);
+      const hitWall = head[0] < 0 || head[1] < 0 || head[0] >= cols || head[1] >= rows;
+      if (hitWall || body.some(([x, y]) => x === head[0] && y === head[1])) return gameOver();
+      snake.unshift(head);
+      if (eats) {
+        score += 1;
+        if (score > best) { best = score; newBest = true; save("best", best); }
+        placeFood();
+        updateHud();
+      } else {
+        snake.pop();
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = colors.bg;
+      ctx.fillRect(0, 0, cols * cell, rows * cell);
+      ctx.fillStyle = colors.grid;
+      for (let y = 0; y < rows; y++) for (let x = (y % 2); x < cols; x += 2) ctx.fillRect(x * cell + cell / 2 - .5, y * cell + cell / 2 - .5, 1, 1);
+      if (food) {
+        ctx.fillStyle = colors.food;
+        ctx.fillRect(food[0] * cell + 2, food[1] * cell + 2, cell - 4, cell - 4);
+        ctx.fillRect(food[0] * cell + cell / 2 - 1, food[1] * cell, 2, 2);
+      }
+      ctx.fillStyle = colors.snake;
+      const n = snake.length;
+      snake.forEach(([x, y], i) => {
+        ctx.globalAlpha = i === 0 ? 1 : Math.max(.45, 1 - (i / n) * .55);
+        ctx.fillRect(x * cell + 1, y * cell + 1, cell - 2, cell - 2);
+      });
+      ctx.globalAlpha = 1;
+      if (n) {
+        const [hx, hy] = snake[0];
+        const [dx, dy] = DIRS[dir];
+        const cx = hx * cell + cell / 2, cy = hy * cell + cell / 2;
+        const off = cell * .22;
+        ctx.fillStyle = colors.eye;
+        ctx.fillRect(cx + dx * off - dy * off - 1, cy + dy * off - dx * off - 1, 2, 2);
+        ctx.fillRect(cx + dx * off + dy * off - 1, cy + dy * off + dx * off - 1, 2, 2);
+      }
+    }
+
+    function frame(now) {
+      rafId = 0;
+      if (state !== "running") return;
+      acc += Math.min(250, now - last);
+      last = now;
+      let stepped = false;
+      while (acc >= interval() && state === "running") { acc -= interval(); step(); stepped = true; }
+      if (stepped) draw();
+      if (state === "running") rafId = requestAnimationFrame(frame);
+    }
+
+    function run() {
+      state = "running";
+      acc = 0;
+      last = performance.now();
+      showOverlay();
+      if (!rafId) rafId = requestAnimationFrame(frame);
+    }
+    function start() { reset(); run(); }
+    function pause() { if (state === "running") { state = "paused"; showOverlay(); } }
+    function gameOver() { state = "over"; draw(); showOverlay(); }
+
+    function turn(next) {
+      if (state === "ready" || state === "over") start();
+      else if (state === "paused") run();
+      const lastDir = queue.length ? queue[queue.length - 1] : dir;
+      if (next === lastDir || next === OPPOSITE[lastDir] || queue.length >= 3) return;
+      queue.push(next);
+    }
+
+    function updateHud() {
+      document.getElementById("score").textContent = score;
+      document.getElementById("best").textContent = best;
+      const btn = document.getElementById("pauseBtn");
+      btn.innerHTML = icon(state === "running" ? "pause" : "play");
+      btn.setAttribute("aria-label", t(state === "running" ? "pause" : "resume"));
+    }
+
+    function showOverlay() {
+      const title = document.getElementById("ovTitle");
+      const sub = document.getElementById("ovSub");
+      const btn = document.getElementById("ovBtn");
+      overlay.classList.toggle("show", state !== "running");
+      sub.classList.toggle("hot", state === "over" && newBest);
+      if (state === "ready") { title.textContent = t("readyTitle"); sub.textContent = t("readySub"); btn.textContent = t("play"); }
+      if (state === "paused") { title.textContent = t("pausedTitle"); sub.textContent = t("pausedSub"); btn.textContent = t("resume"); }
+      if (state === "over") {
+        title.textContent = t("overTitle");
+        sub.textContent = newBest ? t("newBest") + " " + t("overSub", { score }) : t("overSub", { score });
+        btn.textContent = t("again");
+      }
+      updateHud();
+    }
+
+    document.getElementById("ovBtn").addEventListener("click", () => { if (state === "paused") run(); else start(); });
+    document.getElementById("pauseBtn").addEventListener("click", () => {
+      if (state === "running") pause();
+      else if (state === "paused") run();
+      else start();
+    });
+    document.getElementById("pad").addEventListener("pointerdown", (event) => {
+      const btn = event.target.closest("[data-dir]");
+      if (!btn) return;
+      event.preventDefault();
+      turn(btn.dataset.dir);
+    });
+
+    // Swipes steer; the start point moves after each turn so one long drag
+    // can make an L-shaped turn without lifting the finger.
+    let swipe = null;
+    field.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button")) return;
+      swipe = { x: event.clientX, y: event.clientY, id: event.pointerId, moved: false };
+      try { field.setPointerCapture(event.pointerId); } catch (_) {}
+    });
+    field.addEventListener("pointermove", (event) => {
+      if (!swipe || swipe.id !== event.pointerId) return;
+      const dx = event.clientX - swipe.x, dy = event.clientY - swipe.y;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 16) return;
+      if (state === "running") turn(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
+      swipe.x = event.clientX; swipe.y = event.clientY; swipe.moved = true;
+    });
+    field.addEventListener("pointerup", (event) => {
+      if (!swipe || swipe.id !== event.pointerId) return;
+      const moved = swipe.moved;
+      swipe = null;
+      if (!moved && state === "paused") run();
+    });
+    field.addEventListener("pointercancel", () => { swipe = null; });
+
+    document.addEventListener("keydown", (event) => {
+      const map = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", w: "up", s: "down", a: "left", d: "right" };
+      if (map[event.key]) { event.preventDefault(); turn(map[event.key]); }
+      if (event.key === " ") { event.preventDefault(); document.getElementById("pauseBtn").click(); }
+    });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) pause(); });
+    // A frame can report 0x0 before its first layout; the ready screen just
+    // rebuilds the board once the real size is known.
+    window.addEventListener("resize", () => (state === "ready" ? reset() : layout(false)));
+
+    function onLang() { showOverlay(); }
+    function onTheme() { readColors(); draw(); }
+
+    readColors();
+    fillIcons();
+    reset();
+    applyI18n();
+  </script>
+</body>
+</html>

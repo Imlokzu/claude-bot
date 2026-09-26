@@ -1,0 +1,18 @@
+{
+  "id": "game-2048",
+  "type": "app",
+  "label": "2048",
+  "icon": "grid",
+  "tint": "#d7a65b",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Зсувай плитки свайпами й збирай 2048; один хід можна скасувати.",
+  "category": "games",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "2048",
+      "description": "Slide the tiles with swipes and build 2048; one move can be undone."
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "reaction",
+  "type": "app",
+  "label": "Реакція",
+  "icon": "bolt",
+  "tint": "#e0a64f",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Тест реакції: чекай зеленого, тисни й дивись мілісекунди, середнє з пʼяти.",
+  "category": "games",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Reaction",
+      "description": "A reaction test: wait for green, tap, see the milliseconds, averaged over five tries."
+    }
+  }
+}

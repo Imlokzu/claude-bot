@@ -2,11 +2,21 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
+<title>Metronome</title>
 <style>
-  /* Застосунок екрана: батько — iframe 320×240. Беремо теми з CSS-змінних,
-     які скін/тема екрана прокидають через :root (успадковуються в iframe
-     того ж origin) — так пакет не виглядає чужорідним. */
-  :root { color-scheme: dark light; }
+  /* A screen app: the parent is a 320x240 iframe. Colours come from the
+     screen palette (the skin overrides these variables at runtime), so the
+     package does not look foreign next to the screen's own apps. */
+  :root {
+    --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+    --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+    --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+    color-scheme: light;
+  }
   html, body { margin: 0; height: 100%; overflow: hidden;
     background: var(--bg, #16181a); color: var(--text, #e8e4dc);
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
@@ -24,41 +34,59 @@
     padding: 8px 14px; font-size: 16px; }
   button:active { background: var(--accent, #d17a58); }
   input[type=range] { width: 180px; accent-color: var(--accent, #d17a58); }
+  @media (max-height: 200px) { .wrap { gap: 6px; } .beat { width: 30px; height: 30px; } .bpm { font-size: 32px; } }
 </style>
 </head>
 <body>
   <div class="wrap">
     <div class="beat" id="beat"></div>
     <div class="bpm"><span id="val">100</span> <small>BPM</small></div>
-    <input type="range" id="range" min="40" max="208" value="100" aria-label="Темп">
+    <input type="range" id="range" min="40" max="208" value="100" data-i18n-aria="tempo">
     <div class="row">
-      <button id="minus" aria-label="Повільніше">−</button>
-      <button id="start">Старт</button>
-      <button id="plus" aria-label="Швидше">+</button>
+      <button id="minus" data-i18n-aria="slower">−</button>
+      <button id="start" data-i18n="start"></button>
+      <button id="plus" data-i18n-aria="faster">+</button>
     </div>
   </div>
 <script>
-  // Метроном на WebAudio: плануємо «клац» заздалегідь (lookahead), бо
-  // setTimeout на слабкому пристрої плаває на десятки мілісекунд.
+  const STR = {
+    uk: { title: "Метроном", tempo: "Темп", slower: "Повільніше", faster: "Швидше", start: "Старт", stop: "Стоп" },
+    en: { title: "Metronome", tempo: "Tempo", slower: "Slower", faster: "Faster", start: "Start", stop: "Stop" },
+  };
+  // Storage throws in a sandboxed frame; the metronome then just forgets
+  // the tempo instead of breaking.
+  function readStore(key, fallback) { try { const v = localStorage.getItem(key); return v == null ? fallback : v; } catch (_) { return fallback; } }
+  function writeStore(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
+  let lang = readStore("botScreenLang", "uk") === "en" ? "en" : "uk";
+  function t(key) { return STR[lang][key] ?? STR.uk[key] ?? key; }
+
+  // WebAudio metronome: clicks are scheduled ahead (lookahead), because
+  // setTimeout on a slow device drifts by tens of milliseconds.
   const $ = (id) => document.getElementById(id);
   const beatEl = $("beat"), valEl = $("val"), range = $("range"), startBtn = $("start");
-  let bpm = Number(localStorage.getItem("metronome.bpm") || 100);
+  let bpm = Number(readStore("metronome.bpm", 100)) || 100;
   let running = false, nextAt = 0, beatNo = 0, timer = 0, ctx = null;
 
+  function applyI18n() {
+    document.documentElement.lang = lang;
+    document.title = t("title");
+    document.querySelectorAll("[data-i18n-aria]").forEach((el) => el.setAttribute("aria-label", t(el.dataset.i18nAria)));
+    startBtn.textContent = t(running ? "stop" : "start");
+  }
   function draw() {
     valEl.textContent = String(bpm);
     range.value = String(bpm);
   }
   function click(strong) {
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const t = ctx.currentTime;
+    const t0 = ctx.currentTime;
     const osc = ctx.createOscillator(), gain = ctx.createGain();
     osc.frequency.value = strong ? 1200 : 800;
-    gain.gain.setValueAtTime(0.5, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+    gain.gain.setValueAtTime(0.5, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.05);
     osc.connect(gain).connect(ctx.destination);
-    osc.start(t);
-    osc.stop(t + 0.06);
+    osc.start(t0);
+    osc.stop(t0 + 0.06);
     beatEl.classList.toggle("on", true);
     setTimeout(() => beatEl.classList.remove("on"), 90);
   }
@@ -76,13 +104,13 @@
     if (running) {
       running = false;
       clearInterval(timer);
-      startBtn.textContent = "Старт";
+      startBtn.textContent = t("start");
       return;
     }
     if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
     ctx.resume();
     running = true;
-    startBtn.textContent = "Стоп";
+    startBtn.textContent = t("stop");
     nextAt = ctx.currentTime + 0.1;
     beatNo = 0;
     tick();
@@ -91,19 +119,22 @@
   startBtn.addEventListener("click", start);
   range.addEventListener("input", () => {
     bpm = Number(range.value);
-    localStorage.setItem("metronome.bpm", String(bpm));
+    writeStore("metronome.bpm", String(bpm));
     draw();
   });
-  $("minus").addEventListener("click", () => { bpm = Math.max(40, bpm - 1); localStorage.setItem("metronome.bpm", String(bpm)); draw(); });
-  $("plus").addEventListener("click", () => { bpm = Math.min(208, bpm + 1); localStorage.setItem("metronome.bpm", String(bpm)); draw(); });
+  $("minus").addEventListener("click", () => { bpm = Math.max(40, bpm - 1); writeStore("metronome.bpm", String(bpm)); draw(); });
+  $("plus").addEventListener("click", () => { bpm = Math.min(208, bpm + 1); writeStore("metronome.bpm", String(bpm)); draw(); });
   draw();
+  applyI18n();
 
-  // Скін екрана приходить від батька повідомленням (CSS-змінні крізь iframe
-  // не проходять) — застосовуємо до :root, кнопки й повзунок підфарбуються
+  // The screen's skin, theme and language arrive as a message: CSS
+  // variables do not cross the iframe boundary. Only the source is
+  // checked, since a sandboxed frame sees origin "null".
   window.addEventListener("message", (e) => {
-    if (e.data && e.data.type === "botSkin" && e.data.vars) {
-      for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
-    }
+    if (e.source !== window.parent || !e.data || e.data.type !== "botSkin") return;
+    if (e.data.vars) for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
+    document.documentElement.dataset.theme = e.data.theme === "light" ? "light" : "dark";
+    if ((e.data.lang === "uk" || e.data.lang === "en") && e.data.lang !== lang) { lang = e.data.lang; applyI18n(); }
   });
 </script>
 </body>

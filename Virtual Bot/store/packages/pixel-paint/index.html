@@ -2,19 +2,34 @@
 <html lang="uk">
 <head>
 <meta charset="UTF-8">
+<title>Pixel Paint</title>
 <style>
+  :root {
+    --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+    --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+    color-scheme: dark;
+  }
+  :root[data-theme="light"] {
+    --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+    --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+    color-scheme: light;
+  }
   html, body { margin: 0; height: 100%; overflow: hidden;
     background: var(--bg, #16181a); color: var(--text, #e8e4dc);
     font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     -webkit-user-select: none; user-select: none;
     -webkit-tap-highlight-color: transparent; }
   .wrap { display: flex; flex-direction: column; height: 100%; padding: 8px; gap: 6px; }
+  /* The canvas takes whatever height is left after the palette and the
+     buttons, staying square, so the tools never fall off a 240px screen. */
+  * { box-sizing: border-box; }
   canvas { border: 1px solid var(--line, #2f3438); border-radius: 6px;
-    image-rendering: pixelated; touch-action: none; align-self: center; }
-  .pal { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; }
+    image-rendering: pixelated; touch-action: none; align-self: center;
+    flex: 1 1 auto; min-height: 0; width: auto; max-width: 100%; aspect-ratio: 1 / 1; }
+  .pal { display: flex; gap: 5px; justify-content: center; flex-wrap: wrap; flex: none; }
   .sw { width: 22px; height: 22px; border-radius: 5px; border: 2px solid transparent; }
   .sw.on { border-color: var(--text, #e8e4dc); }
-  .row { display: flex; gap: 6px; justify-content: center; }
+  .row { display: flex; gap: 6px; justify-content: center; flex: none; }
   button { background: var(--panel, #1e2124); color: var(--text, #e8e4dc);
     border: 1px solid var(--line, #2f3438); border-radius: 8px; padding: 5px 10px; font-size: 13px; }
   button:active { background: var(--accent, #d17a58); }
@@ -25,13 +40,31 @@
   <canvas id="cv" width="192" height="192"></canvas>
   <div class="pal" id="pal"></div>
   <div class="row">
-    <button id="eraser">Гумка</button>
-    <button id="fill">Залити</button>
-    <button id="clear">Стерти все</button>
+    <button id="eraser" data-i18n="eraser"></button>
+    <button id="fill" data-i18n="fill"></button>
+    <button id="clear" data-i18n="clear"></button>
   </div>
 </div>
 <script>
-  // Піксельний пейнт 16×16: одна канва, білд-у-пікселі 12×12.
+  const STR = {
+    uk: { title: "Піксель-майстерня", eraser: "Гумка", fill: "Залити", clear: "Стерти все", color: "Колір {n}" },
+    en: { title: "Pixel Paint", eraser: "Eraser", fill: "Fill", clear: "Clear all", color: "Colour {n}" },
+  };
+  let lang = "uk";
+  try { lang = localStorage.getItem("botScreenLang") === "en" ? "en" : "uk"; } catch (_) {}
+  function t(key, vars) {
+    let text = STR[lang][key] ?? STR.uk[key] ?? key;
+    if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+    return text;
+  }
+  function applyI18n() {
+    document.documentElement.lang = lang;
+    document.title = t("title");
+    document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+    document.querySelectorAll(".sw").forEach((el, i) => el.setAttribute("aria-label", t("color", { n: i + 1 })));
+  }
+
+  // 16x16 pixel paint: one canvas, each art pixel is 12x12 on screen.
   const $ = (id) => document.getElementById(id);
   const cv = $("cv"), ctx = cv.getContext("2d");
   const N = 16, CELL = cv.width / N;
@@ -39,12 +72,14 @@
     "#5fb0a8", "#5b9bd5", "#b48ad8", "#e74c3c", "#16181a"];
   let color = PALETTE[1];
   let grid = [];
-  const KEY = "pixelPaint.grid";
+  // Keys are prefixed with the package id; the old camelCase key is still
+  // read once so an existing drawing survives the rename.
+  const KEY = "pixel-paint.grid", OLD_KEY = "pixelPaint.grid";
 
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    const saved = JSON.parse(localStorage.getItem(KEY) || localStorage.getItem(OLD_KEY) || "null");
     if (Array.isArray(saved) && saved.length === N * N) grid = saved;
-  } catch (e) { /* зіпсований запис — почнемо з чистого полотна */ }
+  } catch (e) { /* broken record or no storage (sandbox): start with a blank canvas */ }
   if (grid.length !== N * N) grid = new Array(N * N).fill(null);
 
   function draw() {
@@ -82,7 +117,7 @@
     const sw = document.createElement("button");
     sw.className = "sw" + (c === color ? " on" : "");
     sw.style.background = c;
-    sw.setAttribute("aria-label", "Колір " + (i + 1));
+    sw.setAttribute("aria-label", t("color", { n: i + 1 }));
     sw.addEventListener("click", () => {
       color = c;
       pal.querySelectorAll(".sw").forEach((el) => el.classList.remove("on"));
@@ -94,13 +129,16 @@
   $("fill").addEventListener("click", () => { grid = grid.map(() => color); draw(); save(); });
   $("clear").addEventListener("click", () => { grid = new Array(N * N).fill(null); draw(); save(); });
   draw();
+  applyI18n();
 
-  // Скін екрана приходить від батька повідомленням (CSS-змінні крізь iframe
-  // не проходять) — застосовуємо до :root, рамка й кнопки підфарбуються
+  // The screen's skin, theme and language arrive as a message (CSS
+  // variables do not cross the iframe boundary). Only the source is
+  // checked, since a sandboxed frame sees origin "null".
   window.addEventListener("message", (e) => {
-    if (e.data && e.data.type === "botSkin" && e.data.vars) {
-      for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
-    }
+    if (e.source !== window.parent || !e.data || e.data.type !== "botSkin") return;
+    if (e.data.vars) for (const k in e.data.vars) document.documentElement.style.setProperty(k, e.data.vars[k]);
+    document.documentElement.dataset.theme = e.data.theme === "light" ? "light" : "dark";
+    if ((e.data.lang === "uk" || e.data.lang === "en") && e.data.lang !== lang) { lang = e.data.lang; applyI18n(); }
   });
 </script>
 </body>

@@ -4,7 +4,7 @@
   "label": "Захід",
   "icon": "sun",
   "tint": "#c96f3b",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Клод Бот",
   "description": "Теплий вечірній: персиковий фон і теракотовий акцент.",
   "vars": {
@@ -16,5 +16,11 @@
     "--accent": "#e8825a",
     "--ok": "#a8b879",
     "--off": "#8a7364"
+  },
+  "locales": {
+    "en": {
+      "label": "Sunset",
+      "description": "Warm evening: a peach background and a terracotta accent."
+    }
   }
 }

@@ -1,0 +1,18 @@
+{
+  "id": "pomodoro",
+  "type": "app",
+  "label": "Помодоро",
+  "icon": "target",
+  "tint": "#d17a58",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Таймер фокусу 25/5 з кільцем прогресу, тихим сигналом і лічильником сесій за день.",
+  "category": "health",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Pomodoro",
+      "description": "A 25/5 focus timer with a progress ring, a soft chime and today's session count."
+    }
+  }
+}

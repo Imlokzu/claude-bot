@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>2048</title>
+  <style>
+    /* Shared look of the bot's own apps: the screen palette (skins overwrite
+       these eight variables at runtime), one bar, one button, one segment. */
+    :root {
+      --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+      --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+      --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 6px 8px 8px; gap: 6px; }
+    .bar { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+    .bar-title { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: baseline; gap: 4px; flex: none; padding: 4px 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .chip b { color: var(--text); font-size: 12px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-width: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .btn:active { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    .btn.primary:active { opacity: .75; color: var(--bg); }
+    .btn.icon { width: 28px; padding: 0; }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .35; pointer-events: none; }
+    .seg { display: flex; gap: 6px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+    .seg button { flex: 1; min-width: 0; min-height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .seg button.on { background: var(--panel); color: var(--text); }
+    .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    [hidden] { display: none !important; }
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+    :root {
+      --t2: #3b4044; --t2-text: #e8e4dc; --t4: #4b4740; --t4-text: #efe3cf;
+      --tile-dark: #1d1a16; --tile-light: #fff4ea;
+    }
+    :root[data-theme="light"] { --t2: #e8dac3; --t2-text: #2f271f; --t4: #dcc59f; --t4-text: #2f271f; }
+    .main { display: flex; flex: 1; min-height: 0; gap: 8px; }
+    .board-box { position: relative; display: grid; place-items: center; flex: 1; min-width: 0; min-height: 0; touch-action: none; }
+    .board { position: relative; border-radius: 10px; background: var(--line); }
+    .slot { position: absolute; border-radius: 7px; background: var(--panel); }
+    .tile { position: absolute; left: 0; top: 0; transition: transform 110ms ease-out; will-change: transform; }
+    .tile-in { display: grid; place-items: center; width: 100%; height: 100%; border-radius: 7px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+    .tile-in.new { animation: appear 140ms ease-out 90ms backwards; }
+    .tile-in.merged { animation: pop 170ms ease-out 80ms backwards; }
+    .tile.merged-top { z-index: 2; }
+    @keyframes appear { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+    @keyframes pop { 0% { opacity: 0; transform: scale(.7); } 60% { opacity: 1; transform: scale(1.12); } 100% { transform: scale(1); } }
+    .v2 { background: var(--t2); color: var(--t2-text); }
+    .v4 { background: var(--t4); color: var(--t4-text); }
+    .v8 { background: #8f5439; color: var(--tile-light); }
+    .v16 { background: #a95e3e; color: var(--tile-light); }
+    .v32 { background: #c2674a; color: var(--tile-light); }
+    .v64 { background: #db7650; color: var(--tile-light); }
+    .v128 { background: #d7a65b; color: var(--tile-dark); }
+    .v256 { background: #cdb35c; color: var(--tile-dark); }
+    .v512 { background: #8ca879; color: var(--tile-dark); }
+    .v1024 { background: #5fb0a8; color: var(--tile-dark); }
+    .v2048 { background: #86a8ff; color: var(--tile-dark); }
+    .vbig { background: #b48ad8; color: var(--tile-dark); }
+    .side { display: flex; flex-direction: column; gap: 6px; width: 92px; flex: none; }
+    .stat { padding: 5px 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .stat-label { color: var(--muted); font-size: 8px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    .stat-value { margin-top: 2px; font-size: 17px; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; transition: transform .12s ease; }
+    .stat-value.bump { transform: scale(1.1); }
+    .side .btn { width: 100%; justify-content: flex-start; }
+    .side .spacer { flex: 1; }
+    @media (max-height: 200px) {
+      .side { gap: 4px; }
+      .stat { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; padding: 3px 7px; }
+      .stat-value { margin: 0; font-size: 13px; }
+      .side .btn + .btn { margin-top: 2px; }
+    }
+    .overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity .2s ease; }
+    .overlay.show { opacity: 1; pointer-events: auto; }
+    .overlay-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); text-align: center; }
+    .ov-title { font-size: 16px; font-weight: 800; }
+    .ov-sub { color: var(--muted); font-size: 10px; }
+    .ov-actions { display: flex; gap: 6px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="bar">
+      <span class="bar-title" data-i18n="title"></span>
+      <span class="chip" id="hint" data-i18n="hint"></span>
+      <button class="btn icon ghost" type="button" data-close data-icon="x" data-i18n-aria="close"></button>
+    </header>
+    <main class="main">
+      <div class="board-box" id="boardBox">
+        <div class="board" id="board"></div>
+        <div class="overlay" id="overlay">
+          <div class="overlay-card">
+            <div class="ov-title" id="ovTitle"></div>
+            <div class="ov-sub" id="ovSub"></div>
+            <div class="ov-actions" id="ovActions"></div>
+          </div>
+        </div>
+      </div>
+      <aside class="side">
+        <div class="stat"><div class="stat-label" data-i18n="score"></div><div class="stat-value" id="score">0</div></div>
+        <div class="stat"><div class="stat-label" data-i18n="best"></div><div class="stat-value" id="best">0</div></div>
+        <span class="spacer"></span>
+        <button class="btn" id="undoBtn" type="button"><span data-icon="undo"></span><span data-i18n="undo"></span></button>
+        <button class="btn" id="newBtn" type="button"><span data-icon="reset"></span><span data-i18n="newGame"></span></button>
+      </aside>
+    </main>
+  </div>
+  <script>
+    const APP_ID = "game-2048";
+    const STR = {
+      uk: {
+        title: "2048", hint: "Свайп", close: "Закрити", score: "Очки", best: "Рекорд",
+        undo: "Назад", newGame: "Нова", winTitle: "2048!", winSub: "Можна грати далі за рекордом",
+        keepGoing: "Далі", overTitle: "Ходів немає", overSub: "Рахунок: {score}",
+      },
+      en: {
+        title: "2048", hint: "Swipe", close: "Close", score: "Score", best: "Best",
+        undo: "Undo", newGame: "New", winTitle: "2048!", winSub: "Keep going for a high score",
+        keepGoing: "Continue", overTitle: "No moves left", overSub: "Score: {score}",
+      },
+    };
+    const ICONS = {
+      x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+      undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+      reset: '<path d="M20 11a8 8 0 0 0-14.8-3L3 11m0 0V6m0 5h5M4 13a8 8 0 0 0 14.8 3L21 13m0 0v5m0-5h-5"/>'
+    };
+    /* ---- shared app runtime: storage, i18n, skin, parent messages ---- */
+
+    // Storage throws inside a sandboxed iframe (a shared .cbp runs with an
+    // opaque origin), so every access is guarded and the app keeps its state
+    // in memory instead of failing.
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(APP_ID + "." + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (_) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(APP_ID + "." + key, JSON.stringify(value)); } catch (_) {}
+    }
+
+    // Start in the screen's language; botSkin carries it later, which also
+    // covers the sandbox where localStorage is not readable.
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") || "uk"; } catch (_) {}
+    if (lang !== "en") lang = "uk";
+
+    function t(key, vars) {
+      let text = STR[lang][key];
+      if (text == null) text = STR.uk[key];
+      if (text == null) return key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function icon(name, cls) {
+      return '<svg class="i' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+    }
+    function fillIcons(root) {
+      (root || document).querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+      if (typeof onLang === "function") onLang();
+    }
+    // "*" on purpose: in a sandbox our origin is "null", and naming a real
+    // origin as the target would silently drop the message.
+    function post(message) {
+      try { window.parent.postMessage(message, "*"); } catch (_) {}
+    }
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    let skinKeys = [];
+    window.addEventListener("message", (event) => {
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.type !== "botSkin") return;
+      const root = document.documentElement;
+      // Drop the previous skin first, otherwise removing a skin would leave
+      // its colours behind.
+      skinKeys.forEach((key) => root.style.removeProperty(key));
+      skinKeys = [];
+      if (data.vars && typeof data.vars === "object") {
+        for (const key in data.vars) {
+          if (!/^--[a-z-]+$/.test(key)) continue;
+          root.style.setProperty(key, String(data.vars[key]));
+          skinKeys.push(key);
+        }
+      }
+      root.dataset.theme = data.theme === "light" ? "light" : "dark";
+      if (typeof onTheme === "function") onTheme();
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) post({ type: "closeStoreApp" });
+    });
+
+    const N = 4, GAP = 5;
+    const boardEl = document.getElementById("board");
+    const boxEl = document.getElementById("boardBox");
+    let grid = [], score = 0, best = load("best", 0), won = false, keepPlaying = false;
+    let undoState = null, nextId = 1, cellPx = 40, overlayMode = null;
+
+    function emptyGrid() { return Array.from({ length: N }, () => Array(N).fill(null)); }
+    function pos(r, c) { return "translate(" + (GAP + c * (cellPx + GAP)) + "px," + (GAP + r * (cellPx + GAP)) + "px)"; }
+    function fontFor(v) {
+      const digits = String(v).length;
+      return Math.round(cellPx * (digits <= 2 ? .44 : digits === 3 ? .36 : digits === 4 ? .29 : .23)) + "px";
+    }
+
+    function makeTile(v, r, c, anim) {
+      const tile = { id: nextId++, v, r, c, el: document.createElement("div") };
+      tile.el.className = "tile" + (anim === "merged" ? " merged-top" : "");
+      tile.el.style.width = tile.el.style.height = cellPx + "px";
+      tile.el.style.transform = pos(r, c);
+      const inner = document.createElement("div");
+      inner.className = "tile-in " + (v > 2048 ? "vbig" : "v" + v) + (anim ? " " + anim : "");
+      inner.style.fontSize = fontFor(v);
+      inner.textContent = v;
+      tile.el.appendChild(inner);
+      boardEl.appendChild(tile.el);
+      return tile;
+    }
+
+    // Board size follows the box, so the same code fits the full 320x240
+    // stage and the smaller frame under the screen's title bar.
+    function layout() {
+      const size = Math.max(120, Math.floor(Math.min(boxEl.clientWidth, boxEl.clientHeight)));
+      cellPx = Math.floor((size - GAP * (N + 1)) / N);
+      const real = cellPx * N + GAP * (N + 1);
+      boardEl.style.width = boardEl.style.height = real + "px";
+      boardEl.querySelectorAll(".slot").forEach((el) => el.remove());
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+        const slot = document.createElement("div");
+        slot.className = "slot";
+        slot.style.width = slot.style.height = cellPx + "px";
+        slot.style.transform = pos(r, c);
+        boardEl.appendChild(slot);
+      }
+      renderFromValues(values());
+    }
+
+    function values() { return grid.map((row) => row.map((t) => (t ? t.v : 0))); }
+    function renderFromValues(vals) {
+      boardEl.querySelectorAll(".tile").forEach((el) => el.remove());
+      grid = emptyGrid();
+      vals.forEach((row, r) => row.forEach((v, c) => { if (v) grid[r][c] = makeTile(v, r, c, null); }));
+    }
+
+    function addRandom() {
+      const free = [];
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) if (!grid[r][c]) free.push([r, c]);
+      if (!free.length) return;
+      const [r, c] = free[Math.floor(Math.random() * free.length)];
+      grid[r][c] = makeTile(Math.random() < .9 ? 2 : 4, r, c, "new");
+    }
+
+    function canMove() {
+      for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+        const t = grid[r][c];
+        if (!t) return true;
+        if (c + 1 < N && grid[r][c + 1] && grid[r][c + 1].v === t.v) return true;
+        if (r + 1 < N && grid[r + 1][c] && grid[r + 1][c].v === t.v) return true;
+      }
+      return false;
+    }
+
+    function move(dir) {
+      if (overlayMode) return;
+      const [dr, dc] = { up: [-1, 0], down: [1, 0], left: [0, -1], right: [0, 1] }[dir];
+      const rowsOrder = [...Array(N).keys()], colsOrder = [...Array(N).keys()];
+      if (dr === 1) rowsOrder.reverse();
+      if (dc === 1) colsOrder.reverse();
+      const before = { vals: values(), score };
+      const mergedNow = new Set();
+      const dying = [];
+      let moved = false, gained = 0;
+      for (const r of rowsOrder) for (const c of colsOrder) {
+        const tile = grid[r][c];
+        if (!tile) continue;
+        let pr = r, pc = c, nr = r + dr, nc = c + dc;
+        while (nr >= 0 && nr < N && nc >= 0 && nc < N && !grid[nr][nc]) { pr = nr; pc = nc; nr += dr; nc += dc; }
+        const next = nr >= 0 && nr < N && nc >= 0 && nc < N ? grid[nr][nc] : null;
+        if (next && next.v === tile.v && !mergedNow.has(next.id)) {
+          grid[r][c] = null;
+          tile.el.style.transform = pos(nr, nc);
+          dying.push(tile, next);
+          const merged = makeTile(tile.v * 2, nr, nc, "merged");
+          mergedNow.add(merged.id);
+          grid[nr][nc] = merged;
+          gained += merged.v;
+          if (merged.v === 2048 && !won) won = true;
+          moved = true;
+        } else if (pr !== r || pc !== c) {
+          grid[r][c] = null;
+          grid[pr][pc] = tile;
+          tile.r = pr; tile.c = pc;
+          tile.el.style.transform = pos(pr, pc);
+          moved = true;
+        }
+      }
+      if (!moved) return;
+      // Merged sources slide under the new tile, then disappear.
+      setTimeout(() => dying.forEach((t) => t.el.remove()), 120);
+      undoState = before;
+      score += gained;
+      if (score > best) { best = score; save("best", best); }
+      addRandom();
+      persist();
+      updateHud(gained > 0);
+      if (won && !keepPlaying) showOverlay("win");
+      else if (!canMove()) showOverlay("over");
+    }
+
+    function persist() { save("state", { vals: values(), score, won, keepPlaying }); }
+
+    function newGame() {
+      grid = emptyGrid();
+      boardEl.querySelectorAll(".tile").forEach((el) => el.remove());
+      score = 0; won = false; keepPlaying = false; undoState = null;
+      addRandom(); addRandom();
+      hideOverlay();
+      persist();
+      updateHud(false);
+    }
+
+    function undo() {
+      if (!undoState) return;
+      renderFromValues(undoState.vals);
+      score = undoState.score;
+      undoState = null;
+      hideOverlay();
+      persist();
+      updateHud(false);
+    }
+
+    function updateHud(bump) {
+      const s = document.getElementById("score");
+      s.textContent = score;
+      document.getElementById("best").textContent = best;
+      document.getElementById("undoBtn").disabled = !undoState;
+      if (bump) { s.classList.add("bump"); setTimeout(() => s.classList.remove("bump"), 120); }
+    }
+
+    function showOverlay(mode) {
+      overlayMode = mode;
+      const actions = document.getElementById("ovActions");
+      document.getElementById("ovTitle").textContent = t(mode === "win" ? "winTitle" : "overTitle");
+      document.getElementById("ovSub").textContent = mode === "win" ? t("winSub") : t("overSub", { score });
+      actions.innerHTML = "";
+      const add = (key, primary, fn) => {
+        const b = document.createElement("button");
+        b.type = "button"; b.className = "btn" + (primary ? " primary" : ""); b.textContent = t(key);
+        b.addEventListener("click", fn);
+        actions.appendChild(b);
+      };
+      if (mode === "win") add("keepGoing", true, () => { keepPlaying = true; persist(); hideOverlay(); });
+      if (mode === "over" && undoState) add("undo", false, undo);
+      add("newGame", mode === "over", newGame);
+      document.getElementById("overlay").classList.add("show");
+    }
+    function hideOverlay() { overlayMode = null; document.getElementById("overlay").classList.remove("show"); }
+
+    let swipe = null;
+    boxEl.addEventListener("pointerdown", (event) => {
+      if (event.target.closest("button")) return;
+      swipe = { x: event.clientX, y: event.clientY, id: event.pointerId };
+      try { boxEl.setPointerCapture(event.pointerId); } catch (_) {}
+    });
+    // Fires on the move itself rather than on release: on a resistive screen
+    // the release point is noisy, the first 20px of travel are not.
+    boxEl.addEventListener("pointermove", (event) => {
+      if (!swipe || swipe.id !== event.pointerId) return;
+      const dx = event.clientX - swipe.x, dy = event.clientY - swipe.y;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) return;
+      swipe = null;
+      move(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up"));
+    });
+    const endSwipe = () => { swipe = null; };
+    boxEl.addEventListener("pointerup", endSwipe);
+    boxEl.addEventListener("pointercancel", endSwipe);
+    document.addEventListener("keydown", (event) => {
+      const map = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right" };
+      if (map[event.key]) { event.preventDefault(); move(map[event.key]); }
+    });
+    document.getElementById("undoBtn").addEventListener("click", undo);
+    document.getElementById("newBtn").addEventListener("click", newGame);
+    window.addEventListener("resize", layout);
+
+    function onLang() { if (overlayMode) showOverlay(overlayMode); }
+
+    fillIcons();
+    applyI18n();
+    grid = emptyGrid();
+    const saved = load("state", null);
+    const valid = saved && Array.isArray(saved.vals) && saved.vals.length === N && saved.vals.every((row) => Array.isArray(row) && row.length === N);
+    layout();
+    if (valid) {
+      renderFromValues(saved.vals.map((row) => row.map((v) => (Number.isInteger(v) && v > 0 ? v : 0))));
+      score = Number(saved.score) || 0; won = !!saved.won; keepPlaying = !!saved.keepPlaying;
+      if (!values().some((row) => row.some(Boolean))) newGame();
+      else if (!canMove()) showOverlay("over");
+    } else {
+      newGame();
+    }
+    updateHud(false);
+  </script>
+</body>
+</html>

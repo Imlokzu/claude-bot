@@ -1,0 +1,18 @@
+{
+  "id": "stopwatch",
+  "type": "app",
+  "label": "Секундомір",
+  "icon": "timer",
+  "tint": "#c9b35a",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Секундомір з колами і таймер зворотного відліку, що не зупиняються, коли застосунок закрито.",
+  "category": "tools",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Stopwatch",
+      "description": "A stopwatch with laps and a countdown timer that keep running while the app is closed."
+    }
+  }
+}

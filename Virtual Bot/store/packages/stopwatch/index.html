@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Stopwatch</title>
+  <style>
+    /* Shared look of the bot's own apps: the screen palette (skins overwrite
+       these eight variables at runtime), one bar, one button, one segment. */
+    :root {
+      --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+      --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+      --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 6px 8px 8px; gap: 6px; }
+    .bar { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+    .bar-title { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: baseline; gap: 4px; flex: none; padding: 4px 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .chip b { color: var(--text); font-size: 12px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-width: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .btn:active { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    .btn.primary:active { opacity: .75; color: var(--bg); }
+    .btn.icon { width: 28px; padding: 0; }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .35; pointer-events: none; }
+    .seg { display: flex; gap: 6px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+    .seg button { flex: 1; min-width: 0; min-height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .seg button.on { background: var(--panel); color: var(--text); }
+    .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    [hidden] { display: none !important; }
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+    .bar .seg { flex: 0 1 180px; }
+    .view { display: flex; flex: 1; min-height: 0; gap: 8px; }
+    .col { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 6px; }
+    .display { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); overflow: hidden; }
+    .big { font-size: 30px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .big small { color: var(--muted); font-size: .6em; letter-spacing: 0; }
+    .sub { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+    .row { display: flex; gap: 6px; flex: none; }
+    .row .btn { flex: 1; }
+    .laps { display: flex; width: 116px; flex: none; flex-direction: column; overflow-y: auto; touch-action: pan-y; border: 1px solid var(--line); border-radius: 12px; scrollbar-width: none; }
+    .laps::-webkit-scrollbar { display: none; }
+    .lap { display: flex; align-items: baseline; gap: 6px; padding: 5px 8px; border-bottom: 1px solid var(--line); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .lap:last-child { border-bottom: 0; }
+    .lap-n { width: 16px; color: var(--muted); font-size: 9px; font-weight: 700; }
+    .lap-t { flex: 1; font-weight: 700; text-align: right; }
+    .lap.best .lap-t { color: var(--ok); }
+    .lap.worst .lap-t { color: var(--accent); }
+    .laps-empty { margin: auto; padding: 8px; color: var(--off); font-size: 10px; text-align: center; }
+    .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--line); }
+    .progress i { position: absolute; inset: 0; background: var(--accent); transform-origin: left center; transform: scaleX(0); transition: transform .25s linear; }
+    .presets { display: flex; gap: 6px; flex: none; }
+    .presets .btn { flex: 1; min-width: 0; padding: 0; font-size: 10px; }
+    .presets .btn.on { border-color: var(--accent); color: var(--accent); }
+    .side { display: flex; width: 108px; flex: none; flex-direction: column; gap: 6px; }
+    .stepper { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .stepper-mid { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: center; }
+    .stepper-label { color: var(--muted); font-size: 7.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+    .stepper-value { font-size: 13px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
+    .stepper .btn { width: 24px; min-width: 24px; min-height: 24px; border-radius: 7px; background: transparent; }
+    .side .spacer { flex: 1; }
+    .side .btn.wide { width: 100%; }
+    .done .big { color: var(--accent); animation: ring 1s ease-in-out infinite; }
+    @keyframes ring { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+    @media (max-height: 200px) { .big { font-size: 24px; } .side { gap: 5px; } .stepper { padding-block: 1px; } .side .btn, .row .btn { min-height: 24px; } .presets { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="bar">
+      <span class="bar-title" data-i18n="title"></span>
+      <div class="seg" id="tabs">
+        <button type="button" data-tab="sw" data-i18n="tabSw"></button>
+        <button type="button" data-tab="timer" data-i18n="tabTimer"></button>
+      </div>
+    </header>
+
+    <section class="view" id="viewSw">
+      <div class="col">
+        <div class="display"><div class="big" id="swTime">00:00<small>.00</small></div><div class="sub" id="swSub"></div></div>
+        <div class="row">
+          <button class="btn" id="swSecondary" type="button"></button>
+          <button class="btn primary" id="swPrimary" type="button"></button>
+        </div>
+      </div>
+      <div class="laps" id="laps"></div>
+    </section>
+
+    <section class="view" id="viewTimer" hidden>
+      <div class="col">
+        <div class="display" id="tDisplay"><div class="big" id="tTime">05:00</div><div class="sub" id="tSub"></div><div class="progress"><i id="tBar"></i></div></div>
+        <div class="presets" id="presets"></div>
+      </div>
+      <aside class="side">
+        <div class="stepper">
+          <button class="btn icon" type="button" data-adj="-60" data-icon="minus" data-i18n-aria="minLess"></button>
+          <span class="stepper-mid"><span class="stepper-value" id="tMin">5</span><span class="stepper-label" data-i18n="min"></span></span>
+          <button class="btn icon" type="button" data-adj="60" data-icon="plus" data-i18n-aria="minMore"></button>
+        </div>
+        <div class="stepper">
+          <button class="btn icon" type="button" data-adj="-15" data-icon="minus" data-i18n-aria="secLess"></button>
+          <span class="stepper-mid"><span class="stepper-value" id="tSec">00</span><span class="stepper-label" data-i18n="sec"></span></span>
+          <button class="btn icon" type="button" data-adj="15" data-icon="plus" data-i18n-aria="secMore"></button>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn primary wide" id="tPrimary" type="button"></button>
+        <button class="btn wide" id="tReset" type="button"><span data-icon="reset"></span><span data-i18n="reset"></span></button>
+      </aside>
+    </section>
+  </div>
+  <script>
+    const APP_ID = "stopwatch";
+    const STR = {
+      uk: {
+        title: "Час", tabSw: "Секундомір", tabTimer: "Таймер", start: "Старт", pause: "Пауза", resume: "Далі",
+        lap: "Коло", reset: "Скинути", noLaps: "Кола з'являться тут", laps: "Кіл: {n}", ready: "Готовий",
+        running: "Йде", paused: "Пауза", min: "хв", sec: "сек", minLess: "Мінус хвилина", minMore: "Плюс хвилина",
+        secLess: "Мінус 15 секунд", secMore: "Плюс 15 секунд", timesUp: "Час вийшов", of: "з {t}", stop: "Стоп",
+      },
+      en: {
+        title: "Time", tabSw: "Stopwatch", tabTimer: "Timer", start: "Start", pause: "Pause", resume: "Resume",
+        lap: "Lap", reset: "Reset", noLaps: "Laps show up here", laps: "Laps: {n}", ready: "Ready",
+        running: "Running", paused: "Paused", min: "min", sec: "sec", minLess: "Minus a minute", minMore: "Plus a minute",
+        secLess: "Minus 15 seconds", secMore: "Plus 15 seconds", timesUp: "Time's up", of: "of {t}", stop: "Stop",
+      },
+    };
+    const ICONS = {
+      play: '<path d="M8 5.4v13.2L19.2 12z"/>',
+      pause: '<path d="M8.6 5.5v13M15.4 5.5v13"/>',
+      flag: '<path d="M5.5 20.5V4M5.5 4.5h11l-2.2 4 2.2 4h-11"/>',
+      reset: '<path d="M20 11a8 8 0 0 0-14.8-3L3 11m0 0V6m0 5h5M4 13a8 8 0 0 0 14.8 3L21 13m0 0v5m0-5h-5"/>',
+      minus: '<path d="M5 12h14"/>',
+      plus: '<path d="M12 5v14M5 12h14"/>',
+      x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'
+    };
+    /* ---- shared app runtime: storage, i18n, skin, parent messages ---- */
+
+    // Storage throws inside a sandboxed iframe (a shared .cbp runs with an
+    // opaque origin), so every access is guarded and the app keeps its state
+    // in memory instead of failing.
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(APP_ID + "." + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (_) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(APP_ID + "." + key, JSON.stringify(value)); } catch (_) {}
+    }
+
+    // Start in the screen's language; botSkin carries it later, which also
+    // covers the sandbox where localStorage is not readable.
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") || "uk"; } catch (_) {}
+    if (lang !== "en") lang = "uk";
+
+    function t(key, vars) {
+      let text = STR[lang][key];
+      if (text == null) text = STR.uk[key];
+      if (text == null) return key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function icon(name, cls) {
+      return '<svg class="i' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+    }
+    function fillIcons(root) {
+      (root || document).querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+      if (typeof onLang === "function") onLang();
+    }
+    // "*" on purpose: in a sandbox our origin is "null", and naming a real
+    // origin as the target would silently drop the message.
+    function post(message) {
+      try { window.parent.postMessage(message, "*"); } catch (_) {}
+    }
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    let skinKeys = [];
+    window.addEventListener("message", (event) => {
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.type !== "botSkin") return;
+      const root = document.documentElement;
+      // Drop the previous skin first, otherwise removing a skin would leave
+      // its colours behind.
+      skinKeys.forEach((key) => root.style.removeProperty(key));
+      skinKeys = [];
+      if (data.vars && typeof data.vars === "object") {
+        for (const key in data.vars) {
+          if (!/^--[a-z-]+$/.test(key)) continue;
+          root.style.setProperty(key, String(data.vars[key]));
+          skinKeys.push(key);
+        }
+      }
+      root.dataset.theme = data.theme === "light" ? "light" : "dark";
+      if (typeof onTheme === "function") onTheme();
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) post({ type: "closeStoreApp" });
+    });
+    // Swipe left/right/down closes the app, same gesture as the screen's own
+    // layers. Pointer capture keeps the swipe alive when the finger leaves a
+    // small element; a native scroll cancels the pointer and is not a swipe.
+    function enableSwipeClose(root) {
+      let start = null;
+      root.addEventListener("pointerdown", (event) => {
+        if (start || event.target.closest("input, select, textarea, [data-noswipe]")) return;
+        start = { x: event.clientX, y: event.clientY, id: event.pointerId };
+        if (!event.target.closest("button")) {
+          try { root.setPointerCapture(event.pointerId); } catch (_) {}
+        }
+      });
+      function finish(event) {
+        if (!start || start.id !== event.pointerId) return;
+        const s = start;
+        start = null;
+        try { if (root.hasPointerCapture(s.id)) root.releasePointerCapture(s.id); } catch (_) {}
+        if (event.type === "pointercancel") return;
+        const dx = event.clientX - s.x;
+        const dy = event.clientY - s.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+        if (Math.abs(dx) >= Math.abs(dy)) post({ type: "storeAppSwipe", direction: dx < 0 ? "left" : "right" });
+        else if (dy > 0) post({ type: "storeAppSwipe", direction: "down" });
+      }
+      root.addEventListener("pointerup", finish);
+      root.addEventListener("pointercancel", finish);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+      root.addEventListener("lostpointercapture", (event) => { if (start && start.id === event.pointerId) start = null; });
+    }
+
+    const PRESETS = [1, 3, 5, 10, 15];
+    let tab = load("tab", "sw") === "timer" ? "timer" : "sw";
+    // Both clocks keep wall-clock anchors, so closing the app does not stop
+    // them: reopening shows the real elapsed time.
+    let sw = Object.assign({ running: false, startAt: 0, acc: 0, laps: [] }, load("sw", {}));
+    let tm = Object.assign({ total: 300, running: false, endAt: 0, remaining: 300000, done: false }, load("timer", {}));
+    if (!Array.isArray(sw.laps)) sw.laps = [];
+    let rafId = 0, tickId = 0, audio = null;
+
+    const pad = (n, w) => String(n).padStart(w || 2, "0");
+    function fmtSw(ms) {
+      const cs = Math.floor(ms / 10) % 100, s = Math.floor(ms / 1000) % 60, m = Math.floor(ms / 60000) % 60, h = Math.floor(ms / 3600000);
+      return { main: (h ? h + ":" + pad(m) : pad(m)) + ":" + pad(s), frac: "." + pad(cs) };
+    }
+    function fmtClock(sec) {
+      sec = Math.max(0, Math.ceil(sec));
+      const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+      return (h ? h + ":" + pad(m) : pad(m)) + ":" + pad(s);
+    }
+    function swElapsed() { return sw.acc + (sw.running ? Date.now() - sw.startAt : 0); }
+    function tmLeft() { return tm.running ? Math.max(0, tm.endAt - Date.now()) : tm.remaining; }
+
+    /* ---- stopwatch ---- */
+    function renderSwTime() {
+      const f = fmtSw(swElapsed());
+      document.getElementById("swTime").innerHTML = f.main + "<small>" + f.frac + "</small>";
+    }
+    function swLoop() {
+      rafId = 0;
+      if (!sw.running || document.hidden || tab !== "sw") return;
+      renderSwTime();
+      rafId = requestAnimationFrame(swLoop);
+    }
+    function renderSw() {
+      renderSwTime();
+      document.getElementById("swSub").textContent = sw.laps.length ? t("laps", { n: sw.laps.length }) : t(sw.running ? "running" : swElapsed() ? "paused" : "ready");
+      const primary = document.getElementById("swPrimary");
+      primary.innerHTML = icon(sw.running ? "pause" : "play") + "<span></span>";
+      primary.lastChild.textContent = t(sw.running ? "pause" : swElapsed() ? "resume" : "start");
+      const secondary = document.getElementById("swSecondary");
+      secondary.innerHTML = icon(sw.running ? "flag" : "reset") + "<span></span>";
+      secondary.lastChild.textContent = t(sw.running ? "lap" : "reset");
+      secondary.disabled = !sw.running && !swElapsed();
+      const laps = document.getElementById("laps");
+      if (!sw.laps.length) { laps.innerHTML = '<div class="laps-empty"></div>'; laps.firstChild.textContent = t("noLaps"); }
+      else {
+        const splits = sw.laps.map((v, i) => v - (i ? sw.laps[i - 1] : 0));
+        const lo = Math.min(...splits), hi = Math.max(...splits);
+        laps.innerHTML = splits.map((d, i) => {
+          const f = fmtSw(d);
+          const cls = splits.length > 1 ? (d === lo ? " best" : d === hi ? " worst" : "") : "";
+          return '<div class="lap' + cls + '"><span class="lap-n">' + (i + 1) + '</span><span class="lap-t">' + f.main + f.frac + "</span></div>";
+        }).reverse().join("");
+      }
+      if (sw.running && !rafId) rafId = requestAnimationFrame(swLoop);
+    }
+    document.getElementById("swPrimary").addEventListener("click", () => {
+      if (sw.running) { sw.acc = swElapsed(); sw.running = false; }
+      else { sw.startAt = Date.now(); sw.running = true; }
+      save("sw", sw); renderSw();
+    });
+    document.getElementById("swSecondary").addEventListener("click", () => {
+      if (sw.running) { if (sw.laps.length < 99) sw.laps.push(swElapsed()); }
+      else sw = { running: false, startAt: 0, acc: 0, laps: [] };
+      save("sw", sw); renderSw();
+    });
+
+    /* ---- timer ---- */
+    function beep() {
+      try {
+        if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+        const t0 = audio.currentTime;
+        [0, .3, .6].forEach((at) => {
+          const osc = audio.createOscillator(), gain = audio.createGain();
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.0001, t0 + at);
+          gain.gain.exponentialRampToValueAtTime(0.06, t0 + at + .02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t0 + at + .16);
+          osc.connect(gain).connect(audio.destination);
+          osc.start(t0 + at); osc.stop(t0 + at + .18);
+        });
+      } catch (_) {}
+    }
+    function tmTick() {
+      if (tm.running && tmLeft() <= 0) {
+        tm = { ...tm, running: false, remaining: 0, done: true };
+        save("timer", tm);
+        beep();
+        syncTimer();
+      }
+      renderTimerTime();
+    }
+    function syncTimer() {
+      clearInterval(tickId);
+      tickId = tm.running ? setInterval(tmTick, 200) : 0;
+      renderTimer();
+    }
+    function renderTimerTime() {
+      const left = tmLeft();
+      document.getElementById("tTime").textContent = tm.done ? "00:00" : fmtClock(left / 1000);
+      document.getElementById("tBar").style.transform = "scaleX(" + (tm.total ? Math.min(1, 1 - left / (tm.total * 1000)) : 0).toFixed(4) + ")";
+    }
+    function renderTimer() {
+      renderTimerTime();
+      document.getElementById("tDisplay").classList.toggle("done", tm.done);
+      document.getElementById("tSub").textContent = tm.done ? t("timesUp") : t("of", { t: fmtClock(tm.total) });
+      document.getElementById("tMin").textContent = Math.floor(tm.total / 60);
+      document.getElementById("tSec").textContent = pad(tm.total % 60);
+      const started = tm.running || tm.remaining < tm.total * 1000;
+      const primary = document.getElementById("tPrimary");
+      primary.innerHTML = icon(tm.done ? "x" : tm.running ? "pause" : "play") + "<span></span>";
+      primary.lastChild.textContent = t(tm.done ? "stop" : tm.running ? "pause" : started ? "resume" : "start");
+      document.getElementById("tReset").disabled = !started && !tm.done;
+      document.querySelectorAll("[data-adj]").forEach((b) => { b.disabled = tm.running; });
+      document.getElementById("presets").innerHTML = PRESETS.map((m) => '<button class="btn' + (tm.total === m * 60 ? " on" : "") + '" type="button" data-preset="' + m + '"' + (tm.running ? " disabled" : "") + ">" + m + "</button>").join("");
+    }
+    function setTotal(sec) {
+      tm = { total: Math.max(5, Math.min(99 * 60, sec)), running: false, endAt: 0, remaining: 0, done: false };
+      tm.remaining = tm.total * 1000;
+      save("timer", tm); syncTimer();
+    }
+    document.getElementById("tPrimary").addEventListener("click", () => {
+      try { if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch (_) {}
+      if (tm.done) return setTotal(tm.total);
+      if (tm.running) tm = { ...tm, running: false, remaining: tmLeft() };
+      else tm = { ...tm, running: true, endAt: Date.now() + tm.remaining };
+      save("timer", tm); syncTimer();
+    });
+    document.getElementById("tReset").addEventListener("click", () => setTotal(tm.total));
+    document.getElementById("viewTimer").addEventListener("click", (event) => {
+      const adj = event.target.closest("[data-adj]");
+      if (adj && !tm.running) setTotal(tm.total + Number(adj.dataset.adj));
+      const preset = event.target.closest("[data-preset]");
+      if (preset && !tm.running) setTotal(Number(preset.dataset.preset) * 60);
+    });
+
+    /* ---- tabs ---- */
+    function renderTabs() {
+      document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+      document.getElementById("viewSw").hidden = tab !== "sw";
+      document.getElementById("viewTimer").hidden = tab !== "timer";
+      if (tab === "sw") renderSw(); else renderTimer();
+    }
+    document.getElementById("tabs").addEventListener("click", (event) => {
+      const b = event.target.closest("[data-tab]");
+      if (!b) return;
+      tab = b.dataset.tab;
+      save("tab", tab);
+      renderTabs();
+    });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) { tmTick(); renderTabs(); } });
+
+    function onLang() { renderTabs(); }
+
+    if (tm.running && tmLeft() <= 0) tm = { ...tm, running: false, remaining: 0, done: true };
+    enableSwipeClose(document.getElementById("app"));
+    fillIcons();
+    applyI18n();
+    syncTimer();
+  </script>
+</body>
+</html>

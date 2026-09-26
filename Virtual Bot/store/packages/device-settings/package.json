@@ -4,8 +4,15 @@
   "label": "Підключення",
   "icon": "settings",
   "tint": "#86a8ff",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Клод Бот",
   "description": "Bluetooth, Wi‑Fi, заряд і гучність окремих джерел.",
-  "entry": "index.html"
+  "category": "system",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Connections",
+      "description": "Bluetooth, Wi‑Fi, battery and per-source volume."
+    }
+  }
 }

@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Calculator</title>
+  <style>
+    /* Shared look of the bot's own apps: the screen palette (skins overwrite
+       these eight variables at runtime), one bar, one button, one segment. */
+    :root {
+      --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+      --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+      --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 6px 8px 8px; gap: 6px; }
+    .bar { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+    .bar-title { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: baseline; gap: 4px; flex: none; padding: 4px 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .chip b { color: var(--text); font-size: 12px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-width: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .btn:active { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    .btn.primary:active { opacity: .75; color: var(--bg); }
+    .btn.icon { width: 28px; padding: 0; }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .35; pointer-events: none; }
+    .seg { display: flex; gap: 6px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+    .seg button { flex: 1; min-width: 0; min-height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .seg button.on { background: var(--panel); color: var(--text); }
+    .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    [hidden] { display: none !important; }
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+    .display { position: relative; display: flex; flex: none; align-items: flex-end; gap: 6px; min-height: 52px; padding: 5px 9px 5px 5px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    .display .btn { align-self: flex-start; width: 28px; border: 0; background: transparent; color: var(--muted); }
+    .display .btn.on { color: var(--accent); }
+    .readout { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-end; }
+    .expr { max-width: 100%; min-height: 13px; overflow: hidden; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; direction: rtl; }
+    .expr span { direction: ltr; unicode-bidi: isolate; }
+    .value { max-width: 100%; overflow: hidden; font-size: 26px; font-weight: 800; letter-spacing: 0; word-spacing: 1px; line-height: 1.15; font-variant-numeric: tabular-nums; white-space: nowrap; transform-origin: right center; }
+    .value.error { color: var(--accent); font-size: 18px; }
+    .body { position: relative; flex: 1; min-height: 0; }
+    .keys { display: grid; grid-template-columns: repeat(5, 1fr); grid-template-rows: repeat(4, 1fr); gap: 6px; height: 100%; }
+    .key { min-width: 0; min-height: 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; cursor: pointer; touch-action: manipulation; }
+    .key:active { border-color: var(--accent); color: var(--accent); transform: scale(.96); }
+    .key.op { background: transparent; color: var(--accent); font-size: 19px; }
+    .key.fn { background: transparent; color: var(--muted); font-size: 13px; }
+    .key.eq { border-color: var(--accent); background: var(--accent); color: var(--bg); font-size: 20px; }
+    .key.eq:active { color: var(--bg); opacity: .75; }
+    .key.op.lit { border-color: var(--accent); }
+    .key svg.i { width: 18px; height: 18px; vertical-align: middle; }
+    .history { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 4px; padding: 6px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity .15s ease, transform .15s ease; }
+    .keys { transition: opacity .15s ease; }
+    .body.hist .keys { opacity: 0; pointer-events: none; }
+    .history.show { opacity: 1; pointer-events: auto; transform: none; }
+    .h-row { display: flex; align-items: baseline; gap: 8px; width: 100%; min-height: 28px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); text-align: right; cursor: pointer; font-variant-numeric: tabular-nums; }
+    .h-row:active { border-color: var(--accent); }
+    .h-expr { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .h-val { font-size: 14px; font-weight: 800; }
+    .h-empty { margin: auto; color: var(--off); font-size: 11px; }
+    @media (max-height: 200px) { .display { min-height: 42px; padding-block: 2px; } .value { font-size: 21px; } .key { font-size: 14px; } }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <div class="display">
+      <button class="btn icon" id="histBtn" type="button" data-icon="history" data-i18n-aria="history"></button>
+      <div class="readout"><div class="expr" id="expr"></div><div class="value" id="value">0</div></div>
+    </div>
+    <div class="body">
+      <div class="keys" id="keys"></div>
+      <div class="history" id="history"></div>
+    </div>
+  </div>
+  <script>
+    const APP_ID = "calculator";
+    const STR = {
+      uk: { title: "Калькулятор", history: "Останні результати", noHistory: "Тут будуть 5 останніх результатів", error: "Помилка", backspace: "Стерти", clear: "Очистити", sign: "Змінити знак", percent: "Відсоток" },
+      en: { title: "Calculator", history: "Recent results", noHistory: "Your last 5 results show up here", error: "Error", backspace: "Delete", clear: "Clear", sign: "Change sign", percent: "Percent" },
+    };
+    const ICONS = {
+      history: '<path d="M4.5 9.5A8 8 0 1 1 6.8 17"/><path d="M4.5 4.5v5h5M12 7.5v5l3 2"/>',
+      backspace: '<path d="M9 5h10.5A1.5 1.5 0 0 1 21 6.5v11a1.5 1.5 0 0 1-1.5 1.5H9l-6-7z"/><path d="m12 9.5 5 5M17 9.5l-5 5"/>'
+    };
+    /* ---- shared app runtime: storage, i18n, skin, parent messages ---- */
+
+    // Storage throws inside a sandboxed iframe (a shared .cbp runs with an
+    // opaque origin), so every access is guarded and the app keeps its state
+    // in memory instead of failing.
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(APP_ID + "." + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (_) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(APP_ID + "." + key, JSON.stringify(value)); } catch (_) {}
+    }
+
+    // Start in the screen's language; botSkin carries it later, which also
+    // covers the sandbox where localStorage is not readable.
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") || "uk"; } catch (_) {}
+    if (lang !== "en") lang = "uk";
+
+    function t(key, vars) {
+      let text = STR[lang][key];
+      if (text == null) text = STR.uk[key];
+      if (text == null) return key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function icon(name, cls) {
+      return '<svg class="i' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+    }
+    function fillIcons(root) {
+      (root || document).querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+      if (typeof onLang === "function") onLang();
+    }
+    // "*" on purpose: in a sandbox our origin is "null", and naming a real
+    // origin as the target would silently drop the message.
+    function post(message) {
+      try { window.parent.postMessage(message, "*"); } catch (_) {}
+    }
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    let skinKeys = [];
+    window.addEventListener("message", (event) => {
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.type !== "botSkin") return;
+      const root = document.documentElement;
+      // Drop the previous skin first, otherwise removing a skin would leave
+      // its colours behind.
+      skinKeys.forEach((key) => root.style.removeProperty(key));
+      skinKeys = [];
+      if (data.vars && typeof data.vars === "object") {
+        for (const key in data.vars) {
+          if (!/^--[a-z-]+$/.test(key)) continue;
+          root.style.setProperty(key, String(data.vars[key]));
+          skinKeys.push(key);
+        }
+      }
+      root.dataset.theme = data.theme === "light" ? "light" : "dark";
+      if (typeof onTheme === "function") onTheme();
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) post({ type: "closeStoreApp" });
+    });
+    // Swipe left/right/down closes the app, same gesture as the screen's own
+    // layers. Pointer capture keeps the swipe alive when the finger leaves a
+    // small element; a native scroll cancels the pointer and is not a swipe.
+    function enableSwipeClose(root) {
+      let start = null;
+      root.addEventListener("pointerdown", (event) => {
+        if (start || event.target.closest("input, select, textarea, [data-noswipe]")) return;
+        start = { x: event.clientX, y: event.clientY, id: event.pointerId };
+        if (!event.target.closest("button")) {
+          try { root.setPointerCapture(event.pointerId); } catch (_) {}
+        }
+      });
+      function finish(event) {
+        if (!start || start.id !== event.pointerId) return;
+        const s = start;
+        start = null;
+        try { if (root.hasPointerCapture(s.id)) root.releasePointerCapture(s.id); } catch (_) {}
+        if (event.type === "pointercancel") return;
+        const dx = event.clientX - s.x;
+        const dy = event.clientY - s.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+        if (Math.abs(dx) >= Math.abs(dy)) post({ type: "storeAppSwipe", direction: dx < 0 ? "left" : "right" });
+        else if (dy > 0) post({ type: "storeAppSwipe", direction: "down" });
+      }
+      root.addEventListener("pointerup", finish);
+      root.addEventListener("pointercancel", finish);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+      root.addEventListener("lostpointercapture", (event) => { if (start && start.id === event.pointerId) start = null; });
+    }
+
+    const OPS = { "/": "÷", "*": "×", "-": "−", "+": "+" };
+    const LAYOUT = [
+      ["7", "8", "9", "/", "C"],
+      ["4", "5", "6", "*", "back"],
+      ["1", "2", "3", "-", "%"],
+      ["neg", "0", ".", "+", "="],
+    ];
+    let tokens = [], entry = "0", evaluated = false, error = false, lastExpr = "";
+    let history = load("history", []);
+    if (!Array.isArray(history)) history = [];
+
+    // The decimal mark follows the language: a comma in Ukrainian, a dot
+    // in English. Internally numbers always use a dot.
+    function mark() { return lang === "uk" ? "," : "."; }
+    function show(numStr) {
+      if (numStr === "" || numStr == null) return "";
+      const neg = numStr.startsWith("-");
+      let [int, frac] = numStr.replace("-", "").split(".");
+      if (/e/.test(int)) return numStr.replace(".", mark());
+      int = int.replace(/\B(?=(\d{3})+(?!\d))/g, lang === "uk" ? " " : ",");
+      return (neg ? "−" : "") + int + (frac != null ? mark() + frac : "");
+    }
+    function fmt(n) {
+      if (!isFinite(n)) return null;
+      const abs = Math.abs(n);
+      if (abs !== 0 && (abs >= 1e12 || abs < 1e-9)) return n.toExponential(5).replace(/\.?0+e/, "e");
+      return String(parseFloat(n.toPrecision(12)));
+    }
+
+    function evaluate(list) {
+      // Two passes: multiplication/division first, as people expect from
+      // "2 + 3 x 4" typed on any phone calculator.
+      const nums = [Number(list[0])], ops = [];
+      for (let i = 1; i < list.length; i += 2) {
+        const op = list[i], n = Number(list[i + 1]);
+        if (op === "*") nums[nums.length - 1] *= n;
+        else if (op === "/") { if (n === 0) return NaN; nums[nums.length - 1] /= n; }
+        else { ops.push(op); nums.push(n); }
+      }
+      return ops.reduce((acc, op, i) => (op === "+" ? acc + nums[i + 1] : acc - nums[i + 1]), nums[0]);
+    }
+
+    function press(key) {
+      if (error && key !== "C") { tokens = []; entry = "0"; error = false; evaluated = false; if (!/[0-9.]/.test(key)) return render(); }
+      if (/^[0-9]$/.test(key)) {
+        if (evaluated) { tokens = []; entry = "0"; evaluated = false; }
+        if (entry.replace(/[-.]/g, "").length >= 12) return;
+        entry = entry === "0" ? key : entry === "-0" ? "-" + key : entry + key;
+      } else if (key === ".") {
+        if (evaluated) { tokens = []; entry = "0"; evaluated = false; }
+        if (entry === "") entry = "0";
+        if (!entry.includes(".")) entry += ".";
+      } else if (OPS[key]) {
+        evaluated = false;
+        if (entry === "" && tokens.length) tokens[tokens.length - 1] = key;
+        else { tokens.push(String(Number(entry))); tokens.push(key); }
+        entry = "";
+      } else if (key === "=") {
+        if (!tokens.length) return;
+        const list = tokens.slice();
+        if (entry === "") list.pop(); else list.push(String(Number(entry)));
+        const result = fmt(evaluate(list));
+        const expr = list.map((x) => (OPS[x] ? OPS[x] : show(x))).join(" ");
+        if (result == null) { error = true; tokens = []; entry = "0"; }
+        else {
+          history.unshift({ expr, value: result });
+          history = history.slice(0, 5);
+          save("history", history);
+          tokens = []; entry = result; evaluated = true;
+          lastExpr = expr + " =";
+        }
+      } else if (key === "C") {
+        tokens = []; entry = "0"; evaluated = false; error = false; lastExpr = "";
+      } else if (key === "back") {
+        if (evaluated) { entry = "0"; evaluated = false; lastExpr = ""; }
+        else if (entry !== "") entry = entry.length > 1 && entry !== "-0" ? entry.slice(0, -1).replace(/^-$/, "0") : "0";
+        else if (tokens.length) { tokens.pop(); entry = tokens.pop() || "0"; }
+      } else if (key === "neg") {
+        if (entry === "") entry = "-0";
+        else entry = entry.startsWith("-") ? entry.slice(1) : "-" + entry;
+        evaluated = false;
+      } else if (key === "%") {
+        if (entry === "") return;
+        const prevOp = tokens[tokens.length - 1];
+        // "200 + 10 %" means 10 % of 200, the way desk calculators do it.
+        const base = prevOp === "+" || prevOp === "-" ? Number(tokens[tokens.length - 2]) : 1;
+        entry = fmt(base * Number(entry) / 100) || "0";
+        evaluated = false;
+      }
+      if (!evaluated && key !== "=") lastExpr = "";
+      render();
+    }
+    function render() {
+      const value = document.getElementById("value");
+      value.classList.toggle("error", error);
+      value.textContent = error ? t("error") : entry === "" ? show(tokens[tokens.length - 2] || "0") : show(entry);
+      // Shrink long numbers with a transform so the row never reflows.
+      value.style.transform = "";
+      const room = value.parentElement.clientWidth;
+      if (value.scrollWidth > room) value.style.transform = "scale(" + (room / value.scrollWidth).toFixed(3) + ")";
+      const expr = document.getElementById("expr");
+      expr.innerHTML = "<span></span>";
+      expr.firstChild.textContent = lastExpr || tokens.map((x) => (OPS[x] ? OPS[x] : show(x))).join(" ");
+      const pending = entry === "" ? tokens[tokens.length - 1] : null;
+      document.querySelectorAll(".key.op").forEach((k) => k.classList.toggle("lit", k.dataset.key === pending));
+    }
+
+    function buildKeys() {
+      const keys = document.getElementById("keys");
+      keys.innerHTML = "";
+      LAYOUT.flat().forEach((k) => {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.dataset.key = k;
+        b.className = "key" + (OPS[k] ? " op" : k === "=" ? " eq" : ["C", "back", "%", "neg"].includes(k) ? " fn" : "");
+        if (k === "back") { b.innerHTML = icon("backspace"); b.setAttribute("aria-label", t("backspace")); }
+        else b.textContent = OPS[k] || (k === "." ? mark() : k === "neg" ? "±" : k);
+        if (k === "C") b.setAttribute("aria-label", t("clear"));
+        if (k === "neg") b.setAttribute("aria-label", t("sign"));
+        if (k === "%") b.setAttribute("aria-label", t("percent"));
+        keys.appendChild(b);
+      });
+    }
+
+    function renderHistory() {
+      const box = document.getElementById("history");
+      box.innerHTML = "";
+      if (!history.length) { box.innerHTML = '<div class="h-empty"></div>'; box.firstChild.textContent = t("noHistory"); return; }
+      history.forEach((h, i) => {
+        const row = document.createElement("button");
+        row.type = "button"; row.className = "h-row"; row.dataset.h = i;
+        row.innerHTML = '<span class="h-expr"></span><span class="h-val"></span>';
+        row.firstChild.textContent = h.expr + " =";
+        row.lastChild.textContent = show(h.value);
+        box.appendChild(row);
+      });
+    }
+    function toggleHistory(open) {
+      const box = document.getElementById("history");
+      const visible = open != null ? open : !box.classList.contains("show");
+      if (visible) renderHistory();
+      box.classList.toggle("show", visible);
+      document.querySelector(".body").classList.toggle("hist", visible);
+      document.getElementById("histBtn").classList.toggle("on", visible);
+    }
+
+    document.getElementById("keys").addEventListener("click", (event) => {
+      const b = event.target.closest("[data-key]");
+      if (b) press(b.dataset.key);
+    });
+    document.getElementById("histBtn").addEventListener("click", () => toggleHistory());
+    document.getElementById("history").addEventListener("click", (event) => {
+      const row = event.target.closest("[data-h]");
+      if (row) {
+        const h = history[Number(row.dataset.h)];
+        if (h) { if (evaluated || error) tokens = []; entry = h.value; evaluated = false; error = false; lastExpr = ""; render(); }
+      }
+      toggleHistory(false);
+    });
+    document.addEventListener("keydown", (event) => {
+      const k = event.key;
+      const map = { Enter: "=", "=": "=", Backspace: "back", Escape: "C", ",": ".", x: "*", X: "*" };
+      const key = map[k] || k;
+      if (/^[0-9]$/.test(key) || OPS[key] || ["=", "back", "C", ".", "%"].includes(key)) { event.preventDefault(); press(key); }
+    });
+    window.addEventListener("resize", render);
+
+    function onLang() { buildKeys(); render(); if (document.getElementById("history").classList.contains("show")) renderHistory(); }
+
+    enableSwipeClose(document.getElementById("app"));
+    fillIcons();
+    applyI18n();
+  </script>
+</body>
+</html>

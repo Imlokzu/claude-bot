@@ -1,0 +1,18 @@
+{
+  "id": "snake",
+  "type": "app",
+  "label": "Змійка",
+  "icon": "gamepad",
+  "tint": "#8ca879",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Класична змійка: свайпи або хрестовина, швидшає з кожним яблуком, тримає рекорд.",
+  "category": "games",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Snake",
+      "description": "Classic snake: swipe or use the pad, it speeds up with every bite and keeps your best score."
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "id": "world-clock",
+  "type": "app",
+  "label": "Світовий час",
+  "icon": "globe",
+  "tint": "#5b9bd5",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Час і день чи ніч у чотирьох містах на вибір, працює без мережі.",
+  "category": "tools",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "World Clock",
+      "description": "Time plus day or night in up to four cities of your choice, works offline."
+    }
+  }
+}

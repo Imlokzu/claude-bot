@@ -1,0 +1,18 @@
+{
+  "id": "dice",
+  "type": "app",
+  "label": "Кубики",
+  "icon": "dice",
+  "tint": "#b48ad8",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Кубики d6 і d20, монетка і випадковий вибір зі свого списку.",
+  "category": "fun",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Dice",
+      "description": "d6 and d20 dice, a coin flip and a random pick from your own list."
+    }
+  }
+}

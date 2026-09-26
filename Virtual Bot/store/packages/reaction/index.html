@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Reaction</title>
+  <style>
+    /* Shared look of the bot's own apps: the screen palette (skins overwrite
+       these eight variables at runtime), one bar, one button, one segment. */
+    :root {
+      --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+      --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+      --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 6px 8px 8px; gap: 6px; }
+    .bar { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+    .bar-title { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: baseline; gap: 4px; flex: none; padding: 4px 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .chip b { color: var(--text); font-size: 12px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-width: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .btn:active { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    .btn.primary:active { opacity: .75; color: var(--bg); }
+    .btn.icon { width: 28px; padding: 0; }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .35; pointer-events: none; }
+    .seg { display: flex; gap: 6px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+    .seg button { flex: 1; min-width: 0; min-height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .seg button.on { background: var(--panel); color: var(--text); }
+    .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    [hidden] { display: none !important; }
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+    .dots { display: flex; gap: 5px; flex: none; }
+    .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+    .dots i.done { background: var(--accent); }
+    .dots i.now { background: var(--text); }
+    .stage { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); text-align: center; cursor: pointer; overflow: hidden; touch-action: none; }
+    .go-layer { position: absolute; inset: 0; background: var(--ok); opacity: 0; }
+    .stage.go .go-layer { opacity: 1; }
+    .stage.early { border-color: var(--accent); }
+    .copy { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .head { font-size: 16px; font-weight: 800; letter-spacing: -.01em; }
+    .big { font-size: 40px; font-weight: 800; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+    .big small { margin-left: 3px; color: var(--muted); font-size: 14px; letter-spacing: 0; }
+    .sub { color: var(--muted); font-size: 10px; line-height: 1.3; }
+    .stage.go .head, .stage.go .sub { color: var(--bg); }
+    .stage.early .head { color: var(--accent); }
+    .hot { color: var(--accent) !important; font-weight: 700; }
+    .pulse { position: absolute; width: 44px; height: 44px; border: 2px solid var(--muted); border-radius: 50%; opacity: 0; animation: wait 1.6s ease-out infinite; }
+    .stage.wait .pulse { display: block; }
+    .stage:not(.wait) .pulse { display: none; }
+    @keyframes wait { 0% { opacity: .6; transform: scale(.6); } 100% { opacity: 0; transform: scale(2.4); } }
+    .splits { display: flex; gap: 6px; margin-top: 4px; }
+    .splits span { padding: 3px 6px; border: 1px solid var(--line); border-radius: 8px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+    .splits span.best { border-color: var(--accent); color: var(--accent); }
+    @media (max-height: 200px) { .big { font-size: 30px; } .splits { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="bar">
+      <span class="bar-title" data-i18n="title"></span>
+      <div class="dots" id="dots"><i></i><i></i><i></i><i></i><i></i></div>
+      <span class="chip"><span data-i18n="record"></span><b id="record">-</b></span>
+    </header>
+    <main class="stage" id="stage" role="button">
+      <div class="go-layer"></div>
+      <div class="pulse"></div>
+      <div class="copy" id="copy"></div>
+    </main>
+  </div>
+  <script>
+    const APP_ID = "reaction";
+    const STR = {
+      uk: {
+        title: "Реакція", record: "Рекорд", ms: "мс",
+        idleHead: "Перевір реакцію", idleSub: "5 спроб. Коли поле стане зеленим - тисни. Тап, щоб почати",
+        waitHead: "Чекай зеленого", waitSub: "Не поспішай",
+        goHead: "Тисни!",
+        earlyHead: "Зарано!", earlySub: "Спроба не рахується. Тап - ще раз",
+        resultSub: "Спроба {n} з 5. Тап - далі",
+        doneHead: "Середнє", doneBest: "Найкраща спроба: {ms} мс", newRecord: "Новий рекорд!", again: "Тап - ще раунд",
+      },
+      en: {
+        title: "Reaction", record: "Best", ms: "ms",
+        idleHead: "Test your reflexes", idleSub: "5 tries. Tap when the field turns green. Tap to start",
+        waitHead: "Wait for green", waitSub: "No rush",
+        goHead: "Tap!",
+        earlyHead: "Too soon!", earlySub: "That one does not count. Tap to retry",
+        resultSub: "Try {n} of 5. Tap for the next",
+        doneHead: "Average", doneBest: "Best try: {ms} ms", newRecord: "New record!", again: "Tap for another round",
+      },
+    };
+    const ICONS = {
+      x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>'
+    };
+    /* ---- shared app runtime: storage, i18n, skin, parent messages ---- */
+
+    // Storage throws inside a sandboxed iframe (a shared .cbp runs with an
+    // opaque origin), so every access is guarded and the app keeps its state
+    // in memory instead of failing.
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(APP_ID + "." + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (_) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(APP_ID + "." + key, JSON.stringify(value)); } catch (_) {}
+    }
+
+    // Start in the screen's language; botSkin carries it later, which also
+    // covers the sandbox where localStorage is not readable.
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") || "uk"; } catch (_) {}
+    if (lang !== "en") lang = "uk";
+
+    function t(key, vars) {
+      let text = STR[lang][key];
+      if (text == null) text = STR.uk[key];
+      if (text == null) return key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function icon(name, cls) {
+      return '<svg class="i' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+    }
+    function fillIcons(root) {
+      (root || document).querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+      if (typeof onLang === "function") onLang();
+    }
+    // "*" on purpose: in a sandbox our origin is "null", and naming a real
+    // origin as the target would silently drop the message.
+    function post(message) {
+      try { window.parent.postMessage(message, "*"); } catch (_) {}
+    }
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    let skinKeys = [];
+    window.addEventListener("message", (event) => {
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.type !== "botSkin") return;
+      const root = document.documentElement;
+      // Drop the previous skin first, otherwise removing a skin would leave
+      // its colours behind.
+      skinKeys.forEach((key) => root.style.removeProperty(key));
+      skinKeys = [];
+      if (data.vars && typeof data.vars === "object") {
+        for (const key in data.vars) {
+          if (!/^--[a-z-]+$/.test(key)) continue;
+          root.style.setProperty(key, String(data.vars[key]));
+          skinKeys.push(key);
+        }
+      }
+      root.dataset.theme = data.theme === "light" ? "light" : "dark";
+      if (typeof onTheme === "function") onTheme();
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) post({ type: "closeStoreApp" });
+    });
+    // Swipe left/right/down closes the app, same gesture as the screen's own
+    // layers. Pointer capture keeps the swipe alive when the finger leaves a
+    // small element; a native scroll cancels the pointer and is not a swipe.
+    function enableSwipeClose(root) {
+      let start = null;
+      root.addEventListener("pointerdown", (event) => {
+        if (start || event.target.closest("input, select, textarea, [data-noswipe]")) return;
+        start = { x: event.clientX, y: event.clientY, id: event.pointerId };
+        if (!event.target.closest("button")) {
+          try { root.setPointerCapture(event.pointerId); } catch (_) {}
+        }
+      });
+      function finish(event) {
+        if (!start || start.id !== event.pointerId) return;
+        const s = start;
+        start = null;
+        try { if (root.hasPointerCapture(s.id)) root.releasePointerCapture(s.id); } catch (_) {}
+        if (event.type === "pointercancel") return;
+        const dx = event.clientX - s.x;
+        const dy = event.clientY - s.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+        if (Math.abs(dx) >= Math.abs(dy)) post({ type: "storeAppSwipe", direction: dx < 0 ? "left" : "right" });
+        else if (dy > 0) post({ type: "storeAppSwipe", direction: "down" });
+      }
+      root.addEventListener("pointerup", finish);
+      root.addEventListener("pointercancel", finish);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+      root.addEventListener("lostpointercapture", (event) => { if (start && start.id === event.pointerId) start = null; });
+    }
+
+    const TRIES = 5;
+    const stage = document.getElementById("stage");
+    let state = "idle";          // idle | wait | go | early | result | done
+    let times = [], shownAt = 0, waitTimer = 0, record = load("record", 0), newRecord = false;
+
+    function setState(next) {
+      state = next;
+      stage.className = "stage " + next;
+      render();
+    }
+
+    function arm() {
+      shownAt = 0;
+      setState("wait");
+      clearTimeout(waitTimer);
+      // Random 1.2-4 s delay: anything shorter or regular can be learned
+      // and anticipated, which would measure rhythm, not reaction.
+      waitTimer = setTimeout(() => {
+        setState("go");
+        // Start the clock on the frame that actually shows the colour.
+        requestAnimationFrame(() => { shownAt = performance.now(); });
+      }, 1200 + Math.random() * 2800);
+    }
+
+    function tap() {
+      if (state === "idle" || state === "done") { times = []; newRecord = false; arm(); return; }
+      if (state === "wait") { clearTimeout(waitTimer); setState("early"); return; }
+      if (state === "early" || state === "result") { arm(); return; }
+      if (state === "go") {
+        const ms = Math.max(1, Math.round(performance.now() - (shownAt || performance.now())));
+        times.push(ms);
+        if (times.length >= TRIES) {
+          const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+          if (!record || avg < record) { record = avg; newRecord = true; save("record", record); }
+          setState("done");
+        } else {
+          setState("result");
+        }
+      }
+    }
+
+    function render() {
+      const copy = document.getElementById("copy");
+      const last = times[times.length - 1];
+      const el = (tag, cls, text) => { const n = document.createElement(tag); n.className = cls; n.textContent = text; copy.appendChild(n); return n; };
+      copy.innerHTML = "";
+      if (state === "idle") { el("div", "head", t("idleHead")); el("div", "sub", t("idleSub")); }
+      if (state === "wait") { el("div", "head", t("waitHead")); el("div", "sub", t("waitSub")); }
+      if (state === "go") el("div", "head", t("goHead"));
+      if (state === "early") { el("div", "head", t("earlyHead")); el("div", "sub", t("earlySub")); }
+      if (state === "result") {
+        const big = el("div", "big", String(last));
+        big.appendChild(Object.assign(document.createElement("small"), { textContent: t("ms") }));
+        el("div", "sub", t("resultSub", { n: times.length }));
+      }
+      if (state === "done") {
+        const avg = Math.round(times.reduce((a, b) => a + b, 0) / times.length);
+        el("div", "sub", t("doneHead"));
+        const big = el("div", "big", String(avg));
+        big.appendChild(Object.assign(document.createElement("small"), { textContent: t("ms") }));
+        if (newRecord) el("div", "sub hot", t("newRecord"));
+        else el("div", "sub", t("doneBest", { ms: Math.min(...times) }));
+        const splits = el("div", "splits", "");
+        const best = Math.min(...times);
+        times.forEach((ms) => { const s = document.createElement("span"); s.textContent = ms; if (ms === best) s.className = "best"; splits.appendChild(s); });
+        el("div", "sub", t("again"));
+      }
+      document.querySelectorAll("#dots i").forEach((dot, i) => {
+        dot.className = i < times.length ? "done" : i === times.length && state !== "idle" && state !== "done" ? "now" : "";
+      });
+      document.getElementById("record").textContent = record ? record + " " + t("ms") : "-";
+    }
+
+    stage.addEventListener("pointerdown", (event) => { event.preventDefault(); tap(); });
+    document.addEventListener("keydown", (event) => { if (event.key === " " || event.key === "Enter") { event.preventDefault(); tap(); } });
+    // A hidden frame throttles timers, so a round in progress is void.
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && (state === "wait" || state === "go")) { clearTimeout(waitTimer); setState("early"); }
+    });
+
+    function onLang() { render(); }
+
+    enableSwipeClose(document.getElementById("app"));
+    applyI18n();
+    setState("idle");
+  </script>
+</body>
+</html>

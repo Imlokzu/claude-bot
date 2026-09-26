@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Dice</title>
+  <style>
+    /* Shared look of the bot's own apps: the screen palette (skins overwrite
+       these eight variables at runtime), one bar, one button, one segment. */
+    :root {
+      --bg: #16181a; --panel: #1e2124; --line: #2f3438; --text: #e8e4dc;
+      --muted: #8e9498; --accent: #d17a58; --ok: #8ca879; --off: #6b7175;
+      color-scheme: dark;
+    }
+    :root[data-theme="light"] {
+      --bg: #efe7d9; --panel: #fbf6ec; --line: #ddcdb2; --text: #2f271f;
+      --muted: #7d6d5c; --accent: #b95f3d; --ok: #6f8b5f; --off: #a8998a;
+      color-scheme: light;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      background: var(--bg); color: var(--text);
+      font: 12px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DejaVu Sans", sans-serif;
+      -webkit-font-smoothing: antialiased; -webkit-user-select: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    button, input { font: inherit; color: inherit; }
+    .app { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; padding: 6px 8px 8px; gap: 6px; }
+    .bar { display: flex; align-items: center; gap: 6px; flex: none; min-height: 28px; }
+    .bar-title { flex: 1; min-width: 0; overflow: hidden; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+    .chip { display: inline-flex; align-items: baseline; gap: 4px; flex: none; padding: 4px 7px; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .chip b { color: var(--text); font-size: 12px; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; flex: none; min-width: 28px; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); font-size: 11px; font-weight: 700; cursor: pointer; touch-action: manipulation; }
+    .btn:active { border-color: var(--accent); color: var(--accent); }
+    .btn.primary { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+    .btn.primary:active { opacity: .75; color: var(--bg); }
+    .btn.icon { width: 28px; padding: 0; }
+    .btn.ghost { background: transparent; }
+    .btn:disabled { opacity: .35; pointer-events: none; }
+    .seg { display: flex; gap: 6px; flex: none; padding: 2px; border: 1px solid var(--line); border-radius: 9px; }
+    .seg button { flex: 1; min-width: 0; min-height: 24px; padding: 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .seg button.on { background: var(--panel); color: var(--text); }
+    .panel { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+    .num { font-variant-numeric: tabular-nums; }
+    .muted { color: var(--muted); }
+    [hidden] { display: none !important; }
+    svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; } }
+    .bar .seg { flex: 0 1 190px; }
+    #sides button { text-transform: none; font-size: 10px; }
+    .view { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 6px; }
+    .tray { position: relative; display: flex; align-items: center; justify-content: center; flex-wrap: wrap; flex: 1; min-height: 0; gap: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; overflow: hidden; }
+    .controls { display: flex; align-items: center; gap: 6px; flex: none; }
+    .controls .seg { flex: 1; }
+    .controls .btn.primary { min-width: 84px; }
+    .total { position: absolute; left: 8px; top: 6px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+    .total b { color: var(--text); font-size: 13px; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+    .hint { position: absolute; right: 8px; bottom: 6px; color: var(--off); font-size: 9px; }
+
+    .die { position: relative; display: grid; flex: none; width: var(--d, 52px); height: var(--d, 52px); padding: 14%; border: 2px solid var(--text); border-radius: 22%; background: var(--bg); grid-template: repeat(3, 1fr) / repeat(3, 1fr); }
+    .die i { width: 70%; height: 70%; margin: auto; border-radius: 50%; background: var(--text); visibility: hidden; }
+    .die i.on { visibility: visible; }
+    .die.d20 { display: grid; place-items: center; padding: 0; border: 0; border-radius: 0; background: transparent; }
+    .die.d20 svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--text); stroke-width: 1.4; stroke-linejoin: round; }
+    .die.d20 b { position: relative; font-size: calc(var(--d, 52px) * .34); font-weight: 800; font-variant-numeric: tabular-nums; }
+    .die.best { border-color: var(--accent); }
+    .die.best i { background: var(--accent); }
+    .die.d20.best svg { stroke: var(--accent); }
+    .die.d20.best b { color: var(--accent); }
+    .dice-grid { display: grid; gap: 10px; }
+    .rolling .die { animation: tumble .5s cubic-bezier(.3, .7, .4, 1); }
+    .rolling .die:nth-child(2n) { animation-name: tumble2; }
+    @keyframes tumble { 0% { transform: rotate(0) scale(1); } 30% { transform: rotate(-160deg) scale(.8) translateY(-6px); } 70% { transform: rotate(-330deg) scale(1.06); } 100% { transform: rotate(-360deg) scale(1); } }
+    @keyframes tumble2 { 0% { transform: rotate(0) scale(1); } 30% { transform: rotate(170deg) scale(.82) translateY(-5px); } 70% { transform: rotate(340deg) scale(1.05); } 100% { transform: rotate(360deg) scale(1); } }
+
+    .coin-wrap { perspective: 400px; }
+    .coin { display: grid; place-items: center; width: 92px; height: 92px; border: 3px solid var(--accent); border-radius: 50%; background: var(--bg); color: var(--accent); }
+    .coin svg.i { width: 40px; height: 40px; stroke-width: 1.6; }
+    .coin.tails { border-color: var(--ok); color: var(--ok); }
+    .flipping .coin { animation: flip .7s cubic-bezier(.3, .6, .4, 1); }
+    @keyframes flip { 0% { transform: rotateX(0) translateY(0); } 50% { transform: rotateX(900deg) translateY(-14px) scale(1.08); } 100% { transform: rotateX(1800deg) translateY(0); } }
+    .coin-label { position: absolute; bottom: 8px; left: 0; right: 0; font-size: 13px; font-weight: 800; text-align: center; transition: opacity .15s ease; }
+    .flipping .coin-label { opacity: 0; }
+    .tally { position: absolute; left: 8px; top: 6px; display: flex; gap: 8px; color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+    .tally b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .options { display: flex; align-content: flex-start; flex-wrap: wrap; flex: 1; min-height: 0; gap: 6px; padding: 7px; overflow-y: auto; touch-action: pan-y; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); scrollbar-width: none; }
+    .options::-webkit-scrollbar { display: none; }
+    .opt { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 28px; padding: 0 2px 0 9px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); font-size: 11px; font-weight: 700; transition: transform .12s ease, opacity .12s ease; }
+    .opt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .opt .btn { width: 24px; min-width: 24px; min-height: 24px; border: 0; background: transparent; color: var(--muted); }
+    .opt.lit { border-color: var(--accent); color: var(--accent); transform: scale(1.06); }
+    .opt.win { border-color: var(--accent); background: var(--accent); color: var(--bg); transform: scale(1.1); }
+    .opt.win .btn { color: var(--bg); }
+    .picking .opt:not(.lit) { opacity: .55; }
+    .add { display: flex; gap: 6px; flex: none; }
+    .add input { flex: 1; min-width: 0; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); font-size: 11px; outline: none; }
+    .add input:focus { border-color: var(--accent); }
+    .add input::placeholder { color: var(--off); }
+    .empty { margin: auto; color: var(--muted); font-size: 10px; }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="bar">
+      <span class="bar-title" data-i18n="title"></span>
+      <div class="seg" id="tabs">
+        <button type="button" data-tab="dice" data-i18n="tabDice"></button>
+        <button type="button" data-tab="coin" data-i18n="tabCoin"></button>
+        <button type="button" data-tab="pick" data-i18n="tabPick"></button>
+      </div>
+    </header>
+
+    <section class="view" id="viewDice">
+      <div class="tray" id="tray" role="button"></div>
+      <div class="controls">
+        <div class="seg" id="count">
+          <button type="button" data-count="1">1</button>
+          <button type="button" data-count="2">2</button>
+          <button type="button" data-count="3">3</button>
+          <button type="button" data-count="4">4</button>
+        </div>
+        <div class="seg" id="sides">
+          <button type="button" data-sides="6">d6</button>
+          <button type="button" data-sides="20">d20</button>
+        </div>
+        <button class="btn primary" id="roll" type="button"><span data-icon="dice"></span><span data-i18n="roll"></span></button>
+      </div>
+    </section>
+
+    <section class="view" id="viewCoin" hidden>
+      <div class="tray" id="coinTray" role="button">
+        <div class="tally"><span><span data-i18n="heads"></span> <b id="nHeads">0</b></span><span><span data-i18n="tails"></span> <b id="nTails">0</b></span></div>
+        <div class="coin-wrap"><div class="coin" id="coin"></div></div>
+        <div class="coin-label" id="coinLabel"></div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="coinReset" type="button" data-icon="reset" data-i18n-aria="resetTally"></button>
+        <span style="flex:1"></span>
+        <button class="btn primary" id="flip" type="button"><span data-icon="target"></span><span data-i18n="flip"></span></button>
+      </div>
+    </section>
+
+    <section class="view" id="viewPick" hidden>
+      <div class="options" id="options"></div>
+      <form class="add" id="addForm" autocomplete="off">
+        <input id="optInput" maxlength="24">
+        <button class="btn icon" type="submit" data-icon="plus" data-i18n-aria="add"></button>
+        <button class="btn primary" id="pick" type="button"><span data-icon="shuffle"></span><span data-i18n="pick"></span></button>
+      </form>
+    </section>
+  </div>
+  <script>
+    const APP_ID = "dice";
+    const STR = {
+      uk: {
+        title: "Кубики", tabDice: "Кубики", tabCoin: "Монета", tabPick: "Вибір",
+        roll: "Кинути", total: "Сума", tapHint: "тап - кинути", flip: "Підкинути", heads: "Орел", tails: "Решка",
+        resetTally: "Скинути лічильник", pick: "Обрати", add: "Додати", addPlaceholder: "Новий варіант",
+        remove: "Прибрати", empty: "Додай хоча б два варіанти", defaults: "Піца|Суші|Борщ|Вареники",
+        full: "Максимум 8 варіантів",
+      },
+      en: {
+        title: "Dice", tabDice: "Dice", tabCoin: "Coin", tabPick: "Pick",
+        roll: "Roll", total: "Total", tapHint: "tap to roll", flip: "Flip", heads: "Heads", tails: "Tails",
+        resetTally: "Reset tally", pick: "Pick", add: "Add", addPlaceholder: "New option",
+        remove: "Remove", empty: "Add at least two options", defaults: "Pizza|Sushi|Tacos|Pasta",
+        full: "8 options at most",
+      },
+    };
+    const ICONS = {
+      dice: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01"/>',
+      target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12h.01"/>',
+      reset: '<path d="M20 11a8 8 0 0 0-14.8-3L3 11m0 0V6m0 5h5M4 13a8 8 0 0 0 14.8 3L21 13m0 0v5m0-5h-5"/>',
+      plus: '<path d="M12 5v14M5 12h14"/>',
+      shuffle: '<path d="M3 7h3.5c4 0 5 10 9 10H21M3 17h3.5c1.6 0 2.7-1.6 3.6-3.6M13.9 9.6C14.8 8 15.9 7 17.5 7H21M18 4l3 3-3 3M18 14l3 3-3 3"/>',
+      x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+      star: '<path d="M12 3.8l2.5 5.2 5.7.7-4.2 3.9 1.1 5.6L12 16.4l-5.1 2.8L8 13.6 3.8 9.7l5.7-.7z"/>'
+    };
+    /* ---- shared app runtime: storage, i18n, skin, parent messages ---- */
+
+    // Storage throws inside a sandboxed iframe (a shared .cbp runs with an
+    // opaque origin), so every access is guarded and the app keeps its state
+    // in memory instead of failing.
+    function load(key, fallback) {
+      try {
+        const raw = localStorage.getItem(APP_ID + "." + key);
+        return raw == null ? fallback : JSON.parse(raw);
+      } catch (_) { return fallback; }
+    }
+    function save(key, value) {
+      try { localStorage.setItem(APP_ID + "." + key, JSON.stringify(value)); } catch (_) {}
+    }
+
+    // Start in the screen's language; botSkin carries it later, which also
+    // covers the sandbox where localStorage is not readable.
+    let lang = "uk";
+    try { lang = localStorage.getItem("botScreenLang") || "uk"; } catch (_) {}
+    if (lang !== "en") lang = "uk";
+
+    function t(key, vars) {
+      let text = STR[lang][key];
+      if (text == null) text = STR.uk[key];
+      if (text == null) return key;
+      if (vars) text = text.replace(/\{(\w+)\}/g, (m, k) => (vars[k] != null ? String(vars[k]) : m));
+      return text;
+    }
+    function icon(name, cls) {
+      return '<svg class="i' + (cls ? " " + cls : "") + '" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>";
+    }
+    function fillIcons(root) {
+      (root || document).querySelectorAll("[data-icon]").forEach((el) => { el.innerHTML = icon(el.dataset.icon); });
+    }
+    function applyI18n() {
+      document.documentElement.lang = lang;
+      document.title = t("title");
+      document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+      document.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+      if (typeof onLang === "function") onLang();
+    }
+    // "*" on purpose: in a sandbox our origin is "null", and naming a real
+    // origin as the target would silently drop the message.
+    function post(message) {
+      try { window.parent.postMessage(message, "*"); } catch (_) {}
+    }
+    function cssVar(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+
+    let skinKeys = [];
+    window.addEventListener("message", (event) => {
+      // Only the source is checked: a sandboxed frame sees origin "null".
+      if (event.source !== window.parent) return;
+      const data = event.data;
+      if (!data || data.type !== "botSkin") return;
+      const root = document.documentElement;
+      // Drop the previous skin first, otherwise removing a skin would leave
+      // its colours behind.
+      skinKeys.forEach((key) => root.style.removeProperty(key));
+      skinKeys = [];
+      if (data.vars && typeof data.vars === "object") {
+        for (const key in data.vars) {
+          if (!/^--[a-z-]+$/.test(key)) continue;
+          root.style.setProperty(key, String(data.vars[key]));
+          skinKeys.push(key);
+        }
+      }
+      root.dataset.theme = data.theme === "light" ? "light" : "dark";
+      if (typeof onTheme === "function") onTheme();
+      if ((data.lang === "uk" || data.lang === "en") && data.lang !== lang) {
+        lang = data.lang;
+        applyI18n();
+      }
+    });
+
+    document.addEventListener("click", (event) => {
+      if (event.target.closest("[data-close]")) post({ type: "closeStoreApp" });
+    });
+    // Swipe left/right/down closes the app, same gesture as the screen's own
+    // layers. Pointer capture keeps the swipe alive when the finger leaves a
+    // small element; a native scroll cancels the pointer and is not a swipe.
+    function enableSwipeClose(root) {
+      let start = null;
+      root.addEventListener("pointerdown", (event) => {
+        if (start || event.target.closest("input, select, textarea, [data-noswipe]")) return;
+        start = { x: event.clientX, y: event.clientY, id: event.pointerId };
+        if (!event.target.closest("button")) {
+          try { root.setPointerCapture(event.pointerId); } catch (_) {}
+        }
+      });
+      function finish(event) {
+        if (!start || start.id !== event.pointerId) return;
+        const s = start;
+        start = null;
+        try { if (root.hasPointerCapture(s.id)) root.releasePointerCapture(s.id); } catch (_) {}
+        if (event.type === "pointercancel") return;
+        const dx = event.clientX - s.x;
+        const dy = event.clientY - s.y;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 28) return;
+        if (Math.abs(dx) >= Math.abs(dy)) post({ type: "storeAppSwipe", direction: dx < 0 ? "left" : "right" });
+        else if (dy > 0) post({ type: "storeAppSwipe", direction: "down" });
+      }
+      root.addEventListener("pointerup", finish);
+      root.addEventListener("pointercancel", finish);
+      window.addEventListener("pointerup", finish);
+      window.addEventListener("pointercancel", finish);
+      root.addEventListener("lostpointercapture", (event) => { if (start && start.id === event.pointerId) start = null; });
+    }
+
+    // Which pips are lit for each face, cells numbered 0..8 row by row.
+    const PIPS = { 1: [4], 2: [2, 6], 3: [2, 4, 6], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+    const D20_SHAPE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.8 21.2 7v10L12 22.2 2.8 17V7z"/><path d="M12 6.2 17.6 15H6.4z" opacity=".45"/></svg>';
+    let prefs = Object.assign({ tab: "dice", count: 2, sides: 6 }, load("prefs", {}));
+    let dice = [], coinSide = "heads", tally = { heads: 0, tails: 0 };
+    let options = load("options", null);   // null = the localised defaults
+    let busy = false, winner = -1;
+
+    const rand = (n) => 1 + Math.floor(Math.random() * n);
+
+    function savePrefs() { save("prefs", prefs); }
+
+    function renderTabs() {
+      document.querySelectorAll("[data-tab]").forEach((b) => b.classList.toggle("on", b.dataset.tab === prefs.tab));
+      document.getElementById("viewDice").hidden = prefs.tab !== "dice";
+      document.getElementById("viewCoin").hidden = prefs.tab !== "coin";
+      document.getElementById("viewPick").hidden = prefs.tab !== "pick";
+    }
+
+    function dieHtml(value, best) {
+      if (prefs.sides === 20) return '<div class="die d20' + (best ? " best" : "") + '">' + D20_SHAPE + "<b>" + value + "</b></div>";
+      const on = PIPS[value];
+      let cells = "";
+      for (let i = 0; i < 9; i++) cells += '<i class="' + (on.includes(i) ? "on" : "") + '"></i>';
+      return '<div class="die' + (best ? " best" : "") + '">' + cells + "</div>";
+    }
+
+    function renderDice() {
+      if (dice.length !== prefs.count) dice = Array.from({ length: prefs.count }, () => rand(prefs.sides));
+      const tray = document.getElementById("tray");
+      // Three or four dice go on two rows, so each die stays big enough to
+      // read at arm's length on a 2.4" panel.
+      const rows = prefs.count > 2 ? 2 : 1;
+      const perRow = prefs.count > 2 ? 2 : prefs.count;
+      const size = Math.floor(Math.min(64, (tray.clientHeight - 34) / rows - 10, (tray.clientWidth - 24) / perRow - 12));
+      tray.style.setProperty("--d", Math.max(30, size) + "px");
+      const top = Math.max(...dice);
+      tray.innerHTML = '<div class="dice-grid" style="grid-template-columns:repeat(' + perRow + ',auto)">' +
+        dice.map((v) => dieHtml(v, prefs.sides === 20 && dice.length > 1 && v === top)).join("") + "</div>" +
+        '<div class="total"><span></span> <b></b></div><div class="hint"></div>';
+      tray.querySelector(".total span").textContent = t("total");
+      tray.querySelector(".total b").textContent = dice.reduce((x, y) => x + y, 0);
+      tray.querySelector(".hint").textContent = t("tapHint");
+      document.querySelectorAll("[data-count]").forEach((b) => b.classList.toggle("on", Number(b.dataset.count) === prefs.count));
+      document.querySelectorAll("[data-sides]").forEach((b) => b.classList.toggle("on", Number(b.dataset.sides) === prefs.sides));
+    }
+
+    function roll() {
+      if (busy) return;
+      busy = true;
+      const tray = document.getElementById("tray");
+      dice = Array.from({ length: prefs.count }, () => rand(prefs.sides));
+      renderDice();
+      tray.classList.remove("rolling");
+      void tray.offsetWidth;
+      tray.classList.add("rolling");
+      setTimeout(() => { tray.classList.remove("rolling"); busy = false; }, 520);
+    }
+
+    function renderCoin() {
+      const coin = document.getElementById("coin");
+      coin.className = "coin" + (coinSide === "tails" ? " tails" : "");
+      coin.innerHTML = icon(coinSide === "heads" ? "star" : "target");
+      document.getElementById("coinLabel").textContent = t(coinSide);
+      document.getElementById("nHeads").textContent = tally.heads;
+      document.getElementById("nTails").textContent = tally.tails;
+    }
+    function flip() {
+      if (busy) return;
+      busy = true;
+      const tray = document.getElementById("coinTray");
+      tray.classList.remove("flipping");
+      void tray.offsetWidth;
+      tray.classList.add("flipping");
+      coinSide = Math.random() < .5 ? "heads" : "tails";
+      // The face swaps mid-flip, while the coin is edge-on and unreadable.
+      setTimeout(() => renderCoin(), 350);
+      setTimeout(() => { tally[coinSide] += 1; renderCoin(); tray.classList.remove("flipping"); busy = false; }, 720);
+    }
+
+    function currentOptions() { return options || t("defaults").split("|"); }
+    function renderOptions() {
+      const box = document.getElementById("options");
+      const list = currentOptions();
+      box.innerHTML = "";
+      if (!list.length) { box.innerHTML = '<span class="empty"></span>'; box.firstChild.textContent = t("empty"); }
+      list.forEach((text, i) => {
+        const chip = document.createElement("span");
+        chip.className = "opt" + (i === winner ? " win" : "");
+        chip.innerHTML = "<span></span>" + '<button class="btn icon" type="button" data-remove="' + i + '">' + icon("x") + "</button>";
+        chip.firstChild.textContent = text;
+        chip.lastChild.setAttribute("aria-label", t("remove"));
+        box.appendChild(chip);
+      });
+      document.getElementById("pick").disabled = list.length < 2;
+      const input = document.getElementById("optInput");
+      input.placeholder = list.length >= 8 ? t("full") : t("addPlaceholder");
+      input.disabled = list.length >= 8;
+    }
+    function pick() {
+      const list = currentOptions();
+      if (busy || list.length < 2) return;
+      busy = true;
+      winner = -1;
+      renderOptions();
+      const box = document.getElementById("options");
+      const chips = [...box.querySelectorAll(".opt")];
+      const target = Math.floor(Math.random() * list.length);
+      // A slowing run of highlights that lands on the pick: suspense in
+      // under two seconds, and every hop is just a class toggle.
+      const hops = list.length * 2 + target;
+      let hop = 0;
+      box.classList.add("picking");
+      const next = () => {
+        chips.forEach((c, i) => c.classList.toggle("lit", i === hop % list.length));
+        if (hop >= hops) {
+          box.classList.remove("picking");
+          winner = target;
+          busy = false;
+          renderOptions();
+          return;
+        }
+        hop += 1;
+        setTimeout(next, 55 + Math.pow(hop / hops, 3) * 260);
+      };
+      next();
+    }
+
+    document.getElementById("tabs").addEventListener("click", (event) => {
+      const b = event.target.closest("[data-tab]");
+      if (!b || busy) return;
+      prefs.tab = b.dataset.tab;
+      savePrefs();
+      renderAll();
+    });
+    document.getElementById("count").addEventListener("click", (event) => {
+      const b = event.target.closest("[data-count]");
+      if (!b || busy) return;
+      prefs.count = Number(b.dataset.count);
+      dice = [];
+      savePrefs();
+      renderDice();
+    });
+    document.getElementById("sides").addEventListener("click", (event) => {
+      const b = event.target.closest("[data-sides]");
+      if (!b || busy) return;
+      prefs.sides = Number(b.dataset.sides);
+      dice = [];
+      savePrefs();
+      renderDice();
+    });
+    document.getElementById("roll").addEventListener("click", roll);
+    document.getElementById("tray").addEventListener("click", roll);
+    document.getElementById("flip").addEventListener("click", flip);
+    document.getElementById("coinTray").addEventListener("click", flip);
+    document.getElementById("coinReset").addEventListener("click", () => { tally = { heads: 0, tails: 0 }; renderCoin(); });
+    document.getElementById("pick").addEventListener("click", pick);
+    document.getElementById("addForm").addEventListener("submit", (event) => {
+      event.preventDefault();
+      const input = document.getElementById("optInput");
+      const text = input.value.trim().slice(0, 24);
+      const list = currentOptions().slice();
+      if (!text || list.length >= 8 || busy) return;
+      list.push(text);
+      options = list; winner = -1;
+      save("options", options);
+      input.value = "";
+      renderOptions();
+    });
+    document.getElementById("options").addEventListener("click", (event) => {
+      const b = event.target.closest("[data-remove]");
+      if (!b || busy) return;
+      const list = currentOptions().slice();
+      list.splice(Number(b.dataset.remove), 1);
+      options = list; winner = -1;
+      save("options", options);
+      renderOptions();
+    });
+    window.addEventListener("resize", () => renderAll());
+
+    function renderAll() {
+      renderTabs();
+      if (prefs.tab === "dice") renderDice();
+      if (prefs.tab === "coin") renderCoin();
+      if (prefs.tab === "pick") renderOptions();
+    }
+    function onLang() { renderAll(); }
+
+    if (![1, 2, 3, 4].includes(prefs.count)) prefs.count = 2;
+    if (prefs.sides !== 20) prefs.sides = 6;
+    if (!["dice", "coin", "pick"].includes(prefs.tab)) prefs.tab = "dice";
+    if (!Array.isArray(options)) options = null;
+    else options = options.filter((o) => typeof o === "string").slice(0, 8);
+    enableSwipeClose(document.getElementById("app"));
+    fillIcons();
+    applyI18n();
+  </script>
+</body>
+</html>

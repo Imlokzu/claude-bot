@@ -1,0 +1,18 @@
+{
+  "id": "flappy-crab",
+  "type": "app",
+  "label": "Крабик",
+  "icon": "face",
+  "tint": "#d98263",
+  "version": "1.0.0",
+  "author": "Клод Бот",
+  "description": "Піксельний крабик пролітає між коралами: тап, щоб змахнути клешнями.",
+  "category": "games",
+  "entry": "index.html",
+  "locales": {
+    "en": {
+      "label": "Flappy Crab",
+      "description": "A pixel crab flies between the coral: tap to flap its claws."
+    }
+  }
+}
