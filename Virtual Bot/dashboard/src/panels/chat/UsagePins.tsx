@@ -1,8 +1,12 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import * as Popover from '@radix-ui/react-popover';
+import { Check, ChevronDown, ChevronRight } from 'lucide-react';
 import { get } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { t } from '@/locales/workspace';
 import { estimateTokens, shortNumber } from './tokens';
+import { MAIN_ACCOUNT_KEY, splitAccounts } from './accounts';
 import type { ChatMessage } from './types';
 
 /*
@@ -23,6 +27,8 @@ interface Costs {
   input: number; output: number; cacheRead: number; cacheWrite: number; totalTokens: number;
   totalCost: number; inputCost: number; outputCost: number; cacheReadCost: number; cacheWriteCost: number;
   missingCostEntries: number;
+  /** Computed per model on the server: cached tokens billed at that model's own input price. */
+  noCacheCost?: number | null;
 }
 interface ChatUsage {
   model: string;
@@ -69,10 +75,10 @@ function cacheShare(c: Costs): number {
   return prompt ? Math.round((c.cacheRead / prompt) * 100) : 0;
 }
 
-/** Same traffic with every cached token billed as fresh input. */
+/** Same traffic with every cached token billed as fresh input; hidden when the cache saved nothing. */
 function withoutCache(c: Costs): number | null {
-  if (!c.cacheRead || !c.input || !c.inputCost) return null;
-  return c.totalCost - c.cacheReadCost + c.cacheRead * (c.inputCost / c.input);
+  const value = c.noCacheCost;
+  return value != null && value - c.totalCost > 0.00005 ? value : null;
 }
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
@@ -178,28 +184,100 @@ function QuotaBars({ quota }: { quota: Quota }) {
   );
 }
 
-function AccountRow({ account }: { account: Account }) {
+function accountName(account: Account): string {
   const name = PROVIDER_NAMES[account.provider] ?? account.provider;
-  const auth = account.auth === 'oauth' ? t('oc.auth.oauth') : account.auth === 'api_key' ? t('oc.auth.key') : '';
-  let traffic: string;
-  if (!account.replies) traffic = t('oc.acc.idle');
-  else if (!account.totalTokens) traffic = t('oc.acc.noTokens', { replies: account.replies });
-  else traffic = t('oc.acc.traffic', { replies: account.replies, tokens: shortNumber(account.totalTokens) })
-    + (account.cacheRead ? ` · ${t('oc.acc.cache', { share: cacheShare(account) })}` : '');
+  return account.quota?.plan ? `${name} · ${account.quota.plan}` : name;
+}
+
+function authLabel(account: Account): string {
+  return account.auth === 'oauth' ? t('oc.auth.oauth') : account.auth === 'api_key' ? t('oc.auth.key') : '';
+}
+
+function trafficLine(account: Account): string {
+  const parts: string[] = [];
+  if (!account.replies) parts.push(t('oc.acc.idle'));
+  else if (!account.totalTokens) parts.push(t('oc.acc.noTokens', { replies: account.replies }));
+  else {
+    parts.push(t('oc.acc.traffic', { replies: account.replies, tokens: shortNumber(account.totalTokens) }));
+    if (account.cacheRead) parts.push(t('oc.acc.cache', { share: cacheShare(account) }));
+  }
+  if (account.missingCostEntries) parts.push(t('oc.acc.unpriced', { count: account.missingCostEntries }));
+  return parts.join(' · ');
+}
+
+function AccountMenu({ accounts, main, onChoose }: {
+  accounts: Account[]; main: Account; onChoose: (provider: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const auth = authLabel(main);
   return (
-    <div className="space-y-1.5 border-t border-line pt-2 first:border-t-0 first:pt-0">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="min-w-0 truncate text-ink-2">
-          {name}{account.quota?.plan ? ` · ${account.quota.plan}` : ''}
-          {auth ? <span className="ml-1.5 text-[10.5px] text-ink-3">{auth}</span> : null}
-        </span>
-        {account.totalCost ? <span className="u-data text-ink">{money(account.totalCost)}</span> : null}
-      </div>
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button type="button" aria-label={`${accountName(main)} — ${t('oc.acc.choose')}`}
+          className="-mx-1 flex w-[calc(100%+0.5rem)] min-w-0 items-center gap-1 rounded-sm px-1 py-0.5 text-left outline-none transition-colors hover:bg-surface-3 focus-visible:ring-2 focus-visible:ring-accent">
+          <span className="min-w-0 truncate text-ink-2">{accountName(main)}</span>
+          <ChevronDown size={13} className="shrink-0 text-ink-3" />
+          {auth ? <span className="ml-auto shrink-0 text-[10.5px] text-ink-3">{auth}</span> : null}
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content side="bottom" align="start" sideOffset={6} collisionPadding={12}
+          className="popup-shell u-pop z-50 w-60 rounded-md border border-line bg-surface p-1.5 shadow-pop">
+          <div className="popup-plate liquid-glass" aria-hidden="true" />
+          <p className="u-label px-2 pb-1 pt-1">{t('oc.acc.main')}</p>
+          {accounts.map((account) => {
+            const current = account === main;
+            const hint = [authLabel(account), account.replies ? t('oc.acc.replies', { replies: account.replies }) : t('oc.acc.idle')]
+              .filter(Boolean).join(' · ');
+            return (
+              <button key={account.provider} type="button" aria-pressed={current}
+                onClick={() => { onChoose(account.provider); setOpen(false); }}
+                className="flex min-h-11 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left hover:bg-surface-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] text-ink-2">{accountName(account)}</span>
+                  <span className="block truncate text-[11px] text-ink-3">{hint}</span>
+                </span>
+                {current ? <Check size={14} className="shrink-0 text-accent" /> : null}
+              </button>
+            );
+          })}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
+}
+
+/** The main account in full: its limits, what its traffic would cost at API prices, and the traffic. */
+function MainAccount({ account, days, indexing }: { account: Account; days: number; indexing: boolean }) {
+  const plain = withoutCache(account);
+  return (
+    <div className="space-y-2">
       {account.quota ? <QuotaBars quota={account.quota} /> : null}
-      <p className="text-[10.5px] text-ink-3">
-        {traffic}
-        {account.missingCostEntries ? ` · ${t('oc.missing', { count: account.missingCostEntries })}` : ''}
-      </p>
+      {indexing ? <p className="text-xs text-ink-3">{t('oc.indexing')}</p> : (
+        <>
+          {account.totalCost ? (
+            <div className="space-y-1" title={t('oc.note')}>
+              <Row label={t('oc.acc.cost', { days })} value={money(account.totalCost)} strong />
+              {plain !== null ? <Row label={t('oc.noCache')} value={money(plain)} /> : null}
+            </div>
+          ) : null}
+          <p className="text-[10.5px] text-ink-3">{trafficLine(account)}</p>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Any other account, two lines: name and cost, then limits and traffic. */
+function OtherAccount({ account }: { account: Account }) {
+  const limits = account.quota?.windows.map((w) => `${windowLabel(w.label)} ${Math.round(w.used_percent ?? 0)}%`) ?? [];
+  return (
+    <div className="border-t border-line pt-2 first:border-t-0 first:pt-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="min-w-0 truncate text-ink-2">{accountName(account)}</span>
+        {account.totalCost ? <span className="u-data text-ink-2">{money(account.totalCost)}</span> : null}
+      </div>
+      <p className="text-[10.5px] text-ink-3">{[...limits, trafficLine(account)].join(' · ')}</p>
     </div>
   );
 }
@@ -212,26 +290,50 @@ export function AccountsPin() {
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
+  const [preferred, setPreferred] = useState<string | null>(() => {
+    try { return localStorage.getItem(MAIN_ACCOUNT_KEY); } catch { return null; }
+  });
+  const [othersOpen, setOthersOpen] = useState(false);
+  const choose = (provider: string) => {
+    setPreferred(provider);
+    try { localStorage.setItem(MAIN_ACCOUNT_KEY, provider); } catch { /* Session-only fallback. */ }
+  };
 
   if (accounts.isPending) return <p className="text-xs text-ink-3">{t('pins.loading')}</p>;
   if (accounts.isError) return <ErrorState onRetry={() => void accounts.refetch()} />;
-  const { days, totals, indexing, available } = accounts.data;
-  const list = accounts.data.accounts;
+  const { totals, indexing, available } = accounts.data;
+  const days = accounts.data.days || 30;
+  const { main, others } = splitAccounts(accounts.data.accounts, preferred);
+  if (!main) return <p className="text-xs text-ink-3">{available ? t('oc.acc.none') : t('oc.unavailable')}</p>;
 
   return (
-    <div className="space-y-3 text-[12.5px]">
-      {list.length ? (
-        <div className="space-y-2">{list.map((account) => <AccountRow key={account.provider} account={account} />)}</div>
-      ) : <p className="text-xs text-ink-3">{available ? t('oc.acc.none') : t('oc.unavailable')}</p>}
-
-      {totals ? (
-        <section>
-          <h3 className="u-label mb-1.5">{t('oc.days', { days: days || 30 })}</h3>
-          {indexing ? <p className="text-xs text-ink-3">{t('oc.indexing')}</p> : <CostBlock c={totals} />}
-        </section>
-      ) : null}
-
-      <p className="text-[10.5px] leading-snug text-ink-3">{t('oc.note')}</p>
+    <div className="space-y-2.5 text-[12.5px]">
+      <AccountMenu accounts={accounts.data.accounts} main={main} onChoose={choose} />
+      <MainAccount account={main} days={days} indexing={indexing} />
+      {others.length ? (
+        <div className="border-t border-line pt-2">
+          <button type="button" aria-expanded={othersOpen} onClick={() => setOthersOpen((open) => !open)}
+            className="flex items-center gap-1 text-[11px] text-ink-3 outline-none hover:text-ink-2 focus-visible:ring-2 focus-visible:ring-accent">
+            <ChevronRight className={cn('size-3 transition-transform duration-200 motion-reduce:transition-none', othersOpen && 'rotate-90')} />
+            {t('oc.acc.others', { count: others.length })}
+          </button>
+          {/* The same fold as the tool logs under a chat card (base.css, .chat-log). */}
+          <div className="chat-log" data-open={othersOpen ? '' : undefined} inert={!othersOpen}>
+            <div className="chat-log-clip">
+              <div className="chat-log-panel space-y-2 pt-2">
+                {others.map((account) => <OtherAccount key={account.provider} account={account} />)}
+                {totals ? (
+                  <section className="border-t border-line pt-2">
+                    <h3 className="u-label mb-1.5">{t('oc.acc.all', { days })}</h3>
+                    {indexing ? <p className="text-xs text-ink-3">{t('oc.indexing')}</p> : <CostBlock c={totals} />}
+                  </section>
+                ) : null}
+                <p className="text-[10.5px] leading-snug text-ink-3">{t('oc.note')}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : <p className="text-[10.5px] leading-snug text-ink-3">{t('oc.note')}</p>}
     </div>
   );
 }

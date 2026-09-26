@@ -79,6 +79,29 @@ def _costs(raw: dict | None) -> dict:
     return {field: raw.get(field, 0) or 0 for field in _COST_FIELDS}
 
 
+def _no_cache_cost(model_totals: list[dict]) -> float:
+    """What the traffic would cost if every cached token were billed as fresh input.
+
+    Priced per model, because one account mixes models whose input price
+    differs fifty-fold (gpt-6-luna $0.10 vs gpt-5.5 $5 per 1M): an average
+    over the account would bill cheap cached tokens at an expensive rate, and
+    unpriced models would drag the average down. A model with cache but no
+    input price keeps its own cost: there is no rate to bill the cache at.
+    """
+    total = 0.0
+    for raw in model_totals:
+        costs = _costs(raw)
+        if costs["cacheRead"] and costs["input"] and costs["inputCost"]:
+            total += costs["totalCost"] - costs["cacheReadCost"] + costs["cacheRead"] * costs["inputCost"] / costs["input"]
+        else:
+            total += costs["totalCost"]
+    return total
+
+
+def _model_totals(items: object) -> list[dict]:
+    return [item["totals"] for item in items or [] if isinstance(item, dict) and isinstance(item.get("totals"), dict)]
+
+
 async def quota() -> list[dict] | None:
     """Provider quota windows, e.g. ChatGPT Plus: 5h 94% used, week 15%."""
     async def load():
@@ -127,10 +150,12 @@ async def session(key: str) -> dict | None:
     latency = usage.get("latency") if isinstance(usage.get("latency"), dict) else {}
     counts = usage.get("messageCounts") if isinstance(usage.get("messageCounts"), dict) else {}
     tools = usage.get("toolUsage") if isinstance(usage.get("toolUsage"), dict) else {}
+    per_model = _model_totals(usage.get("modelUsage")) or [usage]
     return {
         "model": str(row.get("model") or ""),
         "provider": str(row.get("modelProvider") or ""),
         **_costs(usage),
+        "noCacheCost": _no_cache_cost(per_model),
         "turns": counts.get("assistant", 0) or 0,
         "tool_calls": tools.get("totalCalls", 0) or 0,
         "avg_latency_ms": latency.get("avgMs"),
@@ -187,6 +212,7 @@ async def accounts() -> dict | None:
             for item in aggregates.get("byProvider") or []
             if isinstance(item, dict) and item.get("provider")
         }
+        by_model = [item for item in aggregates.get("byModel") or [] if isinstance(item, dict)]
         names = (set(configured or {}) | set(by_provider)) - _INTERNAL_PROVIDERS
         rows = []
         for name in names:
@@ -196,13 +222,14 @@ async def accounts() -> dict | None:
                 "auth": (configured or {}).get(name, ""),
                 "replies": item.get("count", 0) or 0,
                 **_costs(item.get("totals")),
+                "noCacheCost": _no_cache_cost(_model_totals(m for m in by_model if m.get("provider") == name)),
             })
         rows.sort(key=lambda row: (-row["replies"], row["provider"]))
         status = usage.get("cacheStatus") if isinstance(usage.get("cacheStatus"), dict) else {}
         return {
             "days": _SESSION_DAYS,
             "accounts": rows,
-            "totals": _costs(usage.get("totals")),
+            "totals": {**_costs(usage.get("totals")), "noCacheCost": _no_cache_cost(_model_totals(by_model))},
             # "refreshing" means the index is still being built: zeros are not real yet.
             "indexing": status.get("status") == "refreshing",
         }
@@ -225,7 +252,8 @@ async def accounts_snapshot() -> dict:
         row["quota"] = quotas.pop(row["provider"], None)
     # A provider with a quota report but no traffic in the range is still an account.
     for provider, item in quotas.items():
-        data["accounts"].insert(0, {"provider": provider, "auth": "", "replies": 0, **_costs(None), "quota": item})
+        data["accounts"].insert(0, {"provider": provider, "auth": "", "replies": 0, **_costs(None),
+                                    "noCacheCost": 0, "quota": item})
     data["accounts"].sort(key=lambda row: (row.get("quota") is None, -row["replies"], row["provider"]))
     data["available"] = accounts_value is not None and not isinstance(accounts_value, BaseException)
     return data

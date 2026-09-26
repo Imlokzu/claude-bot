@@ -29,7 +29,6 @@ const uk = {
   'oc.dur.dh': '{d} д {h} год',
   'oc.dur.hm': '{h} год {m} хв',
   'oc.dur.m': '{m} хв',
-  'oc.days': '{days} днів',
   'oc.input': 'Вхід',
   'oc.cached': 'З кешу',
   'oc.cacheWrite': 'Запис у кеш',
@@ -50,6 +49,13 @@ const uk = {
   'oc.acc.traffic': '{replies} відп. · {tokens} токенів',
   'oc.acc.cache': '{share}% з кешу',
   'oc.acc.none': 'OpenClaw не має підключених акаунтів',
+  'oc.acc.main': 'Головний акаунт',
+  'oc.acc.choose': 'вибрати головний акаунт',
+  'oc.acc.others': 'Інші акаунти · {count}',
+  'oc.acc.cost': 'За {days} днів, ціни API',
+  'oc.acc.replies': '{replies} відп.',
+  'oc.acc.all': 'Усі акаунти · {days} днів',
+  'oc.acc.unpriced': '{count} без ціни',
   'gallery.hint': 'Зображень: {count} · натисніть, щоб відкрити',
 } as const;
 
@@ -84,7 +90,6 @@ const en: Record<keyof typeof uk, string> = {
   'oc.dur.dh': '{d}d {h}h',
   'oc.dur.hm': '{h}h {m}m',
   'oc.dur.m': '{m}m',
-  'oc.days': '{days} days',
   'oc.input': 'Input',
   'oc.cached': 'Cached',
   'oc.cacheWrite': 'Cache write',
@@ -105,6 +110,13 @@ const en: Record<keyof typeof uk, string> = {
   'oc.acc.traffic': '{replies} replies · {tokens} tokens',
   'oc.acc.cache': '{share}% cached',
   'oc.acc.none': 'OpenClaw has no connected accounts',
+  'oc.acc.main': 'Main account',
+  'oc.acc.choose': 'choose the main account',
+  'oc.acc.others': 'Other accounts · {count}',
+  'oc.acc.cost': '{days} days at API prices',
+  'oc.acc.replies': '{replies} replies',
+  'oc.acc.all': 'All accounts · {days} days',
+  'oc.acc.unpriced': '{count} unpriced',
   'gallery.hint': 'Images: {count} · click to open',
 };
 

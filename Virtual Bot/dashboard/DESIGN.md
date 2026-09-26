@@ -220,11 +220,16 @@ scrolling past all of it.
   with the cache split, priced by OpenClaw at API rates, plus what the same
   traffic would cost without the cache. When OpenClaw never answered the chat,
   it falls back to the old text estimate and says so.
-- **Model accounts** (pin id `openclaw`) lists every provider account OpenClaw
-  holds: quota windows where the provider reports them (ChatGPT Plus 5-hour and
-  weekly), the auth kind, and 30 days of traffic. Accounts whose provider sends
-  no token counts say that instead of showing a false zero; replies on models
-  missing from the price table are counted as unpriced.
+- **Model accounts** (pin id `openclaw`) shows one main account in full:
+  quota windows where the provider reports them (ChatGPT Plus 5-hour and
+  weekly), what its 30 days of traffic would cost at API prices, and the
+  traffic itself. The account name is a menu for picking the main account
+  (`localStorage.claudeBotMainAccount`; unset or disconnected falls back to the
+  server's first, quota-reporting accounts first). Every other account OpenClaw
+  holds is folded under "Other accounts · N" with the all-accounts total:
+  usually only the main one matters. Accounts whose provider sends no token
+  counts say that instead of showing a false zero; replies on models missing
+  from the price table are counted as unpriced.
 - The dollar figure is labelled as what the API would charge; on a
   subscription the real spend is the plan. The numbers were checked against
   the raw transcript and OpenAI's published price list.

@@ -4,6 +4,7 @@ import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import { remarkImageGroups } from '../src/panels/chat/remarkImageGroups.ts';
 import { parsePins } from '../src/panels/chat/pins.ts';
+import { splitAccounts } from '../src/panels/chat/accounts.ts';
 
 const parse = (markdown) => {
   const processor = unified().use(remarkParse).use(remarkImageGroups);
@@ -48,4 +49,17 @@ test('pin preferences allow only known panels, once each', () => {
   assert.deepEqual(parsePins('["screen", "screen", "unknown", "vision"]'), ['screen', 'vision']);
   assert.deepEqual(parsePins('["projects"]'), ['projects']);
   for (const saved of [null, '', '{', '{}', 'null', '7', '"screen"']) assert.deepEqual(parsePins(saved), []);
+});
+
+test('the picked account leads; a missing pick falls back to the server order', () => {
+  const list = [{ provider: 'openai' }, { provider: 'nvidia' }, { provider: 'regolo' }];
+  const picked = splitAccounts(list, 'nvidia');
+  assert.equal(picked.main.provider, 'nvidia');
+  assert.deepEqual(picked.others.map((account) => account.provider), ['openai', 'regolo']);
+  for (const preferred of [null, '', 'anthropic']) {
+    const fallback = splitAccounts(list, preferred);
+    assert.equal(fallback.main.provider, 'openai');
+    assert.equal(fallback.others.length, 2);
+  }
+  assert.deepEqual(splitAccounts([], 'openai'), { main: null, others: [] });
 });

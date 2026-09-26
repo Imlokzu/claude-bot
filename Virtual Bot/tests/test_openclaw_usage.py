@@ -23,6 +23,13 @@ RANGE = {"sessions": [], "totals": {"input": 5, "totalCost": 0.01}, "cacheStatus
          "aggregates": {"byProvider": [
              {"provider": "nvidia", "count": 54, "totals": {"input": 200, "missingCostEntries": 22}},
              {"provider": "openclaw", "count": 27, "totals": {}},
+         ], "byModel": [
+             # cheap model: $0.001/token input; expensive model: $0.01/token input
+             {"provider": "openai", "model": "cheap", "totals": {
+                 "input": 100, "inputCost": 0.1, "cacheRead": 1000, "cacheReadCost": 0.1, "totalCost": 0.3}},
+             {"provider": "openai", "model": "dear", "totals": {
+                 "input": 100, "inputCost": 1.0, "cacheRead": 100, "cacheReadCost": 0.1, "totalCost": 1.5}},
+             {"provider": "nvidia", "model": "unpriced", "totals": {"input": 200, "cacheRead": 50}},
          ]}}
 MODELS_STATUS = {"auth": {"providers": [
     {"provider": "openai", "profiles": {"oauth": 1, "labels": ["openai:someone@example.com=OAuth"]}},
@@ -80,6 +87,26 @@ class OpenClawUsageTests(unittest.TestCase):
         dumped = json.dumps(snap)
         self.assertNotIn("example.com", dumped)
         self.assertNotIn("sk-", dumped)
+
+    def test_no_cache_cost_is_priced_per_model(self) -> None:
+        calls: list = []
+        responses = {"usage.status": STATUS, "sessions.usage:range": RANGE, "models.status": MODELS_STATUS}
+        with patch.object(openclaw_usage.openclaw_models, "_run_cli", fake_cli(responses, calls)):
+            snap = asyncio.run(openclaw_usage.accounts_snapshot())
+        by_name = {row["provider"]: row for row in snap["accounts"]}
+        # cheap: 0.3 - 0.1 + 1000 * 0.001 = 1.2; dear: 1.5 - 0.1 + 100 * 0.01 = 2.4.
+        # A blended $0.0055/token average would say 7.65 and bill cheap cache at the dear rate.
+        self.assertAlmostEqual(by_name["openai"]["noCacheCost"], 3.6)
+        # No input price, no rate to bill the cache at: the model keeps its own cost.
+        self.assertAlmostEqual(by_name["nvidia"]["noCacheCost"], 0.0)
+        self.assertAlmostEqual(snap["totals"]["noCacheCost"], 3.6)
+
+    def test_session_no_cache_cost_falls_back_to_session_totals(self) -> None:
+        calls: list = []
+        with patch.object(openclaw_usage.openclaw_models, "_run_cli", fake_cli({"sessions.usage": SESSION}, calls)):
+            session = asyncio.run(openclaw_usage.chat_snapshot("k"))["session"]
+        # 0.5 - 0.35 + 900 * (0.1 / 100)
+        self.assertAlmostEqual(session["noCacheCost"], 1.05)
 
     def test_failures_are_reported_not_cached(self) -> None:
         calls: list = []
