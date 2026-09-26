@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import pathlib
 import re
 import shutil
@@ -63,7 +64,10 @@ def availability() -> dict[str, Any]:
     """Що зараз працює: екран показує це чесно, а не мовчки ламається."""
     return {
         "youtube": yt_dlp is not None,
-        "transcript": YouTubeTranscriptApi is not None,
+        # The panel source needs nothing installed, so transcripts are always
+        # at least attempted; `transcript_sources` says what backs them.
+        "transcript": True,
+        "transcript_sources": transcript_sources(),
         "errors": {"youtube": _YTDLP_ERROR, "transcript": _TRANSCRIPT_ERROR},
     }
 
@@ -474,36 +478,164 @@ async def open_video_stream(video_id: str, range_header: str | None, attempts: i
     raise last_exc or RuntimeError("відео не відкрилось")
 
 
-# ---------------------------------------------------------------- транскрайб
+# ---------------------------------------------------------------- transcripts
+#
+# Sources, in order, each for a reason:
+#
+# 1. InnerTube `get_panel` (the transcript panel of youtube.com). Keyless, one
+#    request, ~0.2 s, and — the point — it is NOT the `/api/timedtext`
+#    endpoint. The per-IP block this code kept running into (IpBlocked from
+#    youtube-transcript-api, 429 from yt-dlp) is a timedtext block; metadata
+#    and panels keep answering through it. Its segments are grouped and only
+#    second-accurate, which is fine for reading a video, not for karaoke.
+# 2. youtube-transcript-api — per-line timing, human vs auto tracks, a real
+#    language choice; shares the timedtext block.
+# 3. yt-dlp — the same timedtext, reached through the player API; outlives
+#    changes that break the library above.
+# 4. Hosted APIs, only when a key is set: Supadata (100 free credits every
+#    month), then TranscriptAPI. Last, so free credits are spent only on the
+#    videos every keyless path missed.
+#
+# Invidious used to sit here; the public instances are dead (530/502/HTML),
+# so it was dropped rather than kept as a slow way to fail.
 
 _TRANSCRIPT_MAX_SEGMENTS = 2000
 
+# The panel wants a plausible WEB client version. A stale one still works for
+# months; when it stops, the current one is read off the home page (cached).
+_INNERTUBE_WEB_VERSION = "2.20260925.01.00"
+_INNERTUBE_VERSION_CACHE: tuple[float, str] = (0.0, "")
+_INNERTUBE_VERSION_TTL_S = 86400
+
+
+def _panel_params(video_id: str) -> str:
+    """base64 of the protobuf {149: {1: video_id, 3: 2}} the panel expects.
+
+    Hand-encoded because it is four fixed bytes around the id: field 149 as a
+    length-delimited message (0xaa 0x09, length 15), inside it field 1 with the
+    11-byte id, then field 3 = 2.
+    """
+    import base64
+
+    raw = b"\xaa\x09\x0f\x0a\x0b" + video_id.encode("ascii") + b"\x18\x02"
+    return base64.b64encode(raw).decode("ascii")
+
+
+def _timestamp_seconds(stamp: str) -> float:
+    total = 0
+    for part in str(stamp or "").split(":"):
+        if not part.isdigit():
+            return 0.0
+        total = total * 60 + int(part)
+    return float(total)
+
+
+def _panel_segments(data: Any) -> list[dict[str, Any]]:
+    """Every transcriptSegmentViewModel, in document order.
+
+    A recursive walk instead of the full path: the path through the renderer
+    tree is six levels of undocumented names, and YouTube reshuffles those far
+    more often than it renames the segment model itself.
+    """
+    found: list[dict[str, Any]] = []
+
+    def walk(node: Any) -> None:
+        if len(found) >= _TRANSCRIPT_MAX_SEGMENTS:
+            return
+        if isinstance(node, dict):
+            seg = node.get("transcriptSegmentViewModel")
+            if isinstance(seg, dict):
+                text = str(seg.get("simpleText") or "").replace("\n", " ").strip()
+                if text:
+                    found.append({"start": _timestamp_seconds(seg.get("timestamp", "")), "text": text})
+                return
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+
+    walk(data)
+    return found
+
+
+def _innertube_version_sync() -> str:
+    global _INNERTUBE_VERSION_CACHE
+    cached_at, version = _INNERTUBE_VERSION_CACHE
+    if version and time.monotonic() - cached_at < _INNERTUBE_VERSION_TTL_S:
+        return version
+    try:
+        page = httpx.get("https://www.youtube.com/", headers={"User-Agent": BROWSER_UA}, timeout=10).text
+        match = re.search(r'"INNERTUBE_CLIENT_VERSION":"([0-9.]+)"', page)
+    except Exception:  # noqa: BLE001 — the constant is still a good guess
+        match = None
+    version = match.group(1) if match else _INNERTUBE_WEB_VERSION
+    _INNERTUBE_VERSION_CACHE = (time.monotonic(), version)
+    return version
+
+
+def _panel_transcript_sync(video_id: str, languages: list[str]) -> list[dict[str, Any]]:
+    """Transcript through the youtube.com transcript panel (keyless)."""
+
+    def request(version: str, lang: str) -> httpx.Response:
+        return httpx.post(
+            "https://www.youtube.com/youtubei/v1/get_panel?prettyPrint=false",
+            json={
+                # `hl` picks the track: the panel has no language parameter
+                # of its own, and falls back to the default track when the
+                # asked-for language does not exist.
+                "context": {"client": {"clientName": "WEB", "clientVersion": version, "hl": lang, "gl": "US"}},
+                "panelId": "PAmodern_transcript_view",
+                "params": _panel_params(video_id),
+            },
+            headers={"User-Agent": BROWSER_UA},
+            timeout=15,
+        )
+
+    lang = (languages or ["en"])[0]
+    response = request(_INNERTUBE_WEB_VERSION, lang)
+    if response.status_code == 400:
+        # Most likely an expired client version: read the live one, retry once.
+        fresh = _innertube_version_sync()
+        if fresh != _INNERTUBE_WEB_VERSION:
+            response = request(fresh, lang)
+    if response.status_code == 429:
+        raise RuntimeError("TooManyRequests: panel")
+    if response.status_code != 200:
+        raise RuntimeError(f"panel HTTP {response.status_code}")
+    segments = _panel_segments(response.json())
+    if not segments:
+        # 200 with nothing inside is how the panel says "no transcript" —
+        # and also how it answers for an unknown id.
+        raise RuntimeError("NoTranscriptFound: panel is empty")
+    return segments
+
 
 def _transcript_sync(video_id: str, languages: list[str]) -> list[dict[str, Any]]:
-    """Блокуючий виклик youtube-transcript-api — only через to_thread.
+    """Blocking youtube-transcript-api call — only via to_thread.
 
-    API 1.x: YouTubeTranscriptApi().list() → FetchedTranscript(segments).
+    API 1.x: YouTubeTranscriptApi().list() -> FetchedTranscript(segments).
     """
     api = YouTubeTranscriptApi()
     listing = api.list(video_id)
     fetched = None
-    # Спершу ручні субтитри бажаною мовою, потім автозгенеровані
+    # Human subtitles in a wanted language first, then auto-generated ones
     for codes in (languages, ["uk", "en"]):
         try:
             transcript = listing.find_transcript(codes)
             fetched = transcript.fetch()
             break
-        except Exception:  # noqa: BLE001 — цієї мови немає, пробуємо наступну
+        except Exception:  # noqa: BLE001 — not in this language, try the next
             continue
     if fetched is None:
-        # Останній шанс: перший-ліпший доступний трек субтитрів
+        # Last chance: whichever track exists
         try:
             first = next(iter(listing))
             fetched = first.fetch()
         except StopIteration:
-            raise RuntimeError("у відео немає субтитрів")
+            raise RuntimeError("NoTranscriptFound: no tracks")
         except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(f"субтитри не читаються: {type(exc).__name__}") from exc
+            raise RuntimeError(f"subtitles unreadable: {type(exc).__name__}") from exc
     segments: list[dict[str, Any]] = []
     for snippet in fetched:
         segments.append({
@@ -515,12 +647,74 @@ def _transcript_sync(video_id: str, languages: list[str]) -> list[dict[str, Any]
     return segments
 
 
-async def transcript(video_id: str, languages: list[str] | None = None) -> list[dict[str, Any]]:
-    """Сегменти субтитрів [{start, text}] або RuntimeError із людською причиною.
+def _supadata_sync(video_id: str, languages: list[str]) -> list[dict[str, Any]]:
+    """Supadata hosted transcripts (SUPADATA_API_KEY). `mode=native` asks for
+    existing subtitles only — no paid AI transcription behind our back."""
+    key = os.environ.get("SUPADATA_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("no key")
+    response = httpx.get(
+        "https://api.supadata.ai/v1/transcript",
+        params={"url": f"https://www.youtube.com/watch?v={video_id}", "lang": (languages or ["en"])[0], "mode": "native"},
+        headers={"x-api-key": key},
+        timeout=30,
+    )
+    if response.status_code == 206:
+        raise RuntimeError("NoTranscriptFound: supadata")
+    if response.status_code != 200:
+        raise RuntimeError(f"supadata HTTP {response.status_code}")
+    content = (response.json() or {}).get("content") or []
+    segments = [
+        {"start": round(float(item.get("offset") or 0) / 1000, 2), "text": str(item.get("text") or "").strip()}
+        for item in content if isinstance(item, dict) and item.get("text")
+    ]
+    if not segments:
+        raise RuntimeError("NoTranscriptFound: supadata")
+    return segments[:_TRANSCRIPT_MAX_SEGMENTS]
 
-    Спершу прямий youtube-transcript-api (timedtext YouTube), якщо він
-    закритий для IP — фолбек на Invidious-інстанси.
-    """
+
+def _transcriptapi_sync(video_id: str, languages: list[str]) -> list[dict[str, Any]]:
+    """TranscriptAPI hosted transcripts (TRANSCRIPTAPI_KEY)."""
+    key = os.environ.get("TRANSCRIPTAPI_KEY", "").strip()
+    if not key:
+        raise RuntimeError("no key")
+    response = httpx.get(
+        "https://transcriptapi.com/api/v2/youtube/transcript",
+        params={"video_url": video_id, "format": "json", "include_timestamp": "true",
+                "language": ",".join((languages or []) + ["asr"])},
+        headers={"Authorization": f"Bearer {key}"},
+        timeout=30,
+    )
+    if response.status_code == 404:
+        raise RuntimeError("NoTranscriptFound: transcriptapi")
+    if response.status_code != 200:
+        raise RuntimeError(f"transcriptapi HTTP {response.status_code}")
+    rows = (response.json() or {}).get("transcript") or []
+    segments = [
+        {"start": round(float(row.get("start") or 0), 2), "text": str(row.get("text") or "").strip()}
+        for row in rows if isinstance(row, dict) and row.get("text")
+    ]
+    if not segments:
+        raise RuntimeError("NoTranscriptFound: transcriptapi")
+    return segments[:_TRANSCRIPT_MAX_SEGMENTS]
+
+
+def transcript_sources() -> list[str]:
+    """Which transcript sources are usable right now, in the order tried."""
+    out = ["panel"]
+    if YouTubeTranscriptApi is not None:
+        out.append("youtube-transcript-api")
+    if yt_dlp is not None:
+        out.append("yt-dlp")
+    if os.environ.get("SUPADATA_API_KEY", "").strip():
+        out.append("supadata")
+    if os.environ.get("TRANSCRIPTAPI_KEY", "").strip():
+        out.append("transcriptapi")
+    return out
+
+
+async def transcript(video_id: str, languages: list[str] | None = None) -> list[dict[str, Any]]:
+    """Subtitle segments [{start, text}], or RuntimeError with a human reason."""
     langs = [l for l in (languages or []) if isinstance(l, str) and l.strip()][:4]
     if not langs:
         langs = ["uk", "en"]
@@ -528,42 +722,40 @@ async def transcript(video_id: str, languages: list[str] | None = None) -> list[
     blocked = False   # YouTube refused us, rather than the video lacking subs
     disabled = False  # the video itself carries no subtitles
 
-    if YouTubeTranscriptApi is not None:
-        try:
-            return await asyncio.to_thread(_transcript_sync, video_id, langs)
-        except Exception as exc:  # noqa: BLE001 — more sources below
-            name = type(exc).__name__
-            # Match by name, not by import: the library renames these between
-            # majors, and a missing symbol here would turn a bad network day
-            # into an ImportError on startup. The text is checked too, because
-            # the helper above re-raises as RuntimeError and the original class
-            # survives only inside the message.
-            marks = f"{name} {exc}"
-            if any(m in marks for m in ("IpBlocked", "RequestBlocked", "TooManyRequests", "429")):
-                blocked = True
-            elif any(m in marks for m in ("TranscriptsDisabled", "NoTranscriptFound")):
-                disabled = True
-            log.warning("Прямий транскрайб %s не вдався (%s)", video_id, name)
-
-    try:
-        return await asyncio.to_thread(_ytdlp_captions_sync, video_id, langs)
-    except Exception as exc:  # noqa: BLE001 — Invidious still to try
-        if "обмежує запити" in str(exc):
+    def note(exc: BaseException) -> None:
+        nonlocal blocked, disabled
+        # Match by name, not by import: the library renames these between
+        # majors, and a missing symbol here would turn a bad network day into
+        # an ImportError on startup. The text is checked too, because helpers
+        # re-raise as RuntimeError and the original class survives only there.
+        marks = f"{type(exc).__name__} {exc}"
+        if any(m in marks for m in ("IpBlocked", "RequestBlocked", "TooManyRequests", "429", "обмежує запити")):
             blocked = True
-        log.warning("yt-dlp транскрайб %s не вдався (%s)", video_id, type(exc).__name__)
+        elif any(m in marks for m in ("TranscriptsDisabled", "NoTranscriptFound")):
+            disabled = True
 
-    bases = await all_invidious_instances()
-    try:
-        return await asyncio.to_thread(
-            _invidious_captions_sync, video_id, langs + ["uk", "en"], bases
-        )
-    except Exception as exc:  # noqa: BLE001 — last source, now explain honestly
-        log.warning("Invidious транскрайб %s не вдався (%s)", video_id, type(exc).__name__)
+    chain: list[tuple[str, Any]] = [("panel", _panel_transcript_sync)]
+    if YouTubeTranscriptApi is not None:
+        chain.append(("youtube-transcript-api", _transcript_sync))
+    chain.append(("yt-dlp", _ytdlp_captions_sync))
+    chain.append(("supadata", _supadata_sync))
+    chain.append(("transcriptapi", _transcriptapi_sync))
+
+    for name, source in chain:
+        try:
+            segments = await asyncio.to_thread(source, video_id, langs)
+        except Exception as exc:  # noqa: BLE001 — the next source may still work
+            if str(exc) != "no key":
+                note(exc)
+                log.warning("Transcript %s via %s failed (%s: %s)", video_id, name, type(exc).__name__, str(exc)[:120])
+            continue
+        if segments:
+            log.info("Transcript %s via %s: %d segments", video_id, name, len(segments))
+            return segments
 
     # Every source failed, so say WHY. Reporting "this video has no subtitles"
     # when the real cause is a rate-limited address sends the user hunting for
-    # a different video, which cannot help — the block follows the address,
-    # not the clip.
+    # a different video, which cannot help — the block follows the address.
     if blocked:
         raise RuntimeError(
             "YouTube тимчасово обмежує запити з нашої адреси — це стосується "
@@ -633,8 +825,7 @@ def transcript_parts(
     return chunks
 
 
-# --- Фолбек транскрайбу через Invidious: субтитри беремо з інстансу, якщо
-# прямий timedtext YouTube закритий для цього IP ---
+# --- WebVTT parsing for the yt-dlp subtitle path ---
 
 _VTT_TS = re.compile(r"^(?:(\d+):)?(\d+):(\d+)[.,](\d+)$")
 
@@ -719,33 +910,6 @@ def _ytdlp_captions_sync(video_id: str, languages: list[str]) -> list[dict[str, 
 
         best = min(files, key=rank)
         return _vtt_to_segments(best.read_text(encoding="utf-8", errors="replace"))
-
-
-def _invidious_captions_sync(video_id: str, languages: list[str], bases: list[str] | None = None) -> list[dict[str, Any]]:
-    """Субтитри з першого живого Invidious-інстансу (WebVTT → сегменти)."""
-    for base in (bases or invidious_instances()):
-        try:
-            with httpx.Client(timeout=httpx.Timeout(10.0), follow_redirects=True) as client:
-                listing = client.get(f"{base}/api/v1/captions/{video_id}")
-                if listing.status_code != 200:
-                    continue
-                items = (listing.json() or {}).get("captions") or []
-                by_code = {item.get("code", ""): item for item in items}
-                vtt = None
-                for code in languages:
-                    item = by_code.get(code)
-                    if item:
-                        vtt = client.get(base + item["url"]).text
-                        break
-                if vtt is None and items:
-                    vtt = client.get(base + items[0]["url"]).text
-                if vtt:
-                    segments = _vtt_to_segments(vtt)
-                    if segments:
-                        return segments
-        except Exception:  # noqa: BLE001 — інстанс мертвий/без субтитрів, пробуємо наступний
-            continue
-    raise RuntimeError("Invidious не віддав субтитрів")
 
 
 # ---------------------------------------------------------------- проксі-стрім

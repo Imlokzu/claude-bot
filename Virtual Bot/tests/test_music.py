@@ -199,3 +199,107 @@ def test_music_play_publishes_event(monkeypatch):
         assert published[-1][1] == "stop"
         # play(id) + play(query) + stop; невдалі 400 публікацій не створюють
         assert len(published) == 3
+
+
+# ------------------------------------------------------------------ transcript chain
+#
+# The panel source exists because the timedtext endpoint gets blocked per IP.
+# These tests pin the two things that make it useful: it parses the panel's
+# real shape, and a failure anywhere falls through to the next source instead
+# of ending the attempt.
+
+import asyncio
+
+
+def _panel_payload(*rows):
+    """The nesting youtube.com actually returns, trimmed to what matters."""
+    return {"content": {"engagementPanelSectionListRenderer": {"content": {"sectionListRenderer": {"contents": [
+        {"itemSectionRenderer": {"contents": [
+            {"macroMarkersPanelItemViewModel": {"item": {"timelineItemViewModel": {"contentItems": [
+                {"transcriptSegmentViewModel": {"simpleText": text, "timestamp": stamp}}
+            ]}}}}
+            for stamp, text in rows
+        ]}}
+    ]}}}}}
+
+
+def test_panel_params_encode_video_id():
+    # Known-good value captured from youtube.com for dQw4w9WgXcQ
+    assert music._panel_params("dQw4w9WgXcQ") == "qgkPCgtkUXc0dzlXZ1hjURgC"
+
+
+def test_panel_segments_parse_timestamps():
+    data = _panel_payload(("0:01", "hello"), ("1:02:03", "later\nline"), ("0:05", "  "))
+    assert music._panel_segments(data) == [
+        {"start": 1.0, "text": "hello"},
+        {"start": 3723.0, "text": "later line"},
+    ]
+
+
+class _Resp:
+    def __init__(self, status, payload=None):
+        self.status_code = status
+        self._payload = payload or {}
+
+    def json(self):
+        return self._payload
+
+
+def test_panel_empty_means_no_transcript(monkeypatch):
+    monkeypatch.setattr(music.httpx, "post", lambda *a, **k: _Resp(200, {}))
+    with pytest.raises(RuntimeError, match="NoTranscriptFound"):
+        music._panel_transcript_sync("dQw4w9WgXcQ", ["en"])
+
+
+def test_panel_retries_with_live_client_version(monkeypatch):
+    seen = []
+
+    def fake_post(url, json=None, **_):
+        seen.append(json["context"]["client"]["clientVersion"])
+        return _Resp(400) if len(seen) == 1 else _Resp(200, _panel_payload(("0:00", "ok")))
+
+    monkeypatch.setattr(music.httpx, "post", fake_post)
+    monkeypatch.setattr(music, "_innertube_version_sync", lambda: "2.29990101.00.00")
+    assert music._panel_transcript_sync("dQw4w9WgXcQ", ["en"])[0]["text"] == "ok"
+    assert seen == [music._INNERTUBE_WEB_VERSION, "2.29990101.00.00"]
+
+
+def test_chain_falls_through_to_next_source(monkeypatch):
+    """Panel blocked -> the library answers; the caller never sees the first failure."""
+    def panel(*_):
+        raise RuntimeError("TooManyRequests: panel")
+
+    monkeypatch.setattr(music, "_panel_transcript_sync", panel)
+    monkeypatch.setattr(music, "YouTubeTranscriptApi", object())
+    monkeypatch.setattr(music, "_transcript_sync", lambda *_: [{"start": 0.0, "text": "from library"}])
+    segments = asyncio.run(music.transcript("dQw4w9WgXcQ", ["en"]))
+    assert segments[0]["text"] == "from library"
+
+
+def test_chain_reports_block_honestly(monkeypatch):
+    """All sources down with a 429 somewhere: the message blames the address, not the video."""
+    def blocked(*_):
+        raise RuntimeError("TooManyRequests")
+
+    for name in ("_panel_transcript_sync", "_transcript_sync", "_ytdlp_captions_sync"):
+        monkeypatch.setattr(music, name, blocked)
+    monkeypatch.setattr(music, "YouTubeTranscriptApi", object())
+    monkeypatch.delenv("SUPADATA_API_KEY", raising=False)
+    monkeypatch.delenv("TRANSCRIPTAPI_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="нашої адреси"):
+        asyncio.run(music.transcript("dQw4w9WgXcQ", ["en"]))
+
+
+def test_hosted_sources_need_keys(monkeypatch):
+    monkeypatch.delenv("SUPADATA_API_KEY", raising=False)
+    monkeypatch.delenv("TRANSCRIPTAPI_KEY", raising=False)
+    assert "supadata" not in music.transcript_sources()
+    monkeypatch.setenv("SUPADATA_API_KEY", "k")
+    assert "supadata" in music.transcript_sources()
+
+    def fake_get(url, params=None, headers=None, **_):
+        assert headers == {"x-api-key": "k"} and params["mode"] == "native"
+        return _Resp(200, {"content": [{"text": "hi", "offset": 1500, "duration": 900}]})
+
+    monkeypatch.setattr(music.httpx, "get", fake_get)
+    assert music._supadata_sync("dQw4w9WgXcQ", ["uk"]) == [{"start": 1.5, "text": "hi"}]
