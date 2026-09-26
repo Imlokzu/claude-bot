@@ -5,10 +5,11 @@
    переганяє щоразу весь текст. */
 import * as smd from "./vendor/smd.min.js";
 /* Піксельні цифри й іконки — своя графіка, спільна мова з крабом */
-import { drawGlyphString, makeIcon, paintIcon } from "./pixel-ui.js";
+import { drawGlyphString, makeIcon, paintIcon, hasPixelIcon } from "./pixel-ui.js";
 /* Розбір ключового слова — окремо і без DOM, щоб логіку можна було
    перевіряти напряму, не маючи мікрофона (див. wake.js) */
 import { parseWake } from "./wake.js";
+import { ReplyTurn } from "./reply.js";
 /* Контурні іконки та їхні кольори — у icons.js */
 import { makeSvgIcon, ICON_COLORS } from "./icons.js";
 /* Дві мови інтерфейсу (uk/en) — словник і хелпери в i18n.js */
@@ -444,9 +445,10 @@ setLink(false);
       const text = typeof ev.text === "string" && ev.text.trim() ? ev.text.trim() : "";
       if (text) {
         showSaid(text);
-        showCaption(text, "bot");
-        // Свою ж репліку екран уже читав по мірі стріму (sendChat → feedSpeech)
-        if (text !== spokenReplyText) speak(text);
+        // The screen already spoke its own reply while it streamed
+        // (sendChat → feedSpeech); this event only covers the others.
+        if (text !== spokenReplyText.trim()) sayBubbles(replyBubbles(ev, text));
+        else if (!speechWanted()) showCaption(text, "bot");
       }
       setEmotion(ev.emotion || "speaking");
     } else if (ev.type === "say") {
@@ -607,7 +609,7 @@ function drawerIcon(name, on) {
     }, { once: true });
     return image;
   }
-  if (activeIconStyle() === "pixel") {
+  if (activeIconStyle() === "pixel" && (PIXEL_ICON_ASSETS[name] || hasPixelIcon(name) || name === "server")) {
     const asset = PIXEL_ICON_ASSETS[name];
     const fallback = () => {
       const fallbackName = name === "server" ? "gear" : name;
@@ -894,13 +896,27 @@ async function speechPump() {
   botSpeaking = true;
   captionSpeechStarted();
   try {
-    let ready = null;                        // уже синтезований наступний шматок
+    // Each queue item is {text, onStart}. The next item is synthesised while
+    // this one plays; onStart fires when its audio actually begins, which is
+    // what lets the caption follow the voice one message at a time.
+    let ready = null;                        // {item, audio} already synthesised
     while (epoch === speechEpoch && (ready || speechQueue.length)) {
-      const audio = ready || await ttsBlob(speechQueue.shift());
+      let current = ready;
+      if (!current) {
+        const item = speechQueue.shift();
+        current = { item, audio: await ttsBlob(item.text) };
+      }
       ready = null;
       if (epoch !== speechEpoch) break;
-      const ahead = speechQueue.length ? ttsBlob(speechQueue.shift()) : null;
-      if (audio) await playBlob(audio);
+      let ahead = null;
+      if (speechQueue.length) {
+        const next = speechQueue.shift();
+        ahead = ttsBlob(next.text).then((audio) => ({ item: next, audio }));
+      }
+      if (typeof current.item.onStart === "function") {
+        try { current.item.onStart(); } catch (e) { /* a caption must not stop the voice */ }
+      }
+      if (current.audio) await playBlob(current.audio);
       if (ahead) ready = await ahead;
     }
   } finally {
@@ -914,15 +930,22 @@ async function speechPump() {
   }
 }
 
-/* Ставить шматок тексту в чергу озвучки (не скидаючи те, що вже грає) */
-function speechSay(raw) {
-  // Розмітку картинок вголос не читаємо: інакше диктувалось би
-  // «знак оклику дужка ейч-ті-ті-пі-ес…» замість самої репліки.
-  // Посилання й решту markdown ріже бекенд (tts_text.clean_for_speech).
+/* Queues a piece of text for speech without cutting what is playing.
+   onStart runs when this piece starts to sound. */
+function speechSay(raw, onStart) {
+  // Image markup is never read aloud, or it would dictate "exclamation
+  // mark bracket h-t-t-p-s…" instead of the reply. Links and the rest of
+  // the markdown are stripped by the backend (tts_text.clean_for_speech).
   const text = splitImages(String(raw || "")).text;
-  if (!voiceOn || !ttsAvailable || !text.trim()) return;
-  speechQueue.push(text);
+  if (!speechWanted() || !text.trim()) return false;
+  speechQueue.push({ text, onStart });
   speechPump();
+  return true;
+}
+
+/* Whether replies are spoken at all right now */
+function speechWanted() {
+  return voiceOn && ttsAvailable;
 }
 
 /* Де закінчується останнє ЦІЛЕ речення: читати з півслова гірше, ніж
@@ -1053,10 +1076,30 @@ function cutForSpeech(text, limit) {
   return end > limit * 0.5 ? head.slice(0, end + 1) : head;
 }
 
-/* Готова репліка одним куском: хвіст попередньої скидаємо й читаємо цю */
+/* A finished reply in one piece: drop the tail of the previous one, read this */
 function speak(raw) {
   speechReset();
   speechSay(raw);
+}
+
+/* Messages of a `reply` event. Older backends send only the joined text. */
+function replyBubbles(ev, text) {
+  const list = Array.isArray(ev.bubbles) ? ev.bubbles.map((b) => String(b || "").trim()).filter(Boolean) : [];
+  return list.length ? list : [text];
+}
+
+/* A finished multi-message reply: spoken one message at a time with the
+   caption switching as each one starts; shown whole when nobody listens. */
+function sayBubbles(bubbles) {
+  speechReset();
+  if (!speechWanted()) {
+    showCaption(bubbles.join("\n\n"), "bot");
+    return;
+  }
+  showCaption(bubbles[0], "bot");
+  bubbles.forEach((text, i) => {
+    speechSay(text, i ? () => showCaption(text, "bot") : null);
+  });
 }
 
 /* «1.5×» без зайвого нуля: 1× / 1.5× / 2× */
@@ -1332,66 +1375,129 @@ function addMsg(role, text) {
 async function sendChat(message, fromVoice) {
   chatBusy = true;
   micButtons.forEach((b) => { b.classList.add("busy"); b.disabled = true; });
-  addMsg("user", message);
+  const userEl = addMsg("user", message);
 
-  const bubble = addMsg("bot", "…");
-  bubble.classList.add("pending");
-  let started = false;
-  /* Один статус на три місця: рядок на циферблаті, рядок під розмовою і сама
-     бульбашка, що поки чекає (доки не почався текст — їй нічого показувати,
-     крім «…»). */
+  /* One status line under the reply while the bot works: "thinking",
+     "searching the web · …". Bubbles are inserted ABOVE it, so a narration
+     line ("one sec, checking") stays visible while the tool runs below it. */
+  const statusEl = addMsg("bot", t("busy.thinking"));
+  statusEl.classList.add("pending");
   const status = (label) => {
     setBusy(label);
-    if (!started) bubble.textContent = label;
+    if (statusEl.isConnected) statusEl.textContent = label;
   };
-  let parser = null;
-  let scrollPending = false;
-  let streamed = "";      // що реально показали зі стріму
-  let spokenChars = 0;    // скільки символів відповіді вже пішло в озвучку
+  const dropStatus = () => { if (statusEl.isConnected) statusEl.remove(); };
 
-  /* Озвучка НЕ чекає кінця відповіді: щойно набралось перше ціле речення
-     (від SPEAK_MIN_CHARS), воно вже читається, поки мозок домовляє решту.
-     На довгих відповідях це різниця між «бот заговорив за секунду» і
-     «бот молчав тридцять секунд, а потім прочитав усе». */
-  const feedSpeech = (final) => {
-    if (!voiceOn || !ttsAvailable) return;
-    const pending = streamed.slice(spokenChars);
-    if (!pending.trim()) return;
+  let scrollPending = false;
+  const scrollSoon = () => {
+    // At most once a frame: on the A53 every chunk would otherwise reflow
+    if (scrollPending) return;
+    scrollPending = true;
+    requestAnimationFrame(() => { scrollPending = false; chatScrollDown(); });
+  };
+
+  /* The face caption.
+     Voice on: it follows the VOICE — the message being spoken is the one
+     on screen, and the next replaces it when its audio starts. That is
+     what makes live mode read like a conversation, not a document.
+     Voice off: it shows the whole reply, messages as paragraphs — nothing
+     paces the reader, so replacing bubbles would flash words past them. */
+  let captionBubble = null;
+  const captionAll = (live) => {
+    const text = turn.texts().join("\n\n");
+    if (text) showCaption(text, "bot", live);
+  };
+  const captionFollow = (b) => {
+    if (speechWanted()) {
+      if (captionBubble === null) captionBubble = b;   // first words: show at once
+      if (captionBubble === b) showCaption(b.text, "bot", !b.closed);
+    } else {
+      captionAll(true);
+    }
+  };
+  const captionOnVoice = (b) => () => {
+    captionBubble = b;
+    if (b.text.trim()) showCaption(b.text, "bot", !b.closed);
+  };
+
+  /* Speech per bubble. The first whole sentence (from SPEAK_MIN_CHARS) is
+     spoken while the brain is still writing the rest; a finished bubble is
+     spoken whole, and the gap between two queue items is the natural pause
+     between two messages. */
+  const feedSpeech = (b, final) => {
+    if (!speechWanted()) return;
+    const pending = b.text.slice(b.spoken);
+    if (!pending.trim()) { if (final) b.spoken = b.text.length; return; }
     if (final) {
-      spokenChars = streamed.length;
-      speechSay(pending);
+      b.spoken = b.text.length;
+      speechSay(pending, captionOnVoice(b));
       return;
     }
     if (pending.length < SPEAK_MIN_CHARS) return;
     let cut = speechCutIndex(pending);
-    // Стіна тексту без жодного розділового знака: далі тягнути немає сенсу
+    // A wall of text without punctuation: no point waiting any longer
     if (cut < 0 && pending.length >= SPEAK_MAX_CHARS) cut = pending.length - 1;
     if (cut < 0) return;
-    spokenChars += cut + 1;
-    speechSay(pending.slice(0, cut + 1));
+    b.spoken += cut + 1;
+    speechSay(pending.slice(0, cut + 1), captionOnVoice(b));
   };
 
-  const onChunk = (chunk) => {
-    if (!started) {
-      started = true;
-      clearBusy();                       // пішов текст — дія скінчилась
-      bubble.classList.remove("pending");
-      bubble.textContent = "";
-      parser = smd.parser(smd.default_renderer(bubble));
-    }
-    streamed += chunk;
-    smd.parser_write(parser, chunk);
-    showCaption(streamed, "bot", true);  // те саме — субтитром під обличчям (ще друкує)
-    feedSpeech(false);
-    // Скрол не частіше за кадр: інакше на A53 кожен чанк дає reflow
-    if (!scrollPending) {
-      scrollPending = true;
-      requestAnimationFrame(() => { scrollPending = false; chatScrollDown(); });
-    }
+  const turn = new ReplyTurn({
+    onOpen(b) {
+      clearBusy();
+      b.el = document.createElement("div");
+      b.el.className = "msg bot" + (b.note ? " note" : "");
+      chatLog.insertBefore(b.el, statusEl.isConnected ? statusEl : null);
+      b.parser = smd.parser(smd.default_renderer(b.el));
+      b.drawn = "";
+      if (!b.note) dropStatus();      // the answer has started: nothing left to wait for
+      scrollSoon();
+    },
+    onAppend(b, chunk) {
+      smd.parser_write(b.parser, chunk);
+      b.drawn += chunk;
+      captionFollow(b);
+      feedSpeech(b, false);
+      scrollSoon();
+    },
+    onSet(b) {
+      // Notes arrive as snapshots: extend the parser when the snapshot
+      // only grew, redraw when it changed.
+      if (b.text.startsWith(b.drawn)) {
+        smd.parser_write(b.parser, b.text.slice(b.drawn.length));
+      } else {
+        try { smd.parser_end(b.parser); } catch (e) { /* already closed */ }
+        b.el.textContent = "";
+        b.parser = smd.parser(smd.default_renderer(b.el));
+        smd.parser_write(b.parser, b.text);
+      }
+      b.drawn = b.text;
+      captionFollow(b);
+      scrollSoon();
+    },
+    onClose(b) {
+      try { smd.parser_end(b.parser); } catch (e) { /* already closed */ }
+      feedSpeech(b, true);
+      if (!speechWanted()) captionAll(false);
+    },
+    onRemove(b) {
+      try { smd.parser_end(b.parser); } catch (e) { /* already closed */ }
+      if (b.el) b.el.remove();
+      if (captionBubble === b) captionBubble = null;
+    },
+  });
+
+  const showReaction = (emoji) => {
+    if (!emoji || userEl.querySelector(".msg-react")) return;
+    const badge = document.createElement("span");
+    badge.className = "msg-react";
+    badge.textContent = emoji;
+    userEl.appendChild(badge);
   };
 
   status(t("busy.thinking"));
 
+  let finished = false;
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
@@ -1399,7 +1505,7 @@ async function sendChat(message, fromVoice) {
       body: JSON.stringify({
         message: message, stream: true, session_id: sessionId,
         voice: !!fromVoice,
-        spoken: voiceOn && ttsAvailable,
+        spoken: speechWanted(),
       }),
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -1418,71 +1524,77 @@ async function sendChat(message, fromVoice) {
       for (const line of lines) {
         if (line.startsWith("event:")) {
           eventType = line.slice(6).trim();
-        } else if (line.startsWith("data:")) {
-          const raw = line.slice(5).trim();
-          if (!raw) continue;
-          let payload;
-          try { payload = JSON.parse(raw); } catch (err) { continue; }
-          if (eventType === "delta" && payload.chunk) {
-            onChunk(payload.chunk);
-          } else if (eventType === "emotion") {
-            setEmotion(payload.emotion);
-          } else if (eventType === "tool_start" || eventType === "tool_progress") {
-            status(toolBusyLabel(payload));
-          } else if (eventType === "tool_done" || eventType === "tool_result") {
-            // Тулз відпрацював — мозок знову думає (і, можливо, візьме наступний)
-            status(t("busy.thinking"));
-          } else if (eventType === "done") {
-            /* done.reply — ГОЛОВНІШИЙ за стрім, так каже сам бекенд
-               (main.py: «текст розійшовся … done нижче все одно це замінить»).
-               Це не формальність: коли шлюз віддає під виглядом відповіді
-               «Error: internal error», брейн відкидає її і бере наступний
-               мозок — але помилка вже встигла піти в delta. Хто не замінює
-               текст на done, той показує чужу помилку як слова бота. */
-            if (payload.reply != null && payload.reply !== streamed) {
-              if (parser) { try { smd.parser_end(parser); } catch (e2) {} }
-              bubble.classList.remove("pending");
-              bubble.textContent = "";
-              parser = smd.parser(smd.default_renderer(bubble));
-              // Озвучене вголос могло бути ІНШИМ текстом (мозок відкинув
-              // відповідь шлюзу й узяв наступний) — тоді читаємо заново,
-              // інакше просто доберемо хвіст у feedSpeech(true) нижче.
-              if (!payload.reply.startsWith(streamed.slice(0, spokenChars))) {
-                speechReset();
-                spokenChars = 0;
-              }
-              streamed = payload.reply;
-              started = true;
-              smd.parser_write(parser, payload.reply);
-              showCaption(payload.reply, "bot");
-              chatScrollDown();
+          continue;
+        }
+        if (!line.startsWith("data:")) continue;
+        const raw = line.slice(5).trim();
+        if (!raw) continue;
+        let payload;
+        try { payload = JSON.parse(raw); } catch (err) { continue; }
+        if (eventType === "delta" && payload.chunk) {
+          turn.delta(payload.chunk);
+        } else if (eventType === "break") {
+          turn.split();
+        } else if (eventType === "note") {
+          turn.note(payload.id, payload.bubbles);
+        } else if (eventType === "reaction") {
+          showReaction(payload.emoji);
+        } else if (eventType === "emotion") {
+          setEmotion(payload.emotion);
+        } else if (eventType === "tool_start" || eventType === "tool_progress") {
+          turn.work();
+          if (!statusEl.isConnected) chatLog.appendChild(statusEl);
+          status(toolBusyLabel(payload));
+        } else if (eventType === "tool_done" || eventType === "tool_result") {
+          // The tool finished; the brain thinks again (and may take another)
+          status(t("busy.thinking"));
+        } else if (eventType === "done") {
+          const spokenBefore = turn.bubbles.some((b) => !b.note && b.spoken > 0);
+          const { replaced } = turn.done(payload.bubbles || []);
+          // What was already said aloud may have been a DIFFERENT text (the
+          // brain dropped the gateway's reply and took another). Then the
+          // new answer is read from the start instead of just its tail.
+          if (replaced.length && spokenBefore) {
+            speechReset();
+            captionBubble = null;
+            for (const b of turn.bubbles) {
+              if (!b.note) { b.spoken = 0; feedSpeech(b, true); }
             }
-            feedSpeech(true);
-            // Подія `reply` прилетить на цей самий текст — хай не читає вдруге
-            spokenReplyText = streamed;
-            setEmotion(payload.emotion);
-          } else if (eventType === "error") {
-            throw new Error(payload.error || t("chat.brainError"));
           }
+          showReaction(payload.reaction);
+          if (!turn.texts().length && payload.reaction) {
+            // Reaction-only reply: the emoji is the whole answer
+            showCaption(payload.reaction, "bot");
+          } else if (!speechWanted()) {
+            captionAll(false);
+          }
+          // The `reply` SSE event for this same text must not read it twice
+          spokenReplyText = typeof payload.reply === "string" ? payload.reply : turn.texts().join("\n\n");
+          setEmotion(payload.emotion);
+          finished = true;
+        } else if (eventType === "error") {
+          throw new Error(payload.error || t("chat.brainError"));
         }
       }
     }
-    if (parser) smd.parser_end(parser);
-    if (!started) {
-      bubble.classList.remove("pending");
-      bubble.textContent = t("chat.emptyReply");
+    turn.closeAll();
+    dropStatus();
+    if (!turn.texts().length && !userEl.querySelector(".msg-react")) {
+      addMsg("bot", t("chat.emptyReply")).classList.add("pending");
     }
   } catch (err) {
-    if (parser) { try { smd.parser_end(parser); } catch (e2) {} }
-    bubble.classList.remove("pending");
-    if (!started) bubble.textContent = "✗ " + err.message;
+    turn.closeAll();
+    dropStatus();
+    if (!turn.texts().length) addMsg("bot", "✗ " + err.message);
     crab.showDefeat();
   } finally {
+    if (!finished) turn.closeAll();
     chatBusy = false;
     clearBusy();
     micButtons.forEach((b) => { b.classList.remove("busy"); b.disabled = false; });
     chatScrollDown();
     wake();
+    onReplyFinished();
   }
 }
 
@@ -2456,15 +2568,30 @@ function renderHistory(messages) {
     chatLog.appendChild(empty);
     return;
   }
-  // Останні 20 реплік: далі на цьому екрані все одно ніхто не гортає
+  // The last 20 turns: nobody scrolls further back on this screen anyway
+  let lastUser = null;
   for (const m of messages.slice(-20)) {
     if (m.role === "user") {
-      addMsg("user", m.content || "");
+      lastUser = addMsg("user", m.content || "");
     } else if (m.role === "assistant") {
-      const el = addMsg("bot", null);
-      const parser = smd.parser(smd.default_renderer(el));
-      smd.parser_write(parser, m.content || "");
-      smd.parser_end(parser);
+      // One bubble per message, the way the reply was streamed. `parts`
+      // holds them in order (narration, tool steps, answer); a message
+      // saved before bubbles existed only has `content`.
+      const parts = Array.isArray(m.parts)
+        ? m.parts.filter((p) => p && p.type === "text" && String(p.text || "").trim())
+        : [];
+      const bubbles = parts.length ? parts : (m.content ? [{ text: m.content }] : []);
+      for (const part of bubbles) {
+        const el = addMsg("bot", null);
+        if (part.note) el.classList.add("note");
+        mdWhole(el, part.text);
+      }
+      if (m.reaction && lastUser && !lastUser.querySelector(".msg-react")) {
+        const badge = document.createElement("span");
+        badge.className = "msg-react";
+        badge.textContent = m.reaction;
+        lastUser.appendChild(badge);
+      }
     }
   }
   chatScrollDown();
@@ -2708,6 +2835,11 @@ function openAppLayer(titleKey, build) {
   openApp = { key: titleKey, build };
   $("appTitle").textContent = t(titleKey);
   appBody.innerHTML = "";
+  // The body element is reused by every app: a class or inline padding one
+  // app set (the store does both) would otherwise frame the next app's
+  // iframe in a border it never asked for.
+  appBody.className = "app-body";
+  appBody.removeAttribute("style");
   build(appBody);
   layerApp.classList.add("open");
   stage.classList.add("layered");
@@ -3919,12 +4051,13 @@ async function refreshInstalledApps() {
     const d = await r.json();
     installedApps = (d.apps || []).map((pkg) => ({
       id: "app:" + pkg.id,
-      label: pkg.label || pkg.id,
+      label: pkgText(pkg, "label") || pkg.id,
       icon: pkg.icon || "store",
       tint: pkg.tint || "",
       app: true,
       pkg: pkg.id,
-      title: pkg.label || pkg.id,
+      title: pkgText(pkg, "label") || pkg.id,
+      source: pkg.source || "builtin",
     }));
   } catch (e) {
     installedApps = [];
@@ -3971,6 +4104,9 @@ function postStoreAppSkin(frame = null) {
   const target = frame || layerApp.querySelector(".storeapp-frame");
   if (!target?.contentWindow) return;
   try {
+    // A sandboxed (shared) app has an opaque origin, so only "*" reaches it.
+    // Nothing here is secret: colours, theme and language.
+    const origin = target.dataset.sandboxed === "1" ? "*" : window.location.origin;
     target.contentWindow.postMessage({
       type: "botSkin",
       vars: currentSkinVars(),
@@ -3978,7 +4114,7 @@ function postStoreAppSkin(frame = null) {
       // Apps localise themselves; without this they would stay in the
       // language they started in after the screen switched.
       lang: getLang(),
-    }, window.location.origin);
+    }, origin);
   } catch (e) {}
 }
 
@@ -3992,6 +4128,12 @@ function openStoreApp(entry) {
     // dataset.pkg — щоб команди бота знайшли САМЕ той застосунок, а не
     // будь-який відкритий (перевірка в videoFrame)
     frame.dataset.pkg = entry.pkg;
+    if (entry.source === "shared") {
+      // Imported from a .cbp: someone else's code. The server also sends a
+      // sandboxing CSP; the attribute makes the box hold even if it did not.
+      frame.setAttribute("sandbox", "allow-scripts");
+      frame.dataset.sandboxed = "1";
+    }
     frame.addEventListener("load", () => {
       postStoreAppSkin(frame);
       if (videoPending && entry.pkg === VIDEO_PKG) {
@@ -4006,7 +4148,9 @@ function openStoreApp(entry) {
 
 window.addEventListener("message", (event) => {
   const frame = layerApp.querySelector(".storeapp-frame");
-  if (!frame || event.source !== frame.contentWindow || event.origin !== window.location.origin) return;
+  if (!frame || event.source !== frame.contentWindow) return;
+  const expected = frame.dataset.sandboxed === "1" ? "null" : window.location.origin;
+  if (event.origin !== expected) return;
   if (event.data?.type === "closeStoreApp") closeAppLayer();
   if (event.data?.type === "storeAppSwipe" && ["left", "right", "down"].includes(event.data.direction)) closeAppLayer();
 });
@@ -4070,8 +4214,32 @@ function onVideoCommand(ev) {
 }
 
 function storeIconEl(name) {
-  // Іконка рядка магазину: той самий drawerIcon, що й у шухляді
+  // Same drawerIcon as the app drawer, so a package looks identical in both
   return drawerIcon(name, false);
+}
+
+/* A manifest's own strings in the screen's language: `locales.<lang>` wins,
+   the top-level field (Ukrainian, the default language) is the fallback. */
+function pkgText(pkg, field) {
+  const local = pkg?.locales?.[getLang()];
+  return (local && typeof local[field] === "string" && local[field]) || pkg?.[field] || "";
+}
+
+/* Store errors come back as {detail: {code, message}}; the code is the key. */
+async function storeError(resp) {
+  const body = await resp.json().catch(() => ({}));
+  const code = body?.detail?.code;
+  return code ? t("store.err." + code) : t("store.installFailed");
+}
+
+async function storePost(path, payload) {
+  const resp = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) throw new Error(await storeError(resp));
+  return resp.json();
 }
 
 function openStore() {
@@ -4089,7 +4257,14 @@ function openStore() {
       ["mcp", t("store.mcp")],
     ];
     let active = "apps";
+    // Category shelf for the apps tab; "all" is not a category, just no filter
+    let shelf = "all";
+    // Package whose card is open, or null for the list
+    let detail = null;
+    let catalogCache = null;
     const tabBtns = {};
+    const chips = document.createElement("div");
+    chips.className = "store-chips";
     const body = document.createElement("div");
     body.className = "np-list store-list";
     body.style.borderTop = "none";
@@ -4099,7 +4274,7 @@ function openStore() {
       btn.type = "button";
       btn.className = "store-tab";
       btn.textContent = label;
-      btn.addEventListener("click", () => { active = id; syncTabs(); renderTab(); wake(); });
+      btn.addEventListener("click", () => { active = id; detail = null; syncTabs(); renderTab(); wake(); });
       tabs.appendChild(btn);
       tabBtns[id] = btn;
     }
@@ -4116,14 +4291,18 @@ function openStore() {
       return btn;
     }
 
-    function infoRow({ icon, tint, name, desc, badge, dots, actions }) {
+    function iconBadge(icon, tint, big) {
+      const host = document.createElement("span");
+      host.className = "app-icon" + (big ? " store-icon-big" : "");
+      host.style.setProperty("--app-tint", tint || iconTint);
+      host.appendChild(storeIconEl(icon || "store"));
+      return host;
+    }
+
+    function infoRow({ icon, tint, name, desc, badge, dots, actions, onOpen }) {
       const row = document.createElement("div");
-      row.className = "store-row";
-      const iconHost = document.createElement("span");
-      iconHost.className = "app-icon";
-      iconHost.style.setProperty("--app-tint", tint || iconTint);
-      iconHost.appendChild(storeIconEl(icon || "store"));
-      row.appendChild(iconHost);
+      row.className = "store-row" + (onOpen ? " tappable" : "");
+      row.appendChild(iconBadge(icon, tint));
       const info = document.createElement("div");
       info.className = "store-info";
       const nameRow = document.createElement("div");
@@ -4131,10 +4310,11 @@ function openStore() {
       const nameEl = document.createElement("span");
       nameEl.textContent = name;
       nameRow.appendChild(nameEl);
-      if (badge) {
+      for (const text of [].concat(badge || [])) {
+        if (!text) continue;
         const badgeEl = document.createElement("span");
         badgeEl.className = "store-badge";
-        badgeEl.textContent = badge;
+        badgeEl.textContent = text;
         nameRow.appendChild(badgeEl);
       }
       info.appendChild(nameRow);
@@ -4157,86 +4337,238 @@ function openStore() {
       }
       const act = document.createElement("span");
       act.className = "store-actions";
-      (actions || []).forEach((a) => act.appendChild(a));
+      (actions || []).forEach((a) => {
+        // A button inside a tappable row must not also open the card
+        a.addEventListener("click", (e) => e.stopPropagation());
+        act.appendChild(a);
+      });
       row.appendChild(act);
+      if (onOpen) row.addEventListener("click", () => { onOpen(); wake(); });
       return row;
     }
 
+    async function loadCatalog(force) {
+      if (!catalogCache || force) {
+        const r = await fetch("/api/screen-store/catalog");
+        catalogCache = await r.json();
+      }
+      return catalogCache;
+    }
+
+    async function afterChange() {
+      await refreshInstalledApps();
+      renderApps();
+      await loadCatalog(true);
+      renderTab();
+      wake();
+    }
+
+    function appActions(pkg, withSecondary) {
+      const actions = [];
+      if (pkg.installed) {
+        const open = rowAction(t("store.open"));
+        open.addEventListener("click", () => {
+          closeAppLayer();
+          openStoreApp({ pkg: pkg.id, title: pkgText(pkg, "label") || pkg.id, source: pkg.source });
+        });
+        actions.push(open);
+      } else {
+        const get = rowAction(t("store.get"));
+        get.addEventListener("click", async () => {
+          get.disabled = true; get.textContent = "…";
+          try { await storePost("/api/screen-store/install", { id: pkg.id }); }
+          catch (e) { showCaption(e.message, "bot"); }
+          await afterChange();
+        });
+        actions.push(get);
+      }
+      if (withSecondary && pkg.installed) {
+        const del = rowAction(t("store.remove"), true);
+        del.addEventListener("click", async () => {
+          try { await storePost("/api/screen-store/uninstall", { id: pkg.id }); }
+          catch (e) { showCaption(e.message, "bot"); }
+          await afterChange();
+        });
+        actions.push(del);
+      }
+      return actions;
+    }
+
+    function skinActions(pkg) {
+      const applied = readPref(SKIN_KEY, "") === pkg.id;
+      const use = rowAction(applied ? t("store.unapply") : (pkg.installed ? t("store.apply") : t("store.get")));
+      use.addEventListener("click", async () => {
+        if (applied) { applySkin(null); renderTab(); wake(); return; }
+        try {
+          if (!pkg.installed) await storePost("/api/screen-store/install", { id: pkg.id });
+          applySkin({ ...pkg, label: pkgText(pkg, "label") });
+        } catch (e) { showCaption(e.message, "bot"); }
+        await afterChange();
+      });
+      return [use];
+    }
+
+    function badges(pkg) {
+      const out = [];
+      if (pkg.type === "skin" && readPref(SKIN_KEY, "") === pkg.id) out.push(t("store.badgeOn"));
+      else if (pkg.installed) out.push(t("store.badgeHave"));
+      // Shared = came from a .cbp file, runs sandboxed. Worth saying out loud.
+      if (pkg.source === "shared") out.push(t("store.badgeShared"));
+      return out;
+    }
+
+    function renderChips(pkgs) {
+      chips.innerHTML = "";
+      chips.hidden = active !== "apps";
+      if (active !== "apps") return;
+      const present = new Set(pkgs.map((p) => p.category).filter(Boolean));
+      const order = ["all"].concat((catalogCache?.categories || []).filter((c) => present.has(c)));
+      if (order.length <= 2) { chips.hidden = true; return; }
+      for (const cat of order) {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        chip.className = "store-chip" + (cat === shelf ? " on" : "");
+        chip.textContent = t("store.cat." + cat);
+        chip.addEventListener("click", () => { shelf = cat; renderTab(); wake(); });
+        chips.appendChild(chip);
+      }
+    }
+
+    /* The package card: everything the one-line row has no room for, plus
+       the rarer actions (share, delete an imported package). */
+    function renderDetail(pkg) {
+      chips.hidden = true;
+      body.innerHTML = "";
+      const card = document.createElement("div");
+      card.className = "store-card";
+      const head = document.createElement("div");
+      head.className = "store-card-head";
+      head.appendChild(iconBadge(pkg.icon, pkg.tint, true));
+      const titles = document.createElement("div");
+      titles.className = "store-info";
+      const name = document.createElement("div");
+      name.className = "store-card-name";
+      name.textContent = pkgText(pkg, "label") || pkg.id;
+      const meta = document.createElement("div");
+      meta.className = "store-desc";
+      meta.textContent = [pkg.author, pkg.version && "v" + pkg.version,
+        pkg.category && t("store.cat." + pkg.category)].filter(Boolean).join(" · ");
+      titles.append(name, meta);
+      head.appendChild(titles);
+      card.appendChild(head);
+
+      const desc = document.createElement("div");
+      desc.className = "store-card-desc";
+      desc.textContent = pkgText(pkg, "description");
+      card.appendChild(desc);
+
+      if (pkg.source === "shared") {
+        const note = document.createElement("div");
+        note.className = "np-hint";
+        note.textContent = t("store.sharedNote");
+        card.appendChild(note);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "store-card-actions";
+      (pkg.type === "app" ? appActions(pkg, true) : skinActions(pkg)).forEach((a) => actions.appendChild(a));
+
+      const share = rowAction(t("store.share"), true);
+      share.addEventListener("click", () => sharePackage(pkg, card));
+      actions.appendChild(share);
+
+      if (pkg.source === "shared") {
+        const drop = rowAction(t("store.delete"), true);
+        drop.addEventListener("click", async () => {
+          if (drop.dataset.armed !== "1") {
+            // Two taps instead of confirm(): the kiosk has no dialogs, and
+            // deleting an imported package cannot be undone from here.
+            drop.dataset.armed = "1";
+            drop.textContent = t("store.deleteSure");
+            return;
+          }
+          try { await storePost("/api/screen-store/remove", { id: pkg.id }); }
+          catch (e) { showCaption(e.message, "bot"); }
+          detail = null;
+          await afterChange();
+        });
+        actions.appendChild(drop);
+      }
+      card.appendChild(actions);
+
+      const back = rowAction(t("store.back"), true);
+      back.classList.add("store-card-back");
+      back.addEventListener("click", () => { detail = null; renderTab(); wake(); });
+      card.appendChild(back);
+      body.appendChild(card);
+    }
+
+    /* Sharing from the device itself: the screen cannot hand anyone a file,
+       so it says where the file lives and, when a messenger is connected,
+       sends it there in one tap. */
+    async function sharePackage(pkg, card) {
+      let panel = card.querySelector(".store-share");
+      if (panel) { panel.remove(); return; }
+      panel = document.createElement("div");
+      panel.className = "store-share np-hint";
+      const url = window.location.origin + "/api/screen-store/export?id=" + encodeURIComponent(pkg.id);
+      panel.textContent = t("store.shareHint", { url });
+      card.insertBefore(panel, card.querySelector(".store-card-actions"));
+      try {
+        const r = await fetch("/api/integrations");
+        const d = await r.json();
+        const targets = (d.integrations || []).filter((i) => i.connected && i.can_share_files);
+        for (const target of targets) {
+          const send = rowAction(t("store.sendTo", { name: target.label }), true);
+          send.addEventListener("click", async () => {
+            send.disabled = true;
+            try {
+              await storePost("/api/integrations/" + encodeURIComponent(target.id) + "/share-package", { id: pkg.id });
+              send.textContent = t("store.sent");
+            } catch (e) { send.textContent = e.message; }
+            wake();
+          });
+          panel.appendChild(send);
+        }
+      } catch (e) { /* no integrations: the URL is still there */ }
+    }
+
     async function renderTab() {
+      if (detail && (active === "apps" || active === "skins")) {
+        const fresh = (catalogCache?.packages || []).find((p) => p.id === detail);
+        if (fresh) { renderDetail(fresh); return; }
+        detail = null;
+      }
       body.textContent = t("common.loading");
       try {
         if (active === "apps" || active === "skins") {
           const kind = active === "apps" ? "app" : "skin";
-          const r = await fetch("/api/screen-store/catalog");
-          const d = await r.json();
-          const pkgs = (d.packages || []).filter((p) => p.type === kind);
+          const d = await loadCatalog(false);
+          const all = (d.packages || []).filter((p) => p.type === kind);
+          renderChips(all);
+          const pkgs = kind === "app" && shelf !== "all" ? all.filter((p) => p.category === shelf) : all;
           body.innerHTML = "";
           if (!pkgs.length) { body.textContent = t("store.empty"); return; }
+          // Installed first within a shelf: the row you use most sits on top
+          pkgs.sort((a, b) => (b.installed - a.installed) || pkgText(a, "label").localeCompare(pkgText(b, "label")));
           for (const pkg of pkgs) {
-            const actions = [];
-            const applied = readPref(SKIN_KEY, "") === pkg.id;
-            if (kind === "app") {
-              if (pkg.installed) {
-                const open = rowAction(t("store.open"));
-                open.addEventListener("click", () => {
-                  closeAppLayer();
-                  openStoreApp({ pkg: pkg.id, title: pkg.label });
-                });
-                actions.push(open);
-              } else {
-                const get = rowAction(t("store.get"));
-                get.addEventListener("click", async () => {
-                  get.disabled = true; get.textContent = "…";
-                  try {
-                    await fetch("/api/screen-store/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pkg.id }) });
-                    await refreshInstalledApps();
-                    renderApps();
-                  } catch (e) { /* стан оновиться при наступному рендері */ }
-                  renderTab();
-                  wake();
-                });
-                actions.push(get);
-              }
-              if (pkg.installed) {
-                const del = rowAction("✕", true);
-                del.title = t("store.remove");
-                del.addEventListener("click", async () => {
-                  await fetch("/api/screen-store/uninstall", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pkg.id }) });
-                  await refreshInstalledApps();
-                  renderApps();
-                  renderTab();
-                  wake();
-                });
-                actions.push(del);
-              }
-            } else {
-              const use = rowAction(applied ? t("store.unapply") : (pkg.installed ? t("store.apply") : t("store.get")));
-              use.addEventListener("click", async () => {
-                if (applied) { applySkin(null); renderTab(); wake(); return; }
-                if (!pkg.installed) {
-                  await fetch("/api/screen-store/install", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: pkg.id }) });
-                }
-                applySkin(pkg);
-                renderTab();
-                wake();
-              });
-              actions.push(use);
-            }
             const dotColors = kind === "skin" && pkg.vars
               ? ["--bg", "--panel", "--accent"].map((k) => pkg.vars[k]).filter(Boolean)
               : null;
             body.appendChild(infoRow({
               icon: pkg.icon,
               tint: pkg.tint,
-              name: pkg.label || pkg.id,
-              desc: pkg.description || "",
-              badge: kind === "skin" ? (applied ? t("store.badgeOn") : (pkg.installed ? t("store.badgeHave") : "")) : (pkg.installed ? t("store.badgeHave") : ""),
+              name: pkgText(pkg, "label") || pkg.id,
+              desc: pkgText(pkg, "description"),
+              badge: badges(pkg),
               dots: dotColors,
-              actions,
+              actions: kind === "app" ? appActions(pkg, false) : skinActions(pkg),
+              onOpen: () => { detail = pkg.id; renderTab(); },
             }));
           }
         } else {
-          // Скіли (ClawHub) і MCP-тулзи — OpenClaw-контур
+          chips.hidden = true;
+          // Skills (ClawHub) and MCP tools belong to the OpenClaw circuit
           const kind = active === "skills" ? "skills" : "mcp";
           const r = await fetch("/api/store?kind=" + kind + "&limit=20");
           const d = await r.json();
@@ -4256,9 +4588,8 @@ function openStore() {
           }
           for (const item of items) {
             const name = item.slug || item.id || item.name || "?";
-            const isInstalled = item.installed;
             const actions = [];
-            if (!isInstalled) {
+            if (!item.installed) {
               const btn = rowAction(t("store.get"));
               btn.addEventListener("click", async () => {
                 btn.disabled = true; btn.textContent = "…";
@@ -4268,7 +4599,7 @@ function openStore() {
                   const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
                   if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
-                    showCaption(err.detail || t("store.installFailed"), "bot");
+                    showCaption(typeof err.detail === "string" ? err.detail : t("store.installFailed"), "bot");
                   }
                 } catch (e) { showCaption(t("store.installFailed"), "bot"); }
                 renderTab();
@@ -4280,7 +4611,7 @@ function openStore() {
               icon: kind === "skills" ? "bubble" : "server",
               name,
               desc: item.description || item.desc || item.summary || "",
-              badge: isInstalled ? t("store.badgeHave") : "",
+              badge: item.installed ? t("store.badgeHave") : "",
               actions,
             }));
           }
@@ -4291,6 +4622,7 @@ function openStore() {
     }
 
     box.appendChild(tabs);
+    box.appendChild(chips);
     box.appendChild(body);
     syncTabs();
     renderTab();

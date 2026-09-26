@@ -477,6 +477,12 @@ export function drawGlyphString(ctx, text, opts) {
 /* Готова іконка як <canvas>. Розмір у клітинках, щоб не було півпікселя.
    Колір беремо з CSS-змінної при створенні: іконки перемальовуються при
    зміні теми (див. repaintIcons у screen.js). */
+/** Whether a pixel drawing exists for this icon name. Store apps may name
+ *  icons that only exist as vectors, and an empty canvas reads as a bug. */
+export function hasPixelIcon(name) {
+  return Boolean(ICONS[name] || ICONS12[name]);
+}
+
 export function makeIcon(name, cellSize, body, shadow, big) {
   const set = big ? ICONS12 : ICONS;
   const rows = set[name] || ICONS[name] || ICONS12[name];

@@ -1417,6 +1417,29 @@ html, body {
 
 .msg.bot.pending { color: var(--muted); font-style: italic; }
 
+/* A reply is several short messages, messenger style. Consecutive bot
+   bubbles sit closer and share a softer corner, so they read as one turn
+   rather than as separate replies. */
+.msg.bot + .msg.bot { margin-top: -3px; border-top-left-radius: 4px; }
+/* Narration while the bot works ("one sec, checking") is secondary to the
+   answer: same bubble, quieter text. */
+.msg.bot.note { color: var(--muted); }
+
+/* The bot's emoji reaction pinned to the person's message */
+.msg.user { position: relative; }
+.msg-react {
+  position: absolute;
+  left: -6px;
+  bottom: -7px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 3px;
+  border-radius: 9px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.msg.user:has(.msg-react) { margin-bottom: 5px; }
+
 /* Markdown зі стріму — тільки те, що читабельне на 320×240 */
 .msg p { margin: 0 0 4px; }
 .msg p:last-child { margin-bottom: 0; }
@@ -1820,6 +1843,45 @@ html, body {
 .store-actions { flex: none; display: flex; gap: 4px; }
 .store-actions .cta { min-height: 22px; padding: 0 8px; font-size: 10px; margin: 0; }
 .store-actions .cta.quiet { background: transparent; color: var(--muted); border-color: var(--line); }
+
+/* Category shelf: chips scroll sideways rather than wrap, because a second
+   row would eat a fifth of a 240px screen. */
+.store-chips {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 5px;
+  overflow-x: auto;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+.store-chips::-webkit-scrollbar { display: none; }
+.store-chip {
+  flex: none;
+  min-height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 9px/1 var(--font);
+  cursor: pointer;
+}
+.store-chip.on { border-color: var(--accent); color: var(--accent); }
+.store-row.tappable { cursor: pointer; }
+.store-row.tappable:active { opacity: 0.7; }
+
+/* Package card */
+.store-card { display: flex; flex-direction: column; gap: 7px; padding: 2px; }
+.store-card-head { display: flex; align-items: center; gap: 9px; }
+.store-icon-big { transform: scale(1.25); transform-origin: left center; margin-right: 6px; }
+.store-card-name { font: 700 14px/1.2 var(--font); }
+.store-card-desc { font: 400 11px/1.4 var(--font); color: var(--text); }
+.store-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.store-card-actions .cta,
+.store-card-back,
+.store-share .cta { min-height: 24px; padding: 0 10px; font-size: 10px; margin: 0; }
+.store-card .cta.quiet { background: transparent; color: var(--muted); border-color: var(--line); }
+.store-share { display: flex; flex-direction: column; gap: 5px; word-break: break-all; }
 
 /* Скіни: превʼю — три крапки кольорами теми */
 .skin-dots { flex: none; display: flex; gap: 3px; }
