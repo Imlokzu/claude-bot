@@ -30,11 +30,56 @@ log = logging.getLogger("virtual_bot.tools.music")
 TRANSCRIPT_CHARS = 40000
 
 
+async def _play_from_ytmusic(query: str) -> dict | None:
+    """YouTube Music first: its search returns official tracks, not the
+    lyric videos and 10-hour loops a plain YouTube search ranks highest, and
+    its radio gives an up-next queue. None when the helper is missing or
+    fails, so the caller falls back to the plain YouTube search."""
+    import ytmusic
+
+    if not ytmusic.available():
+        return None
+    try:
+        found = await ytmusic.run("search", query, 4)
+        tracks = [t for t in found.get("tracks") or [] if len(str(t.get("id") or "")) == 11]
+        if not tracks:
+            return None
+        first = tracks[0]
+        try:
+            radio = await ytmusic.run("radio", first["id"], 25)
+            queue = [ytmusic.as_now_playing(t) for t in radio.get("tracks") or [] if len(str(t.get("id") or "")) == 11]
+        except ytmusic.YtmError:
+            queue = []
+    except ytmusic.YtmError as exc:
+        log.warning("YouTube Music search failed, falling back to YouTube: %s", exc)
+        return None
+    track = ytmusic.as_now_playing(first)
+    if queue:
+        events.publish_music(track, queue=queue)
+    else:
+        events.publish_music(track)
+    log.info("Playing via YouTube Music: %s — %s (+%d up next)", track["title"], track["uploader"], len(queue))
+    return {
+        "ok": True,
+        "playing": f"{track['title']} — {track['uploader']}",
+        "source": "YouTube Music",
+        "up_next": len(queue),
+        "note": "Трек уже грає на екрані пристрою (Now Playing знизу); далі йде радіо схожих треків.",
+        "alternatives": [
+            {"title": t["title"], "uploader": ", ".join(t.get("artists") or []), "id": t["id"]}
+            for t in tracks[1:]
+        ],
+    }
+
+
 async def play_music(query: str) -> dict:
     """Пошук трека за назвою + старт відтворення на екрані пристрою."""
     query = (query or "").strip()
     if not query:
         return {"error": "Вкажи, що увімкнути: назву пісні або виконавця"}
+    via_ytm = await _play_from_ytmusic(query)
+    if via_ytm:
+        return via_ytm
     tracks = await music.search(query, limit=3)
     if not tracks:
         return {

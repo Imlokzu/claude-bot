@@ -121,3 +121,28 @@ def test_live_helper_search():
     ytmusic._CACHE.clear()
     data = asyncio.run(ytmusic.run("search", "Daft Punk Get Lucky", 3))
     assert data["tracks"] and len(data["tracks"][0]["id"]) == 11
+
+
+def test_play_music_tool_prefers_ytmusic(fake_helper, monkeypatch):
+    """The brain's play_music goes through YouTube Music and hands over up next."""
+    from tools import music_tools
+
+    published = []
+    monkeypatch.setattr(events, "publish", lambda event: published.append(event))
+    result = asyncio.run(music_tools.play_music("anything"))
+    assert result["source"] == "YouTube Music" and result["up_next"] >= 1
+    assert published[-1]["track"]["uploader"] == "A, B"
+
+
+def test_play_music_tool_falls_back_without_helper(monkeypatch):
+    from tools import music_tools
+
+    monkeypatch.setattr(ytmusic, "helper_path", lambda: None)
+
+    async def fake_search(query, limit=3):
+        return [{"id": "dQw4w9WgXcQ", "title": "yt", "uploader": "u", "provider": "youtube"}]
+
+    monkeypatch.setattr(music_tools.music, "search", fake_search)
+    monkeypatch.setattr(events, "publish", lambda event: None)
+    result = asyncio.run(music_tools.play_music("anything"))
+    assert result["ok"] and "source" not in result
