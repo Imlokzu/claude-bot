@@ -3975,6 +3975,9 @@ function postStoreAppSkin(frame = null) {
       type: "botSkin",
       vars: currentSkinVars(),
       theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+      // Apps localise themselves; without this they would stay in the
+      // language they started in after the screen switched.
+      lang: getLang(),
     }, window.location.origin);
   } catch (e) {}
 }
@@ -4326,6 +4329,7 @@ function relocalize() {
   setLink(linkAlive);
   refreshStatus();
   if (openApp) openAppLayer(openApp.key, openApp.build);
+  postStoreAppSkin();
 }
 
 onLangChange(relocalize);

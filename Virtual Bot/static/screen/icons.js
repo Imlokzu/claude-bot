@@ -98,6 +98,51 @@ const PATHS = {
   youtube:
     '<rect x="3" y="6.2" width="18" height="11.6" rx="3"/>' +
     '<path d="M10.4 9.6v4.8l4.2-2.4z"/>',
+  /* Store app icons. A package may only name an icon, never ship its own
+     markup: a shared .cbp is untrusted, and SVG injected into the parent
+     page would run with the screen's privileges. So the set grows here. */
+  gamepad:
+    '<path d="M7 8h10a4 4 0 0 1 4 4.4l-.5 3.4a2.4 2.4 0 0 1-4.2 1.2L14.6 15H9.4l-1.7 2a2.4 2.4 0 0 1-4.2-1.2L3 12.4A4 4 0 0 1 7 8z"/>' +
+    '<path d="M8 10.5v3M6.5 12h3M15.5 11h.01M17.5 13h.01"/>',
+  dice:
+    '<rect x="4" y="4" width="16" height="16" rx="3"/>' +
+    '<path d="M8.5 8.5h.01M15.5 8.5h.01M12 12h.01M8.5 15.5h.01M15.5 15.5h.01"/>',
+  timer:
+    '<circle cx="12" cy="13.5" r="7"/>' +
+    '<path d="M12 13.5V10M10 3.5h4M18.3 6.8l1.2-1.2"/>',
+  note:
+    '<path d="M6 3.5h8.5L19 8v12.5H6z"/>' +
+    '<path d="M14 3.5V8.5h5M9 12.5h7M9 16h5"/>',
+  calc:
+    '<rect x="5" y="3" width="14" height="18" rx="2"/>' +
+    '<path d="M8 7h8M8.5 11.5h.01M12 11.5h.01M15.5 11.5h.01M8.5 15h.01M12 15h.01M15.5 15v2.5M8.5 18h.01M12 18h.01"/>',
+  heart:
+    '<path d="M12 19.5s-7.5-4.4-7.5-10A4.2 4.2 0 0 1 12 7a4.2 4.2 0 0 1 7.5 2.5c0 5.6-7.5 10-7.5 10z"/>',
+  leaf:
+    '<path d="M5 19c0-8 5-13.5 14.5-14-0.3 9.8-6 14.5-14.5 14z"/>' +
+    '<path d="M5 19l7-7"/>',
+  globe:
+    '<circle cx="12" cy="12" r="8.5"/>' +
+    '<path d="M3.5 12h17M12 3.5c2.4 2.4 3.5 5.2 3.5 8.5s-1.1 6.1-3.5 8.5c-2.4-2.4-3.5-5.2-3.5-8.5S9.6 5.9 12 3.5z"/>',
+  bolt:
+    '<path d="M13 3 5.5 13.5H12L11 21l7.5-10.5H12z"/>',
+  target:
+    '<circle cx="12" cy="12" r="8.5"/>' +
+    '<circle cx="12" cy="12" r="4.5"/>' +
+    '<path d="M12 12h.01"/>',
+  puzzle:
+    '<path d="M5 8h3.2a2 2 0 1 1 4 0H16v3.2a2 2 0 1 1 0 4V19h-3.8a2 2 0 1 0-4 0H5v-3.8a2 2 0 1 0 0-4z"/>',
+  headphones:
+    '<path d="M4 15v-2.5a8 8 0 0 1 16 0V15"/>' +
+    '<rect x="3.5" y="14" width="4" height="6" rx="1.5"/>' +
+    '<rect x="16.5" y="14" width="4" height="6" rx="1.5"/>',
+  share:
+    '<circle cx="6.5" cy="12" r="2.3"/>' +
+    '<circle cx="17.5" cy="6.5" r="2.3"/>' +
+    '<circle cx="17.5" cy="17.5" r="2.3"/>' +
+    '<path d="M8.6 11 15.4 7.6M8.6 13l6.8 3.4"/>',
+  star:
+    '<path d="M12 3.8l2.5 5.2 5.7.7-4.2 3.9 1.1 5.6L12 16.4l-5.1 2.8L8 13.6 3.8 9.7l5.7-.7z"/>',
 };
 
 /* Кольорова палітра: кожна іконка має свій відтінок, як застосунки на
@@ -133,6 +178,20 @@ export const ICON_COLORS = {
   prev: "#9aa3a8",
   next: "#9aa3a8",
   youtube: "#d95a5a",
+  gamepad: "#b48ad8",
+  dice: "#d98263",
+  timer: "#d07a6a",
+  note: "#d7a65b",
+  calc: "#8b9dd8",
+  heart: "#d98aa8",
+  leaf: "#79b07a",
+  globe: "#6fa8dc",
+  bolt: "#d7a65b",
+  target: "#d07a6a",
+  puzzle: "#5fb0a8",
+  headphones: "#d98263",
+  share: "#7fa8d8",
+  star: "#d7a65b",
 };
 
 /** Готовий <svg> як елемент; колір і товщина — з CSS. */

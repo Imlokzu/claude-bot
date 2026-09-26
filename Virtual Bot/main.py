@@ -278,6 +278,32 @@ app.add_middleware(
 
 
 @app.middleware("http")
+async def guard_shared_store_apps(request: Request, call_next):
+    """
+    Keep apps imported from a .cbp file in their box.
+
+    Their files get a sandboxing CSP (see screen_store.SHARED_APP_CSP), which
+    gives them an opaque origin and no network. The Origin check is the second
+    wall: a sandboxed page that still manages to send a request (a form, a
+    future CSP gap) arrives with `Origin: null`, and nothing legitimate that
+    changes state here ever does.
+    """
+    path = request.url.path
+    if (
+        request.method in {"POST", "PUT", "PATCH", "DELETE"}
+        and path.startswith("/api/")
+        and request.headers.get("origin") == "null"
+    ):
+        return JSONResponse(status_code=403, content={"detail": "sandboxed origin"})
+    response = await call_next(request)
+    if path.startswith("/store-apps/"):
+        policy = screen_store.shared_app_csp(path[len("/store-apps/"):])
+        if policy:
+            response.headers["Content-Security-Policy"] = policy
+    return response
+
+
+@app.middleware("http")
 async def rewrite_share_host(request: Request, call_next):
     """
     Публічні сайти через тунель приходять на цей самий сервер із Host
@@ -1184,13 +1210,73 @@ async def api_screen_store_uninstall(req: StorePackageRequest) -> dict:
         raise HTTPException(status_code=status, detail=str(exc)) from exc
 
 
-# Встановлені застосунки роздаються як звичайна статика: iframe у layer-app
-# відкриває /store-apps/<id>/index.html. StaticFiles захищає від path traversal.
-app.mount(
-    "/store-apps",
-    StaticFiles(directory=cfg.STORE_DIR / "installed" / "apps", check_dir=False),
-    name="store-apps",
-)
+def _store_http_error(exc: "screen_store.StoreError") -> HTTPException:
+    """Store errors carry a stable code; clients localise by it."""
+    status = {"not_found": 404, "id_taken": 409, "io_error": 500}.get(exc.code, 400)
+    return HTTPException(status_code=status, detail={"code": exc.code, "message": str(exc)})
+
+
+@app.get("/api/screen-store/export")
+async def api_screen_store_export(id: str = Query(..., min_length=1, max_length=40)) -> Response:
+    """Download a package as one .cbp file — the thing you send a friend."""
+    try:
+        filename, data = await asyncio.to_thread(screen_store.pack, id)
+    except screen_store.StoreError as exc:
+        raise _store_http_error(exc) from exc
+    return Response(
+        content=data,
+        media_type=screen_store.CBP_MIME,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/screen-store/import")
+async def api_screen_store_import(request: Request, install: bool = Query(default=True)) -> dict:
+    """
+    Take a .cbp as the raw request body (not multipart: the screen, the
+    dashboard and the Telegram bridge all already hold the bytes, and a raw
+    body needs no form parser). Imported packages are untrusted and run
+    sandboxed; see screen_store.
+    """
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > screen_store.MAX_ARCHIVE_BYTES:
+        raise HTTPException(status_code=413, detail={"code": "too_large", "message": "archive too large"})
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > screen_store.MAX_ARCHIVE_BYTES:
+            raise HTTPException(status_code=413, detail={"code": "too_large", "message": "archive too large"})
+    try:
+        return await asyncio.to_thread(screen_store.import_archive, bytes(body), install_now=install)
+    except screen_store.StoreError as exc:
+        raise _store_http_error(exc) from exc
+
+
+@app.post("/api/screen-store/remove")
+async def api_screen_store_remove(req: StorePackageRequest) -> dict:
+    """Delete an imported package entirely (built-in ones can only be uninstalled)."""
+    try:
+        return await asyncio.to_thread(screen_store.remove_shared, req.id)
+    except screen_store.StoreError as exc:
+        raise _store_http_error(exc) from exc
+
+
+# Installed apps are served as plain static files: the iframe in layer-app
+# opens /store-apps/<id>/index.html. A route rather than a StaticFiles mount so
+# the folder is resolved per request (STORE_DIR can move, and tests move it).
+@app.get("/store-apps/{pkg_id}/{file_path:path}", include_in_schema=False)
+async def store_app_file(pkg_id: str, file_path: str) -> FileResponse:
+    if not screen_store.PKG_ID_RE.match(pkg_id):
+        raise HTTPException(status_code=404)
+    root = (Path(cfg.STORE_DIR) / "installed" / "apps" / pkg_id).resolve()
+    target = (root / (file_path or "index.html")).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise HTTPException(status_code=404) from None
+    if not target.is_file():
+        raise HTTPException(status_code=404)
+    return FileResponse(target)
 app.include_router(system_status.router)
 
 

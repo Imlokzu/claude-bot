@@ -73,6 +73,8 @@ Virtual Bot/workspace/
 Virtual Bot/code/
 # Встановлені пакети магазину екрана — runtime-копії з store/packages/
 Virtual Bot/store/installed/
+# Packages imported from .cbp files — the owner's runtime data, not source
+Virtual Bot/store/shared/
 
 # ---- Runtime-стан агентів (МІСТИТЬ credential-и: opencode account.json) ----
 Virtual Bot/runtime/
