@@ -65,34 +65,60 @@ final class NativeWorkspaceEditorTests: XCTestCase {
 
     func testExcalidrawCanvasPointerEditProducesAFlushedScene() async throws {
         let web = try await mount(mode: "drawing")
-        try await waitForJavaScript("Boolean(document.querySelector('[data-testid=toolbar-rectangle]') && document.querySelector('canvas'))", in: web)
+        try await waitForJavaScript("Boolean(document.querySelector('[data-testid=toolbar-rectangle]') && document.querySelector('canvas.interactive'))", in: web)
+        _ = try await evaluate("document.querySelector('[data-testid=toolbar-rectangle]').click(); true", in: web)
+        try await waitForJavaScript("document.querySelector('[data-testid=toolbar-rectangle]').checked === true", in: web)
         _ = try await evaluate("""
         (() => {
-          const tool = document.querySelector('[data-testid=toolbar-rectangle]');
-          const canvas = [...document.querySelectorAll('canvas')]
-            .sort((left, right) => right.getBoundingClientRect().width * right.getBoundingClientRect().height -
-              left.getBoundingClientRect().width * left.getBoundingClientRect().height)[0];
-          tool.click();
+          const canvas = document.querySelector('canvas.interactive');
+          const setCapture = canvas.setPointerCapture.bind(canvas);
+          const releaseCapture = canvas.releasePointerCapture.bind(canvas);
+          // Synthetic IDs have no WebKit input device. Only this fixture ID
+          // emulates capture; real pointer IDs still call the native methods.
+          canvas.setPointerCapture = id => { if (id !== 19) setCapture(id); };
+          canvas.releasePointerCapture = id => { if (id !== 19) releaseCapture(id); };
           const bounds = canvas.getBoundingClientRect();
           const startX = bounds.left + bounds.width * .45, startY = bounds.top + bounds.height * .48;
-          const endX = startX + 54, endY = startY + 38;
-          const event = (type, x, y, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+          window.fixtureDrag = {canvas, startX, startY, setCapture, releaseCapture};
+          canvas.dispatchEvent(new PointerEvent('pointerdown', {
             bubbles:true, cancelable:true, pointerId:19, pointerType:'mouse', isPrimary:true,
-            button:0, buttons, clientX:x, clientY:y,
+            button:0, buttons:1, clientX:startX, clientY:startY,
           }));
-          event('pointerdown', startX, startY, 1);
-          event('pointermove', endX, endY, 1);
-          event('pointerup', endX, endY, 0);
           return true;
         })()
+        """, in: web)
+        for (event, buttons) in [("pointermove", 1), ("pointerup", 0)] {
+            try await Task.sleep(nanoseconds: 100_000_000)
+            _ = try await evaluate("""
+            (() => {
+              const drag = window.fixtureDrag;
+              drag.canvas.dispatchEvent(new PointerEvent('\(event)', {
+                bubbles:true, cancelable:true, pointerId:19, pointerType:'mouse', isPrimary:true,
+                button:0, buttons:\(buttons), clientX:drag.startX + 54, clientY:drag.startY + 38,
+              }));
+              return true;
+            })()
+            """, in: web)
+        }
+        _ = try await evaluate("""
+        const drag = window.fixtureDrag;
+        drag.canvas.setPointerCapture = drag.setCapture;
+        drag.canvas.releasePointerCapture = drag.releaseCapture;
+        delete window.fixtureDrag;
+        true;
         """, in: web)
         try await waitForChange(containing: "rectangle")
 
         let flushed = try await flush()
         XCTAssertTrue(flushed)
         let scene = try XCTUnwrap(IosEditorFixtureKt.iosEditorFixtureLastChange())
-        XCTAssertTrue(scene.contains("\"elements\":["), "Expected a serialized Excalidraw scene: \(scene.prefix(500))")
-        XCTAssertTrue(scene.contains("rectangle"))
+        let decoded = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(scene.utf8)) as? [String: Any])
+        XCTAssertEqual(decoded["type"] as? String, "excalidraw")
+        let elements = try XCTUnwrap(decoded["elements"] as? [[String: Any]])
+        let rectangle = try XCTUnwrap(elements.first { $0["type"] as? String == "rectangle" })
+        XCTAssertGreaterThan(try XCTUnwrap(rectangle["width"] as? Double), 0)
+        XCTAssertGreaterThan(try XCTUnwrap(rectangle["height"] as? Double), 0)
+        XCTAssertEqual(rectangle["isDeleted"] as? Bool, false)
         XCTAssertEqual(IosEditorFixtureKt.iosEditorFixtureErrors(), "")
         try await capture("Excalidraw edited canvas", in: web)
     }
