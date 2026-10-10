@@ -115,6 +115,40 @@ simulator_app="$derived_data/Build/Products/Debug-iphonesimulator/Blink.app"
 [[ -d "$simulator_app" ]] || { echo "Simulator app is missing: $simulator_app" >&2; exit 1; }
 ditto -c -k --sequesterRsrc --keepParent "$simulator_app" "$run_dir/Blink-iOS-Simulator.app.zip"
 
+simulator_is_booted="$(xcrun simctl list devices booted --json | python3 -c '
+import json
+import sys
+
+udid = sys.argv[1]
+inventory = json.load(sys.stdin)
+is_booted = any(device.get("udid") == udid for devices in inventory.get("devices", {}).values() for device in devices)
+print("true" if is_booted else "false")
+' "$simulator_udid")"
+if [[ "$simulator_is_booted" != true ]]; then
+  xcrun simctl boot "$simulator_udid"
+fi
+
+python3 - "$simulator_udid" <<'PY'
+import subprocess
+import sys
+
+try:
+    subprocess.run(
+        ["xcrun", "simctl", "bootstatus", sys.argv[1], "-b"],
+        check=True,
+        timeout=180,
+    )
+except subprocess.TimeoutExpired:
+    raise SystemExit("Timed out after 180 seconds waiting for the selected iPhone simulator to boot")
+PY
+
+run_logged "$run_dir/simulator-install.log" xcrun simctl install "$simulator_udid" "$simulator_app"
+run_logged "$run_dir/simulator-startup.log" xcrun simctl launch "$simulator_udid" me.waveio.claudebot.mobile
+sleep 3
+run_logged "$run_dir/simulator-screenshot.log" xcrun simctl io "$simulator_udid" screenshot "$run_dir/Blink-iOS-Startup.png"
+[[ -s "$run_dir/Blink-iOS-Startup.png" ]] || { echo 'Startup screenshot is missing or empty.' >&2; exit 1; }
+run_logged "$run_dir/simulator-terminate.log" xcrun simctl terminate "$simulator_udid" me.waveio.claudebot.mobile
+
 test_result_bundle="$run_dir/Blink-Simulator-Tests.xcresult"
 test_status=0
 if run_logged "$run_dir/simulator-tests.log" xcodebuild \
@@ -122,6 +156,9 @@ if run_logged "$run_dir/simulator-tests.log" xcodebuild \
   -scheme ClaudeBot \
   -destination "$simulator_destination" \
   -parallel-testing-enabled NO \
+  -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 120 \
+  -maximum-test-execution-time-allowance 180 \
   -derivedDataPath "$derived_data" \
   -resultBundlePath "$test_result_bundle" \
   test-without-building; then
@@ -150,41 +187,6 @@ if (( test_status != 0 )); then
   echo "XCTest failed with exit code $test_status; preserving that result after attachment export." >&2
   exit "$test_status"
 fi
-simulator_is_booted="$(xcrun simctl list devices booted --json | python3 -c '
-import json
-import sys
-
-udid = sys.argv[1]
-inventory = json.load(sys.stdin)
-is_booted = any(device.get("udid") == udid for devices in inventory.get("devices", {}).values() for device in devices)
-print("true" if is_booted else "false")
-' "$simulator_udid")"
-if [[ "$simulator_is_booted" != true ]]; then
-  xcrun simctl boot "$simulator_udid"
-fi
-
-python3 - "$simulator_udid" <<'PY'
-import subprocess
-import sys
-
-try:
-    subprocess.run(
-        ["xcrun", "simctl", "bootstatus", sys.argv[1], "-b"],
-        check=True,
-        timeout=45,
-    )
-except subprocess.TimeoutExpired:
-    raise SystemExit("Timed out waiting for the selected iPhone simulator to boot")
-PY
-
-run_logged "$run_dir/simulator-install.log" xcrun simctl install "$simulator_udid" "$simulator_app"
-if xcrun simctl terminate "$simulator_udid" me.waveio.claudebot.mobile >/dev/null 2>&1; then
-  echo 'Stopped the existing Blink process before the startup capture.'
-fi
-run_logged "$run_dir/simulator-startup.log" xcrun simctl launch "$simulator_udid" me.waveio.claudebot.mobile
-sleep 3
-run_logged "$run_dir/simulator-screenshot.log" xcrun simctl io "$simulator_udid" screenshot "$run_dir/Blink-iOS-Startup.png"
-[[ -s "$run_dir/Blink-iOS-Startup.png" ]] || { echo 'Startup screenshot is missing or empty.' >&2; exit 1; }
 if (( attachment_status != 0 )); then
   exit "$attachment_status"
 fi
