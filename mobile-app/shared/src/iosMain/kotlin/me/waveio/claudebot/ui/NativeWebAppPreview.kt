@@ -62,7 +62,13 @@ actual fun NativeWebAppPreview(
 
 private const val PreviewScheme = "claudebot-preview"
 private const val PreviewNetworkRules = """[
-    {"trigger":{"url-filter":"^(https?|wss?|ftp|file|content):"},"action":{"type":"block"}},
+    {"trigger":{"url-filter":"^http:"},"action":{"type":"block"}},
+    {"trigger":{"url-filter":"^https:"},"action":{"type":"block"}},
+    {"trigger":{"url-filter":"^ws:"},"action":{"type":"block"}},
+    {"trigger":{"url-filter":"^wss:"},"action":{"type":"block"}},
+    {"trigger":{"url-filter":"^ftp:"},"action":{"type":"block"}},
+    {"trigger":{"url-filter":"^file:"},"action":{"type":"block"}},
+    {"trigger":{"url-filter":"^content:"},"action":{"type":"block"}},
     {"trigger":{"url-filter":".*"},"action":{"type":"block-cookies"}}
 ]"""
 

@@ -88,7 +88,9 @@ private const val WorkspaceEntryPath = "/index.html"
 private const val WorkspaceBridgeName = "BlinkNative"
 private const val WorkspaceNetworkRules = """[
     {"trigger":{"url-filter":".*"},"action":{"type":"block"}},
-    {"trigger":{"url-filter":"^(blink-workspace|data|blob):"},"action":{"type":"ignore-previous-rules"}},
+    {"trigger":{"url-filter":"^blink-workspace:"},"action":{"type":"ignore-previous-rules"}},
+    {"trigger":{"url-filter":"^data:"},"action":{"type":"ignore-previous-rules"}},
+    {"trigger":{"url-filter":"^blob:"},"action":{"type":"ignore-previous-rules"}},
     {"trigger":{"url-filter":".*"},"action":{"type":"block-cookies"}}
 ]"""
 
