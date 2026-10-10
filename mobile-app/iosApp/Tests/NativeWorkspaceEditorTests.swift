@@ -36,6 +36,7 @@ final class NativeWorkspaceEditorTests: XCTestCase {
         let lastChange = try XCTUnwrap(IosEditorFixtureKt.iosEditorFixtureLastChange())
         XCTAssertTrue(lastChange.contains("ios-tiptap-input"))
         XCTAssertEqual(IosEditorFixtureKt.iosEditorFixtureErrors(), "")
+        try await capture("Tiptap edited note", in: web)
     }
 
     func testHTMLCodeMirrorInputIsDeliveredBeforeNativeFlushAcknowledgement() async throws {
@@ -189,9 +190,18 @@ final class NativeWorkspaceEditorTests: XCTestCase {
         let expectedHost = mode == "preview" ? "claudebot-preview://" : "blink-workspace://"
         let deadline = Date().addingTimeInterval(15)
         while Date() < deadline {
+            let errors = IosEditorFixtureKt.iosEditorFixtureErrors()
+            if mode != "preview", !errors.isEmpty {
+                throw NSError(domain: "NativeWorkspaceEditorTests", code: 5,
+                              userInfo: [NSLocalizedDescriptionKey: "The native editor failed to load: \(errors)"])
+            }
             if let web = findWebView(in: hostWindow.rootViewController?.view), web.bounds.width > 0, web.bounds.height > 0 {
-                let ready = (try? await evaluate("location.href.startsWith('" + expectedHost + "') && document.readyState === 'complete'", in: web) as? Bool) ?? false
-                if ready { return web }
+                // A blank WebView may never call its evaluation completion on
+                // the simulator. Wait for the owned navigation before polling JS.
+                if web.url?.absoluteString.hasPrefix(expectedHost) == true {
+                    let ready = (try? await evaluate("document.readyState === 'complete'", in: web) as? Bool) ?? false
+                    if ready { return web }
+                }
             }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
@@ -226,7 +236,18 @@ final class NativeWorkspaceEditorTests: XCTestCase {
 
     private func evaluate(_ source: String, in web: WKWebView) async throws -> Any? {
         try await withCheckedThrowingContinuation { continuation in
+            var completed = false
+            let timeout = DispatchWorkItem {
+                guard !completed else { return }
+                completed = true
+                continuation.resume(throwing: NSError(domain: "NativeWorkspaceEditorTests", code: 6,
+                    userInfo: [NSLocalizedDescriptionKey: "WebKit did not complete JavaScript evaluation before timeout"]))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: timeout)
             web.evaluateJavaScript(source) { value, error in
+                guard !completed else { return }
+                completed = true
+                timeout.cancel()
                 if let error { continuation.resume(throwing: error) }
                 else { continuation.resume(returning: value) }
             }
@@ -257,8 +278,8 @@ final class NativeWorkspaceEditorTests: XCTestCase {
         let completed = expectation(description: "The native editor flush callback arrives")
         var result: Bool?
         IosEditorFixtureKt.iosEditorFixtureFlush { value in
-                result = value.boolValue
-                completed.fulfill()
+            result = value.boolValue
+            completed.fulfill()
         }
         await fulfillment(of: [completed], timeout: 4)
         return try XCTUnwrap(result, "The native editor flush callback did not return a result")
