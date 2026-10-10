@@ -231,8 +231,13 @@ final class NativeWorkspaceEditorTests: XCTestCase {
             }
             try await Task.sleep(nanoseconds: 100_000_000)
         }
+        let root = hostWindow.rootViewController?.view
+        let web = findWebView(in: root)
+        let diagnostics = "window=\(hostWindow.bounds), root=\(String(describing: root?.bounds)), " +
+            "web=\(String(describing: web?.bounds)), url=\(web?.url?.absoluteString ?? "nil"), " +
+            "loading=\(String(describing: web?.isLoading)), errors=\(IosEditorFixtureKt.iosEditorFixtureErrors())"
         throw NSError(domain: "NativeWorkspaceEditorTests", code: 1,
-                      userInfo: [NSLocalizedDescriptionKey: "The Compose fixture did not load its native document before timeout"])
+                      userInfo: [NSLocalizedDescriptionKey: "The Compose fixture did not load its native document before timeout: \(diagnostics)"])
     }
 
     private func findWebView(in view: UIView?) -> WKWebView? {

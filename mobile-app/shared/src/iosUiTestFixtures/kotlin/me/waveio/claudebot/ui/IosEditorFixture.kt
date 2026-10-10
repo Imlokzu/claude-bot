@@ -4,6 +4,7 @@ package me.waveio.claudebot.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -76,7 +77,7 @@ private fun IosEditorFixtureContent() {
                 revision = revision,
                 loadResource = ::fixturePreviewResource,
                 onError = { IosEditorFixtureState.errors += "preview_failed" },
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.fillMaxWidth().weight(1f),
             )
             else -> {
                 val document = fixtureDocument(mode, revision)
@@ -87,7 +88,7 @@ private fun IosEditorFixtureContent() {
                     onAction = {},
                     onError = { IosEditorFixtureState.errors += it },
                     loadResource = ::fixtureEditorResource,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }
         }
